@@ -1,0 +1,28 @@
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '@app/providers/AuthProvider';
+
+type RoleRouteProps = {
+  allowedRoles: number[];
+  children: JSX.Element;
+};
+
+const getDefaultPath = (roleId?: number | null) => {
+  if (roleId === 1) {
+    return '/admin';
+  }
+  return '/requests';
+};
+
+export const RoleRoute = ({ allowedRoles, children }: RoleRouteProps) => {
+  const { session } = useAuth();
+
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!allowedRoles.includes(session.roleId)) {
+    return <Navigate to={getDefaultPath(session.roleId)} replace />;
+  }
+
+  return children;
+};

@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    container_name: web
+    networks:
+      - project_net
+
+networks:
+  project_net:
+    external: true
+    name: project_net

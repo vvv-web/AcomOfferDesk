@@ -1,0 +1,10 @@
+services:
+  tg_bot:
+    build: .
+    env_file: .env
+    networks:
+      - project_net
+
+networks:
+  project_net:
+    external: true
