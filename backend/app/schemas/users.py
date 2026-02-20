@@ -31,6 +31,25 @@ class UserListResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
+class EconomistListItemSchema(BaseModel):
+    user_id: str
+    status: str
+    full_name: str | None = None
+    phone: str | None = None
+    mail: str | None = None
+
+
+class EconomistListData(BaseModel):
+    items: list[EconomistListItemSchema]
+
+
+class EconomistListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: EconomistListData
+    links: LinkSet = Field(alias="_links")
+
+    
 class UserStatusUpdateRequest(BaseModel):
     user_status: str
     tg_status: str | None = None

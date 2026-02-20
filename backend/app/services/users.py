@@ -15,8 +15,9 @@ from app.services.tg_notifications import notify_access_opened
 
 
 class UserRegistrationService:
-    def __init__(self, users: UserRepository):
+    def __init__(self, users: UserRepository, profiles: ProfileRepository):
         self._users = users
+        self._profiles = profiles
 
     async def register_user(
         self,
@@ -25,6 +26,9 @@ class UserRegistrationService:
         user_id: str,
         password: str,
         role_id: int,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
     ) -> User:
         UserPolicy.can_register_user(current_user)
         if role_id == settings.superadmin_role_id or role_id not in settings.allowed_creation_role_ids:
@@ -33,6 +37,10 @@ class UserRegistrationService:
             raise Forbidden("Lead economist can create only economist users")
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
+        
+        if role_id == settings.economist_role_id and (not full_name or not phone):
+            raise Conflict("Economist requires full_name and phone")
+        
         password_hash = await hash_password(password)
         user = User(
             id=user_id,
@@ -40,6 +48,16 @@ class UserRegistrationService:
             id_role=role_id,
             status="active",
         )
+
+        if full_name is not None and phone is not None:
+            profile = Profile(
+                id=user_id,
+                full_name=full_name,
+                phone=phone,
+                mail=mail or "Не указано",
+            )
+            await self._profiles.add(profile)
+
         await self._users.add(user)
         return user
     
@@ -130,6 +148,15 @@ class UserListItem:
 
 
 @dataclass(frozen=True)
+class EconomistListItem:
+    user_id: str
+    status: str
+    full_name: str | None
+    phone: str | None
+    mail: str | None
+
+
+@dataclass(frozen=True)
 class RequestEconomistListItem:
     user_id: str
     full_name: str | None
@@ -199,6 +226,21 @@ class UserQueryService:
             UserListItem(
                 user_id=user.id,
                 role_id=user.id_role,
+                status=user.status,
+                full_name=profile.full_name if profile else None,
+                phone=profile.phone if profile else None,
+                mail=profile.mail if profile else None,
+            )
+            for user, profile in rows
+        ]
+    
+    async def list_economists(self, current_user: CurrentUser) -> list[EconomistListItem]:
+        UserPolicy.can_list_users(current_user)
+
+        rows = await self._users.list_users_with_profiles(role_id=settings.economist_role_id)
+        return [
+            EconomistListItem(
+                user_id=user.id,
                 status=user.status,
                 full_name=profile.full_name if profile else None,
                 phone=profile.phone if profile else None,

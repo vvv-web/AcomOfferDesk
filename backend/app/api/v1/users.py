@@ -11,6 +11,9 @@ from app.domain.exceptions import Forbidden
 from app.domain.policies import CurrentUser, UserPolicy
 from app.schemas.links import Link, LinkSet
 from app.schemas.users import (
+    EconomistListData,
+    EconomistListItemSchema,
+    EconomistListResponse,
     MeData,
     MeResponse,
     RequestEconomistItemSchema,
@@ -42,7 +45,10 @@ def _status_management_links(current_user: CurrentUser) -> list[Link] | None:
 
 
 def _list_users_actions(current_user: CurrentUser) -> list[Link] | None:
-    actions = [Link(href="/api/v1/users", method="GET")]
+    actions = [
+        Link(href="/api/v1/users", method="GET"),
+        Link(href="/api/v1/users/economists", method="GET"),
+    ]
     try:
         UserPolicy.can_register_user(current_user)
         actions.append(Link(href="/api/v1/users/register", method="POST"))
@@ -83,6 +89,25 @@ async def list_users(
         _links=LinkSet(
             self=Link(href="/api/v1/users", method="GET"),
             available_actions=available_actions,
+        ),
+    )
+
+
+@router.get("/users/economists", response_model=EconomistListResponse)
+@router.get("/users/economists/", response_model=EconomistListResponse, include_in_schema=False)
+async def list_economists(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> EconomistListResponse:
+    async with uow:
+        service = UserQueryService(uow.users)
+        economists = await service.list_economists(current_user=current_user)
+
+    return EconomistListResponse(
+        data=EconomistListData(items=[EconomistListItemSchema(**asdict(item)) for item in economists]),
+        _links=LinkSet(
+            self=Link(href="/api/v1/users/economists", method="GET"),
+            available_actions=_list_users_actions(current_user),
         ),
     )
 

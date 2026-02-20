@@ -15,6 +15,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { useAuth } from '@app/providers/AuthProvider';
+import { getEconomists } from '@shared/api/getEconomists';
 import { getUsers, type UserListItem } from '@shared/api/getUsers';
 import { registerUser } from '@shared/api/registerUser';
 import { hasAvailableAction } from '@shared/auth/availableActions';
@@ -24,11 +25,22 @@ const schema = z
     login: z.string().min(3, 'Минимум 3 символа'),
     password: z.string().min(6, 'Минимум 6 символов'),
     confirmPassword: z.string().min(6, 'Минимум 6 символов'),
-    role_id: z.number({ required_error: 'Выберите роль' })
+    role_id: z.number({ required_error: 'Выберите роль' }),
+    full_name: z.string().optional(),
+    phone: z.string().optional(),
+    mail: z.string().optional()
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Пароли не совпадают',
     path: ['confirmPassword']
+    })
+  .refine((data) => data.role_id !== 4 || Boolean(data.full_name?.trim()), {
+    message: 'ФИО обязательно для экономиста',
+    path: ['full_name']
+  })
+  .refine((data) => data.role_id !== 4 || Boolean(data.phone?.trim()), {
+    message: 'Телефон обязателен для экономиста',
+    path: ['phone']
   });
 
 type FormValues = z.infer<typeof schema>;
@@ -122,16 +134,22 @@ export const AdminPage = () => {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-    reset
+    reset,
+    watch
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       login: '',
       password: '',
       confirmPassword: '',
-      role_id: roleOptions[0]?.id ?? 2
+      role_id: roleOptions[0]?.id ?? 2,
+      full_name: '',
+      phone: '',
+      mail: ''
     }
   });
+
+  const selectedRoleId = watch('role_id');
 
   useEffect(() => {
     if (isLeadEconomist) {
@@ -146,11 +164,14 @@ export const AdminPage = () => {
 
     if (searchParams.get('create') === '1') {
       setIsDialogOpen(true);
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('create');
-        return next;
-      }, { replace: true });
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('create');
+          return next;
+        },
+        { replace: true }
+      );
     }
   }, [canCreateUser, searchParams, setSearchParams]);
 
@@ -159,12 +180,13 @@ export const AdminPage = () => {
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      const response = await getUsers(roleByTab[activeTab]);
+      const response =
+        activeTab === 'economists'
+          ? await getEconomists()
+          : await getUsers(roleByTab[activeTab]);
       setUsers(response.items);
       setCanUpdateStatus(
-        response.availableActions.some(
-          (action) => canPatchUserStatus(action.href, action.method)
-        )
+        response.availableActions.some((action) => canPatchUserStatus(action.href, action.method))
       );
     } catch (error) {
       setUsersError(error instanceof Error ? error.message : 'Не удалось загрузить список пользователей');
@@ -178,16 +200,31 @@ export const AdminPage = () => {
     void loadUsers();
   }, [loadUsers]);
 
+  const resetForm = useCallback(() => {
+    reset({
+      login: '',
+      password: '',
+      confirmPassword: '',
+      role_id: roleOptions[0]?.id ?? 2,
+      full_name: '',
+      phone: '',
+      mail: ''
+    });
+  }, [reset, roleOptions]);
+
   const handleClose = () => {
     setIsDialogOpen(false);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete('create');
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('create');
+        return next;
+      },
+      { replace: true }
+    );
     setErrorMessage(null);
     setSuccessMessage(null);
-    reset();
+    resetForm();
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -197,10 +234,13 @@ export const AdminPage = () => {
       const response = await registerUser({
         login: values.login,
         password: values.password,
-        role_id: values.role_id
+        role_id: values.role_id,
+        full_name: values.full_name?.trim() || undefined,
+        phone: values.phone?.trim() || undefined,
+        mail: values.mail?.trim() || undefined
       });
       setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
-      reset();
+      resetForm();
       await loadUsers();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать пользователя');
@@ -220,7 +260,8 @@ export const AdminPage = () => {
                 onClick={() => setActiveTab(tab.value)}
                 sx={(theme) => ({
                   ...actionButtonSx,
-                  backgroundColor: activeTab === tab.value ? theme.palette.primary.light : theme.palette.background.paper
+                  backgroundColor:
+                    activeTab === tab.value ? theme.palette.primary.light : theme.palette.background.paper
                 })}
               >
                 {tab.label}
@@ -237,7 +278,7 @@ export const AdminPage = () => {
             </Typography>
           )}
         </Stack>
-        ) : null}
+      ) : null}
 
       {usersError ? <Alert severity="error">{usersError}</Alert> : null}
 
@@ -285,6 +326,13 @@ export const AdminPage = () => {
             <TextField label="Логин" error={Boolean(errors.login)} helperText={errors.login?.message} {...register('login')} />
             <TextField label="Пароль" type="password" error={Boolean(errors.password)} helperText={errors.password?.message} {...register('password')} />
             <TextField label="Повторите пароль" type="password" error={Boolean(errors.confirmPassword)} helperText={errors.confirmPassword?.message} {...register('confirmPassword')} />
+            {selectedRoleId === 4 ? (
+              <>
+                <TextField label="ФИО" error={Boolean(errors.full_name)} helperText={errors.full_name?.message} {...register('full_name')} />
+                <TextField label="Телефон" error={Boolean(errors.phone)} helperText={errors.phone?.message} {...register('phone')} />
+                <TextField label="E-mail" error={Boolean(errors.mail)} helperText={errors.mail?.message} {...register('mail')} />
+              </>
+            ) : null}
             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
             {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="center">

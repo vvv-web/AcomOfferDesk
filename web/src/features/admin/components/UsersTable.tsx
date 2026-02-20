@@ -161,6 +161,16 @@ const mapUserStatusToTgStatus = (status: StatusFormValues['user_status']) => {
   return 'disapproved';
 };
 
+const resolveTgStatusForUpdate = (
+  user: UserListItem,
+  status: StatusFormValues['user_status']
+): 'review' | 'approved' | 'disapproved' | undefined => {
+  if (user.tg_user_id === null) {
+    return undefined;
+  }
+  return mapUserStatusToTgStatus(status);
+};
+
 const inlineStatusOptions: Array<StatusFormValues['user_status']> = ['review', 'active', 'inactive', 'blacklist'];
 
 const statusMemoText = `Связь статусов users и tg_users:
@@ -232,7 +242,7 @@ export const UsersTable = ({
     try {
       await updateUserStatus(selectedUser.user_id, {
         user_status: values.user_status,
-        tg_status: mapUserStatusToTgStatus(values.user_status)
+        tg_status: resolveTgStatusForUpdate(selectedUser, values.user_status)
       });
       setSubmitSuccess('Статус успешно обновлён.');
       await onStatusUpdated();
@@ -246,9 +256,10 @@ export const UsersTable = ({
     setUpdatingUserId(userId);
 
     try {
+      const user = users.find((item) => item.user_id === userId);
       await updateUserStatus(userId, {
         user_status: nextStatus,
-        tg_status: mapUserStatusToTgStatus(nextStatus)
+        tg_status: user ? resolveTgStatusForUpdate(user, nextStatus) : undefined
       });
       await onStatusUpdated();
     } catch (error) {
@@ -260,43 +271,127 @@ export const UsersTable = ({
 
   if (!isContractorsTab) {
     return (
-      <Stack spacing={1.2}>
-        {inlineStatusError ? <Alert severity="error">{inlineStatusError}</Alert> : null}
-        <DataTable
-          columns={defaultColumns}
-          rows={rows}
-          rowKey={(row) => row.id}
-          isLoading={isLoading}
-          emptyMessage={emptyMessage}
-          storageKey="users-table"
-          renderRow={(row) => [
-            <Typography variant="body2">{row.id}</Typography>,
-            <Typography variant="body2">{row.password}</Typography>,
-            <Typography variant="body2">{row.id_role}</Typography>,
-            <Typography variant="body2">{row.role}</Typography>,
-            <TextField
-              select
-              size="small"
-              value={row.status}
-              disabled={!canUpdateStatus || updatingUserId === row.id}
-              onChange={(event) => {
-                const nextStatus = event.target.value as StatusFormValues['user_status'];
-                if (nextStatus === row.status) {
-                  return;
-                }
-                void handleInlineStatusChange(row.id, nextStatus);
-              }}
-              sx={{ minWidth: 140 }}
-            >
-              {inlineStatusOptions.map((status) => (
-                <MenuItem key={status} value={status}>
-                  {status}
-                </MenuItem>
-              ))}
-            </TextField>
-          ]}
-        />
-      </Stack>
+      <>
+        <Stack spacing={1.2}>
+          {inlineStatusError ? <Alert severity="error">{inlineStatusError}</Alert> : null}
+          <DataTable
+            columns={defaultColumns}
+            rows={rows}
+            rowKey={(row) => row.id}
+            isLoading={isLoading}
+            emptyMessage={emptyMessage}
+            storageKey="users-table"
+            onRowClick={(row) => {
+              const clickedUser = users.find((item) => item.user_id === row.id);
+              if (clickedUser) {
+                setSelectedUser(clickedUser);
+              }
+            }}
+            renderRow={(row) => [
+              <Typography variant="body2">{row.id}</Typography>,
+              <Typography variant="body2">{row.password}</Typography>,
+              <Typography variant="body2">{row.id_role}</Typography>,
+              <Typography variant="body2">{row.role}</Typography>,
+              <TextField
+                select
+                size="small"
+                value={row.status}
+                disabled={!canUpdateStatus || updatingUserId === row.id}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  const nextStatus = event.target.value as StatusFormValues['user_status'];
+                  if (nextStatus === row.status) {
+                    return;
+                  }
+                  void handleInlineStatusChange(row.id, nextStatus);
+                }}
+                sx={{ minWidth: 140 }}
+              >
+                {inlineStatusOptions.map((status) => (
+                  <MenuItem key={status} value={status}>
+                    {status}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ]}
+          />
+        </Stack>
+
+        <Dialog
+          open={Boolean(selectedUser)}
+          onClose={() => setSelectedUser(null)}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              p: { xs: 2, md: 2.5 },
+              maxHeight: '92vh'
+            }
+          }}
+        >
+          <DialogContent sx={{ p: 0 }}>
+            {selectedUser ? (
+              <Stack spacing={1.8}>
+                <Typography variant="h5" fontWeight={700} textAlign="center">
+                  Карточка пользователя
+                </Typography>
+
+                <Box
+                  sx={{
+                    border: '1px solid #d3dbe7',
+                    borderRadius: 1,
+                    p: { xs: 1.4, sm: 1.6 },
+                    backgroundColor: '#f8fbff'
+                  }}
+                >
+                  <Stack spacing={1.2}>
+                    <SourceSection title="Пользователь" source="users">
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                          gap: 1.5
+                        }}
+                      >
+                        <InfoRow label="Логин" value={selectedUser.user_id} />
+                        <Stack spacing={0.2} sx={{ alignItems: 'flex-start' }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Статус users
+                          </Typography>
+                          <StatusPill value={selectedUser.status} />
+                        </Stack>
+                      </Box>
+                    </SourceSection>
+
+                    <SourceSection title="Профиль пользователя" source="profiles">
+                      <Stack spacing={1.2}>
+                        <InfoRow label="ФИО" value={selectedUser.full_name} />
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                            gap: 1.2
+                          }}
+                        >
+                          <InfoRow label="Телефон" value={selectedUser.phone} />
+                          <InfoRow label="E-mail" value={selectedUser.mail} />
+                        </Box>
+                      </Stack>
+                    </SourceSection>
+                  </Stack>
+                </Box>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
+                  <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 999, textTransform: 'none' }}>
+                    Закрыть
+                  </Button>
+                </Stack>
+              </Stack>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
