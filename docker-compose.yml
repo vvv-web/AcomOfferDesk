@@ -1,0 +1,62 @@
+services:
+  backend:
+    build: ./backend
+    container_name: backend
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - project_net
+
+  web:
+    build: ./web
+    container_name: web
+    depends_on:
+      - backend
+    networks:
+      - project_net
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: gateway
+    volumes:
+      - ./backend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - web
+    ports:
+      - "8080:80"
+    networks:
+      - project_net
+
+  tg_bot:
+    build: ./tg_bot
+    container_name: tg_bot
+    env_file:
+      - ./tg_bot/.env
+    depends_on:
+      - gateway
+    networks:
+      - project_net
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    command: ["start", "--config", "/etc/ngrok.yml", "public"]
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/ngrok.yml:/etc/ngrok.yml:ro
+    ports:
+      - "4040:4040"
+    profiles:
+      - ngrok
+    depends_on:
+      - gateway
+    networks:
+      - project_net
+
+networks:
+  project_net:
+    name: project_net
