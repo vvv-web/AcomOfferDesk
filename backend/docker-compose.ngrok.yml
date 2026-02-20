@@ -14,5 +14,4 @@ services:
 
 networks:
   project_net:
-    external: true
     name: project_net
