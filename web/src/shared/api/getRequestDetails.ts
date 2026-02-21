@@ -36,6 +36,7 @@ export type RequestDetailsOffer = {
 export type RequestDetails = {
   id: number;
   id_user: string;
+  owner_full_name?: string | null;
   status: string;
   status_label: string;
   deadline_at: string;
@@ -81,6 +82,7 @@ export const getRequestDetails = async (requestId: number): Promise<RequestDetai
   return {
     id: item.request_id,
     id_user: item.owner_user_id,
+    owner_full_name: item.owner_full_name ?? null,
     status: item.status,
     status_label: item.status_label,
     deadline_at: item.deadline_at,

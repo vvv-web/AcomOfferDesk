@@ -385,7 +385,7 @@ export const OfferWorkspacePage = () => {
     {
       id: 'owner',
       label: 'Ответственный',
-      value: workspace?.request.owner_user_id ?? '-'
+      value: workspace?.request.owner_full_name ?? workspace?.request.owner_user_id ?? '-'
     },
     { id: 'deadline', label: 'Дедлайн сбора КП', value: formatDate(workspace?.request.deadline_at ?? null) },
     { id: 'updated', label: 'Последнее изменение', value: formatDate(workspace?.request.updated_at ?? null) }

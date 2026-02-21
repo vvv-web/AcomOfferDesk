@@ -123,7 +123,7 @@ export const ContractorRequestDetailsPage = () => {
     { id: 'status', label: 'Статус', value: request?.status_label ?? '-' },
     { id: 'offer', label: 'Номер КП', value: '-' },
     { id: 'deadline', label: 'Дедлайн сбора КП', value: formatDate(request?.deadline_at ?? null) },
-    { id: 'owner', label: 'Ответственный', value: request?.owner_user_id ?? '-' }
+    { id: 'owner', label: 'Ответственный', value: request?.owner_full_name ?? request?.owner_user_id ?? '-' }
   ];
 
   const handleRespond = async () => {

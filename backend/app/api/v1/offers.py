@@ -308,6 +308,7 @@ async def get_contractor_request_view(
             "status_label": item.status_label,
             "deadline_at": item.deadline_at,
             "owner_user_id": item.owner_user_id,
+            "owner_full_name": item.owner_full_name,
             "files": [
                 RequestFileSchema(
                     id=f.id,
@@ -387,6 +388,7 @@ async def get_offer_workspace(
                 "status_label": item.request.status_label,
                 "deadline_at": item.request.deadline_at,
                 "owner_user_id": item.request.owner_user_id,
+                "owner_full_name": item.request.owner_full_name,
                 "created_at": item.request.created_at,
                 "updated_at": item.request.updated_at,
                 "closed_at": item.request.closed_at,

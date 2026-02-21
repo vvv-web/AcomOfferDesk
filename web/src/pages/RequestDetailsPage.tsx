@@ -438,7 +438,7 @@ export const RequestDetailsPage = () => {
                         </MenuItem>
                     ))}
                 </Select>
-            ) : (requestDetails?.id_user ?? '-')
+            ) : (requestDetails?.owner_full_name ?? requestDetails?.id_user ?? '-')
         },
         { id: 'created', label: 'Создана', value: formatDate(requestDetails?.created_at ?? null) },
         { id: 'closed', label: 'Закрыта', value: formatDate(requestDetails?.closed_at ?? null) },

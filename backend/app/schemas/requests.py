@@ -54,6 +54,7 @@ class RequestItemSchema(BaseModel):
     updated_at: datetime
     closed_at: datetime | None
     owner_user_id: str
+    owner_full_name: str | None
     chosen_offer_id: int | None
     stats: RequestStatsSchema
     unread_messages_count: int
@@ -79,6 +80,7 @@ class OpenRequestItemSchema(BaseModel):
     updated_at: datetime
     closed_at: datetime | None
     owner_user_id: str
+    owner_full_name: str | None
     chosen_offer_id: int | None
     files: list[RequestFileSchema]
     offers: list[OfferedRequestOfferSchema] = Field(default_factory=list)

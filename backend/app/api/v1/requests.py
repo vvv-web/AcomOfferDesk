@@ -242,6 +242,7 @@ async def list_requests(
                     updated_at=item.updated_at,
                     closed_at=item.closed_at,
                     owner_user_id=item.owner_user_id,
+                    owner_full_name=item.owner_full_name,
                     chosen_offer_id=item.chosen_offer_id,
                     stats=RequestStatsSchema(
                         count_submitted=item.count_submitted,
@@ -295,6 +296,7 @@ async def list_open_requests(
                     updated_at=item.updated_at,
                     closed_at=item.closed_at,
                     owner_user_id=item.owner_user_id,
+                    owner_full_name=item.owner_full_name,
                     chosen_offer_id=(None if current_user.role_id == settings.contractor_role_id else item.chosen_offer_id),
                     files=[
                         RequestFileSchema(
@@ -338,6 +340,7 @@ async def list_offered_requests(
                     updated_at=item.updated_at,
                     closed_at=item.closed_at,
                     owner_user_id=item.owner_user_id,
+                    owner_full_name=item.owner_full_name,
                     chosen_offer_id=None,
                     files=[
                         RequestFileSchema(
@@ -389,6 +392,7 @@ async def get_request_details(
                 updated_at=item.updated_at,
                 closed_at=item.closed_at,
                 owner_user_id=item.owner_user_id,
+                owner_full_name=item.owner_full_name,
                 chosen_offer_id=item.chosen_offer_id,
                 stats=RequestStatsSchema(
                     count_submitted=item.count_submitted,

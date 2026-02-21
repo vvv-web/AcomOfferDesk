@@ -22,6 +22,7 @@ export type ContractorRequestView = {
   status_label: string;
   deadline_at: string;
   owner_user_id: string;
+  owner_full_name?: string | null;
   files: ContractorRequestViewFile[];
   existing_offer: ContractorExistingOffer | null;
   availableActions: AuthLink[];
@@ -35,6 +36,7 @@ type ApiResponse = {
     status_label: string;
     deadline_at: string;
     owner_user_id: string;
+    owner_full_name?: string | null;
     files: ContractorRequestViewFile[];
     existing_offer: ContractorExistingOffer | null;
   };
@@ -59,6 +61,7 @@ export const getContractorRequestView = async (requestId: number): Promise<Contr
     status_label: response.data.status_label,
     deadline_at: response.data.deadline_at,
     owner_user_id: response.data.owner_user_id,
+    owner_full_name: response.data.owner_full_name ?? null,
     files: response.data.files ?? [],
     existing_offer: response.data.existing_offer,
     availableActions:
