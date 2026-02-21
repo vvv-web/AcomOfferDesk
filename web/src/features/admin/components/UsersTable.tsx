@@ -60,6 +60,66 @@ type UserRow = {
   status: StatusFormValues['user_status'];
 };
 
+const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = {
+  review: 'На проверке',
+  active: 'Активен',
+  inactive: 'Неактивен',
+  blacklist: 'В черном списке'
+};
+
+const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
+  review: 'На проверке',
+  approved: 'Одобрен',
+  disapproved: 'Не одобрен'
+};
+
+const userStatusValueByLabel: Record<string, StatusFormValues['user_status']> = {
+  'на проверке': 'review',
+  'активен': 'active',
+  'неактивен': 'inactive',
+  'в черном списке': 'blacklist',
+  'в чёрном списке': 'blacklist'
+};
+
+const tgStatusValueByLabel: Record<string, 'review' | 'approved' | 'disapproved'> = {
+  'на проверке': 'review',
+  'одобрен': 'approved',
+  'не одобрен': 'disapproved'
+};
+
+const normalizeUserStatus = (value: string | null | undefined): StatusFormValues['user_status'] => {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized in userStatusLabelByValue) {
+    return normalized as StatusFormValues['user_status'];
+  }
+  return userStatusValueByLabel[normalized] ?? 'review';
+};
+
+const normalizeAnyStatus = (value: string | null | undefined): string => {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized in statusColorByValue) {
+    return normalized;
+  }
+  if (normalized in userStatusValueByLabel) {
+    return userStatusValueByLabel[normalized];
+  }
+  if (normalized in tgStatusValueByLabel) {
+    return tgStatusValueByLabel[normalized];
+  }
+  return normalized;
+};
+
+const toStatusLabel = (value: string | null | undefined): string => {
+  const normalized = normalizeAnyStatus(value);
+  if (normalized in userStatusLabelByValue) {
+    return userStatusLabelByValue[normalized as StatusFormValues['user_status']];
+  }
+  if (normalized in tgStatusLabelByValue) {
+    return tgStatusLabelByValue[normalized as 'review' | 'approved' | 'disapproved'];
+  }
+  return value ?? '—';
+};
+
 const statusColorByValue: Record<string, { bg: string; text: string; border: string }> = {
   review: { bg: '#fff8e1', text: '#8a6d1f', border: '#f2dd9b' },
   active: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
@@ -70,7 +130,7 @@ const statusColorByValue: Record<string, { bg: string; text: string; border: str
 };
 
 const StatusPill = ({ value }: { value: string | null | undefined }) => {
-  const normalized = (value ?? '').toLowerCase();
+  const normalized = normalizeAnyStatus(value);
   const palette = statusColorByValue[normalized] ?? {
     bg: '#edf3ff',
     text: '#1f2a44',
@@ -90,12 +150,11 @@ const StatusPill = ({ value }: { value: string | null | undefined }) => {
         fontSize: 12,
         fontWeight: 700,
         lineHeight: 1.3,
-        textTransform: 'lowercase',
         width: 'fit-content',
         display: 'inline-flex'
       }}
     >
-      {value ?? '—'}
+      {toStatusLabel(value)}
     </Box>
   );
 };
@@ -217,7 +276,7 @@ export const UsersTable = ({
   useEffect(() => {
     if (selectedUser) {
       reset({
-        user_status: (selectedUser.status as StatusFormValues['user_status']) ?? 'review'
+        user_status: normalizeUserStatus(selectedUser.status)
       });
     }
   }, [reset, selectedUser]);
@@ -229,7 +288,7 @@ export const UsersTable = ({
         password: '—',
         id_role: user.role_id,
         role: getRoleLabel(user.role_id),
-        status: (user.status as StatusFormValues['user_status']) ?? 'review'
+        status: normalizeUserStatus(user.status)
       })),
     [getRoleLabel, users]
   );
@@ -309,7 +368,7 @@ export const UsersTable = ({
               >
                 {inlineStatusOptions.map((status) => (
                   <MenuItem key={status} value={status}>
-                    {status}
+                    {userStatusLabelByValue[status]}
                   </MenuItem>
                 ))}
               </TextField>
@@ -550,7 +609,7 @@ export const UsersTable = ({
                       label="Изменить статус"
                       select
                       fullWidth
-                      defaultValue={selectedUser.status ?? 'review'}
+                      defaultValue={normalizeUserStatus(selectedUser.status)}
                       {...register('user_status')}
                       sx={{
                         '& .MuiOutlinedInput-root': {
@@ -558,10 +617,10 @@ export const UsersTable = ({
                         }
                       }}
                     >
-                      <MenuItem value="review">review</MenuItem>
-                      <MenuItem value="active">active</MenuItem>
-                      <MenuItem value="inactive">inactive</MenuItem>
-                      <MenuItem value="blacklist">blacklist</MenuItem>
+                      <MenuItem value="review">На проверке</MenuItem>
+                      <MenuItem value="active">Активен</MenuItem>
+                      <MenuItem value="inactive">Неактивен</MenuItem>
+                      <MenuItem value="blacklist">В черном списке</MenuItem>
                     </TextField>
                     <Tooltip
                       arrow

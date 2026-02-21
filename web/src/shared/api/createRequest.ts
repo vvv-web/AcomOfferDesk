@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { fetchJson  } from './client';
 
 export type CreateRequestPayload = {
   description?: string | null;
@@ -26,16 +26,12 @@ export const createRequest = async (payload: CreateRequestPayload): Promise<Crea
     formData.append('files', file, file.name);
   });
 
-  const response = await apiFetch('/api/v1/requests', {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    const message = data?.detail ?? 'Ошибка создания заявки';
-    throw new Error(message);
-  }
-
-  return response.json();
+  return fetchJson<CreateRequestResponse>(
+    '/api/v1/requests',
+    {
+      method: 'POST',
+      body: formData
+    },
+    'Ошибка создания заявки'
+  );
 };

@@ -11,7 +11,7 @@ from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
-from app.services.tg_notifications import notify_access_opened
+from app.services.tg_notifications import notify_access_closed, notify_access_opened
 
 
 class UserRegistrationService:
@@ -329,14 +329,15 @@ class UserStatusService:
                 raise Conflict("User has no linked Telegram account")
             await self._tg_users.update_status(tg_user, tg_status)
 
+        if tg_user is not None and tg_status is None:
+            if user_status in {"inactive", "blacklist"}:
+                await self._tg_users.update_status(tg_user, "disapproved")
+            elif user_status == "active":
+                await self._tg_users.update_status(tg_user, "approved")
+
         await self._users.update_status(user, user_status)
 
-        should_notify = (
-            tg_user is not None
-            and user.status == "active"
-            and tg_user.status == "approved"
-        )
-        tg_id = tg_user.id if should_notify else None
+        notify_tg_id = tg_user.id if tg_user is not None else None
 
         result = UserStatusUpdateResult(
             user_id=user.id,
@@ -345,8 +346,11 @@ class UserStatusService:
             tg_status=tg_user.status if tg_user else None,
         )
 
-        if tg_id is not None:
-            await notify_access_opened(tg_id)
+        if notify_tg_id is not None and tg_user is not None:
+            if user.status == "active" and tg_user.status == "approved":
+                await notify_access_opened(notify_tg_id)
+            else:
+                await notify_access_closed(notify_tg_id)
 
         return result
     

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import os
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -41,6 +43,99 @@ from app.services.requests import RequestEditInput, RequestFileCreateInput, Requ
 
 router = APIRouter()
 
+_ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".txt",
+    ".md",
+    ".doc",
+    ".docx",
+    ".docs",
+    ".xls",
+    ".xlsx",
+    ".exl",
+    ".csv",
+    ".ods",
+}
+_DANGEROUS_EXTENSIONS = {".exe", ".sh", ".bat", ".cmd", ".ps1", ".js", ".msi", ".dll", ".so", ".jar"}
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+
+
+def _is_zip_based_office_document(*, content: bytes, required_entry: str) -> bool:
+    if not content.startswith(b"PK\x03\x04"):
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = set(archive.namelist())
+            return required_entry in names
+    except zipfile.BadZipFile:
+        return False
+
+
+def _magic_signature_matches(*, extension: str, content: bytes) -> bool:
+    if extension == ".pdf":
+        return content.startswith(b"%PDF-")
+    if extension == ".png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension in {".jpg", ".jpeg"}:
+        return content.startswith(b"\xff\xd8\xff")
+    if extension in {".txt", ".md", ".csv"}:
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        return True
+    if extension in {".doc", ".docs", ".xls", ".exl"}:
+        return content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    if extension == ".docx":
+        return _is_zip_based_office_document(content=content, required_entry="word/document.xml")
+    if extension == ".xlsx":
+        return _is_zip_based_office_document(content=content, required_entry="xl/workbook.xml")
+    if extension == ".ods":
+        if not content.startswith(b"PK\x03\x04"):
+            return False
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if "mimetype" in names:
+                    mimetype = archive.read("mimetype")
+                    if mimetype == b"application/vnd.oasis.opendocument.spreadsheet":
+                        return True
+                return "content.xml" in names
+        except (zipfile.BadZipFile, KeyError):
+            return False
+    return False
+
+
+def _sanitize_filename(filename: str) -> str:
+    basename = Path(filename).name.strip()
+    if not basename:
+        raise Conflict("File name is required")
+    if basename != filename.strip():
+        raise Conflict("Unsafe file name")
+    return basename
+
+
+async def _validate_upload(file: UploadFile) -> tuple[str, bytes]:
+    filename = _sanitize_filename(file.filename or "")
+    extension = Path(filename).suffix.lower()
+
+    if extension in _DANGEROUS_EXTENSIONS:
+        raise Conflict("Forbidden file type")
+    if extension not in _ALLOWED_EXTENSIONS:
+        raise Conflict("Unsupported file extension")
+
+    content = await file.read()
+    if not content:
+        raise Conflict("File cannot be empty")
+    if len(content) > _MAX_FILE_SIZE_BYTES:
+        raise Conflict("File too large")
+    if not _magic_signature_matches(extension=extension, content=content):
+        raise Conflict("File content does not match extension")
+
+    return filename, content
 
 def _request_actions(current_user: CurrentUser) -> list[Link] | None:
     try:
@@ -373,18 +468,13 @@ async def create_request(
 
     file_inputs: list[RequestFileCreateInput] = []
     for file in files:
-        if not file.filename:
-            raise Conflict("File name is required")
+        safe_name, content = await _validate_upload(file)
 
-        content = await file.read()
-        if not content:
-            raise Conflict("File cannot be empty")
-
-        ext = os.path.splitext(file.filename)[1]
+        ext = os.path.splitext(safe_name)[1]
         generated_name = f"{uuid4().hex}{ext}"
         relative_path = relative_dir / generated_name
         await anyio.Path(relative_path).write_bytes(content)
-        file_inputs.append(RequestFileCreateInput(path=str(relative_path), name=file.filename))
+        file_inputs.append(RequestFileCreateInput(path=str(relative_path), name=safe_name))
 
     async with uow:
         service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
@@ -439,16 +529,11 @@ async def add_request_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestFileMutationResponse:
-    if not file.filename:
-        raise Conflict("File name is required")
-
-    content = await file.read()
-    if not content:
-        raise Conflict("File cannot be empty")
+    safe_name, content = await _validate_upload(file)
 
     relative_dir = Path("uploads")
     await anyio.Path(relative_dir).mkdir(parents=True, exist_ok=True)
-    ext = os.path.splitext(file.filename)[1]
+    ext = os.path.splitext(safe_name)[1]
     generated_name = f"{uuid4().hex}{ext}"
     relative_path = relative_dir / generated_name
     await anyio.Path(relative_path).write_bytes(content)
@@ -458,7 +543,7 @@ async def add_request_file(
         file_id = await service.attach_file(
             current_user=current_user,
             request_id=request_id,
-            file_data=RequestFileCreateInput(path=str(relative_path), name=file.filename),
+            file_data=RequestFileCreateInput(path=str(relative_path), name=safe_name),
         )
 
     return RequestFileMutationResponse(

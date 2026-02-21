@@ -34,6 +34,48 @@ from app.services.users import UserQueryService, UserSelfService, UserStatusServ
 router = APIRouter()
 
 
+USER_STATUS_RU = {
+    "active": "Активен",
+    "inactive": "Неактивен",
+    "review": "На проверке",
+    "blacklist": "В черном списке",
+}
+
+TG_STATUS_RU = {
+    "approved": "Одобрен",
+    "disapproved": "Не одобрен",
+    "review": "На проверке",
+}
+
+
+def _ru_user_status(status: str) -> str:
+    return USER_STATUS_RU.get(status, status)
+
+
+def _ru_tg_status(status: str | None) -> str | None:
+    if status is None:
+        return None
+    return TG_STATUS_RU.get(status, status)
+
+
+def _user_list_schema(item) -> UserListItemSchema:
+    data = asdict(item)
+    data["status"] = _ru_user_status(data["status"])
+    data["tg_status"] = _ru_tg_status(data.get("tg_status"))
+    return UserListItemSchema(**data)
+
+
+def _economist_list_schema(item) -> EconomistListItemSchema:
+    data = asdict(item)
+    data["status"] = _ru_user_status(data["status"])
+    return EconomistListItemSchema(**data)
+
+
+def _me_data(item) -> MeData:
+    data = asdict(item)
+    data["status"] = _ru_user_status(data["status"])
+    return MeData(**data)
+
 def _status_management_links(current_user: CurrentUser) -> list[Link] | None:
     try:
         UserPolicy.can_update_user_status(current_user)
@@ -85,7 +127,7 @@ async def list_users(
         users = await service.list_users(current_user=current_user, role_id=role_id)
     available_actions = _list_users_actions(current_user)
     return UserListResponse(
-        data=UserListData(items=[UserListItemSchema(**asdict(item)) for item in users]),
+        data=UserListData(items=[_user_list_schema(item) for item in users]),
         _links=LinkSet(
             self=Link(href="/api/v1/users", method="GET"),
             available_actions=available_actions,
@@ -104,7 +146,7 @@ async def list_economists(
         economists = await service.list_economists(current_user=current_user)
 
     return EconomistListResponse(
-        data=EconomistListData(items=[EconomistListItemSchema(**asdict(item)) for item in economists]),
+        data=EconomistListData(items=[_economist_list_schema(item) for item in economists]),
         _links=LinkSet(
             self=Link(href="/api/v1/users/economists", method="GET"),
             available_actions=_list_users_actions(current_user),
@@ -134,7 +176,7 @@ async def get_me(
         )
 
     return MeResponse(
-        data=MeData(**asdict(me)),
+        data=_me_data(me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me", method="GET"),
             available_actions=_my_profile_actions(current_user),
@@ -171,7 +213,7 @@ async def update_my_credentials(
         )
 
     return MeResponse(
-        data=MeData(**asdict(me)),
+        data=_me_data(me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/credentials", method="PATCH"),
             available_actions=_my_profile_actions(current_user),
@@ -209,7 +251,7 @@ async def update_my_profile(
         )
 
     return MeResponse(
-        data=MeData(**asdict(me)),
+        data=_me_data(me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/profile", method="PATCH"),
             available_actions=_my_profile_actions(current_user),
@@ -239,7 +281,7 @@ async def update_my_company_contacts(
         me = await query_service.get_me(current_user)
 
     return MeResponse(
-        data=MeData(**asdict(me)),
+        data=_me_data(me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/company-contacts", method="PATCH"),
             available_actions=_my_profile_actions(current_user),
@@ -301,9 +343,9 @@ async def update_user_status(
     return UserStatusUpdateResponse(
         data=UserStatusUpdateData(
             user_id=result.user_id,
-            user_status=result.user_status,
+            user_status=_ru_user_status(result.user_status),
             tg_user_id=result.tg_user_id,
-            tg_status=result.tg_status,
+            tg_status=_ru_tg_status(result.tg_status),
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/status", method="PATCH"),

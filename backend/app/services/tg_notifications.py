@@ -31,6 +31,12 @@ async def notify_access_opened(tg_id: int) -> None:
         text="Доступ открыт. Теперь вы можете войти в веб-приложение.",
     )
 
+async def notify_access_closed(tg_id: int) -> None:
+    await _notify(
+        tg_id=tg_id,
+        text="⛔ Доступ к Telegram-боту закрыт.",
+    )
+
 async def notify_new_message(*, tg_id: int, request_id: int) -> None:
     link =  _build_web_service_link(tg_id=tg_id)
     await _notify(

@@ -1,4 +1,4 @@
-import { apiFetch, fetchEmpty, fetchJson } from './client';
+import { fetchEmpty, fetchJson } from './client';
 
 export type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
 
@@ -57,18 +57,17 @@ export const deleteRequestFile = async (requestId: number, fileId: number) => {
   );
 };
 
-  export const uploadRequestFile = async (requestId: number, file: File) => {
+export const uploadRequestFile = async (requestId: number, file: File) => {
   const formData = new FormData();
   formData.append('file', file, file.name);
 
-  const response = await apiFetch(`/api/v1/requests/${requestId}/files`, {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    throw new Error(data?.detail ?? 'Ошибка прикрепления файла');
-  }
+  await fetchJson(
+    `/api/v1/requests/${requestId}/files`,
+    {
+      method: 'POST',
+      body: formData
+    },
+    'Ошибка прикрепления файла'
+  );
 
 };
