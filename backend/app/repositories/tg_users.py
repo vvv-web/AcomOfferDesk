@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import TgUser
@@ -12,6 +13,22 @@ class TgUserRepository:
 
     async def get_by_id(self, tg_id: int) -> TgUser | None:
         return await self._session.get(TgUser, tg_id)
+
+    async def get_or_create(self, tg_id: int, *, default_status: str = "review") -> TgUser:
+        """Возвращает tg_user, создаёт при отсутствии. Обрабатывает race (дубль при повторном /start)."""
+        tg_user = await self._session.get(TgUser, tg_id)
+        if tg_user is not None:
+            return tg_user
+        tg_user = TgUser(id=tg_id, status=default_status)
+        self._session.add(tg_user)
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            await self._session.rollback()
+            tg_user = await self._session.get(TgUser, tg_id)
+            if tg_user is None:
+                raise
+        return tg_user
 
     async def add(self, tg_user: TgUser) -> None:
         self._session.add(tg_user)
