@@ -24,6 +24,7 @@ export type OfferWorkspace = {
     chosen_offer_id?: number | null;
     id_offer?: number | null;
     owner_user_id?: string;
+    owner_full_name?: string | null;
     deadline_at: string;
     created_at: string | null;
     updated_at: string | null;

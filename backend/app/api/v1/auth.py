@@ -31,6 +31,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
         links.available_actions = [
             Link(href="/api/v1/users/register", method="POST"),
             Link(href="/api/v1/users", method="GET"),
+            Link(href="/api/v1/users/economists", method="GET"),
             Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
             Link(href="/api/v1/requests", method="GET"),
             Link(href="/api/v1/requests", method="POST"),
@@ -53,11 +54,13 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
         links.available_actions = [
             Link(href="/api/v1/users/register", method="POST"),
             Link(href="/api/v1/users", method="GET"),
+            Link(href="/api/v1/users/economists", method="GET"),
             Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
         ]
     elif role_id == settings.lead_economist_role_id:
         links.available_actions = [
             Link(href="/api/v1/users", method="GET"),
+            Link(href="/api/v1/users/economists", method="GET"),
             Link(href="/api/v1/users/register", method="POST"),
             Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
             Link(href="/api/v1/requests", method="GET"),
@@ -137,6 +140,9 @@ async def register_user(
             user_id=payload.login.strip(),
             password=payload.password.strip(),
             role_id=payload.role_id,
+            full_name=payload.full_name.strip() if payload.full_name else None,
+            phone=payload.phone.strip() if payload.phone else None,
+            mail=payload.mail.strip() if payload.mail else None,
         )
     return RegisterUserResponse(
         data={

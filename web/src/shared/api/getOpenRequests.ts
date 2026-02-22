@@ -14,6 +14,7 @@ type ApiResponse = {
       updated_at: string;
       closed_at: string | null;
       owner_user_id: string;
+      owner_full_name?: string | null;
       chosen_offer_id: number | null;
       files: FileEntity[];
     }>;
@@ -31,6 +32,7 @@ export const getOpenRequests = async (): Promise<GetRequestsResponse> => {
     requests: response.data.items.map((item) => ({
       id: item.request_id,
       id_user: item.owner_user_id,
+      owner_full_name: item.owner_full_name ?? null,
       status: item.status,
       status_label: item.status_label,
       deadline_at: item.deadline_at,

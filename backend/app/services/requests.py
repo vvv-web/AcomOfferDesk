@@ -73,6 +73,7 @@ class RequestListItem:
     updated_at: datetime
     closed_at: datetime | None
     owner_user_id: str
+    owner_full_name: str | None
     chosen_offer_id: int | None
     count_submitted: int
     count_deleted_alert: int
@@ -93,6 +94,7 @@ class OpenRequestListItem:
     updated_at: datetime
     closed_at: datetime | None
     owner_user_id: str
+    owner_full_name: str | None
     chosen_offer_id: int | None
     files: list[RequestFileItem] = field(default_factory=list)
     offers: list[OfferedRequestOfferItem] = field(default_factory=list)
@@ -141,6 +143,7 @@ class RequestDetailItem:
     updated_at: datetime
     closed_at: datetime | None
     owner_user_id: str
+    owner_full_name: str | None
     chosen_offer_id: int | None
     count_submitted: int
     count_deleted_alert: int
@@ -323,7 +326,7 @@ class RequestService:
         rows = await self._requests.list_with_stats_and_files(current_user_id=current_user.user_id)
 
         grouped: dict[int, RequestListItem] = {}
-        for request, stats, request_file, db_file, unread_messages_count in rows:
+        for request, stats, request_file, db_file, profile, unread_messages_count in rows:
             existing = grouped.get(request.id)
             file_items = []
             if request_file and db_file:
@@ -340,6 +343,7 @@ class RequestService:
                     updated_at=request.updated_at,
                     closed_at=request.closed_at,
                     owner_user_id=request.id_user,
+                    owner_full_name=profile.full_name if profile else None,
                     chosen_offer_id=request.id_offer,
                     count_submitted=stats.count_submitted if stats else 0,
                     count_deleted_alert=stats.count_deleted_alert if stats else 0,
@@ -364,7 +368,7 @@ class RequestService:
         rows = await self._requests.list_open_with_files()
 
         grouped: dict[int, OpenRequestListItem] = {}
-        for request, request_file, db_file in rows:
+        for request, request_file, db_file, profile in rows:
             existing = grouped.get(request.id)
             file_items = []
             if request_file and db_file:
@@ -381,6 +385,7 @@ class RequestService:
                     updated_at=request.updated_at,
                     closed_at=request.closed_at,
                     owner_user_id=request.id_user,
+                    owner_full_name=profile.full_name if profile else None,
                     chosen_offer_id=request.id_offer,
                     files=file_items,
                 )
@@ -402,7 +407,7 @@ class RequestService:
         grouped: dict[int, OpenRequestListItem] = {}
         request_file_ids: dict[int, set[int]] = {}
         request_offer_ids: dict[int, set[int]] = {}
-        for request, offer, request_file, db_file, unread_messages_count in rows:
+        for request, offer, request_file, db_file, profile, unread_messages_count in rows:
             existing = grouped.get(request.id)
             
             if existing is None:
@@ -416,6 +421,7 @@ class RequestService:
                     updated_at=request.updated_at,
                     closed_at=request.closed_at,
                     owner_user_id=request.id_user,
+                    owner_full_name=profile.full_name if profile else None,
                     chosen_offer_id=None,
                     files=[],
                     offers=[],
@@ -450,7 +456,7 @@ class RequestService:
         rows = await self._requests.list_open_with_stats_and_files()
 
         grouped: dict[int, RequestListItem] = {}
-        for request, stats, request_file, db_file in rows:
+        for request, stats, request_file, db_file, profile in rows:
             existing = grouped.get(request.id)
             file_items = []
             if request_file and db_file:
@@ -467,6 +473,7 @@ class RequestService:
                     updated_at=request.updated_at,
                     closed_at=request.closed_at,
                     owner_user_id=request.id_user,
+                    owner_full_name=profile.full_name if profile else None,
                     chosen_offer_id=request.id_offer,
                     count_submitted=stats.count_submitted if stats else 0,
                     count_deleted_alert=stats.count_deleted_alert if stats else 0,
@@ -493,7 +500,7 @@ class RequestService:
         if request_row is None:
             raise NotFound("Request not found")
 
-        request, stats = request_row
+        request, stats, owner_profile = request_row
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
@@ -547,6 +554,7 @@ class RequestService:
             updated_at=request.updated_at,
             closed_at=request.closed_at,
             owner_user_id=request.id_user,
+            owner_full_name=owner_profile.full_name if owner_profile else None,
             chosen_offer_id=request.id_offer,
             count_submitted=stats.count_submitted if stats else 0,
             count_deleted_alert=stats.count_deleted_alert if stats else 0,

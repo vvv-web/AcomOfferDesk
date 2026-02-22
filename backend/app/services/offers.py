@@ -57,6 +57,7 @@ class ContractorRequestView:
     status_label: str
     deadline_at: datetime
     owner_user_id: str
+    owner_full_name: str | None
     files: list[RequestFileItem]
     existing_offer: ExistingOfferPreview | None
     latest_offer_id: int | None
@@ -70,6 +71,7 @@ class OfferWorkspaceRequest:
     status_label: str
     deadline_at: datetime
     owner_user_id: str
+    owner_full_name: str | None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
@@ -153,6 +155,7 @@ class OfferService:
         if request is None:
             raise NotFound("Request not found")
 
+        owner_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
         self._ensure_partner_card_file(request_file_items)
@@ -177,6 +180,7 @@ class OfferService:
             status_label=format_request_status(request.status),
             deadline_at=request.deadline_at,
             owner_user_id=request.id_user,
+            owner_full_name=(owner_profile.full_name if owner_profile else None),
             files=request_file_items,
             existing_offer=existing_offer_preview,
             latest_offer_id=existing_offer.id if existing_offer is not None else None,
@@ -205,6 +209,7 @@ class OfferService:
 
         profile = await self._profiles.get_by_id(offer.id_user)
         company = await self._company_contacts.get_by_id(offer.id_user)
+        request_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
         self._ensure_partner_card_file(request_file_items)
@@ -220,6 +225,7 @@ class OfferService:
                 status_label=format_request_status(request.status),
                 deadline_at=request.deadline_at,
                 owner_user_id=request.id_user,
+                owner_full_name=(request_profile.full_name if request_profile else None),
                 created_at=request.created_at,
                 updated_at=request.updated_at,
                 closed_at=request.closed_at,

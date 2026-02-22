@@ -16,6 +16,7 @@ export const resolveAvailableActions = (response: LinksContainer): AuthLink[] =>
 export const mapRequestEntityToSummary = (item: RequestEntity): RequestWithOfferStats => ({
   id: item.request_id,
   id_user: item.owner_user_id,
+  owner_full_name: item.owner_full_name ?? null,
   status: item.status,
   status_label: item.status_label,
   deadline_at: item.deadline_at,

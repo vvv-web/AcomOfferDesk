@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -33,12 +35,36 @@ from app.services.offers import AttachmentFileInput, OfferService
 
 router = APIRouter()
 
-_ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".md"}
+_ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".txt",
+    ".md",
+    ".doc",
+    ".docx",
+    ".docs",
+    ".xls",
+    ".xlsx",
+    ".exl",
+    ".csv",
+    ".ods",
+}
 _DANGEROUS_EXTENSIONS = {".exe", ".sh", ".bat", ".cmd", ".ps1", ".js", ".msi", ".dll", ".so", ".jar"}
 _MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 _MAX_ATTACHMENTS_PER_MESSAGE = 5
 _MAX_TOTAL_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024
 
+def _is_zip_based_office_document(*, content: bytes, required_entry: str) -> bool:
+    if not content.startswith(b"PK\x03\x04"):
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = set(archive.namelist())
+            return required_entry in names
+    except zipfile.BadZipFile:
+        return False
 
 def _magic_signature_matches(*, extension: str, content: bytes) -> bool:
     if extension == ".pdf":
@@ -47,14 +73,33 @@ def _magic_signature_matches(*, extension: str, content: bytes) -> bool:
         return content.startswith(b"\x89PNG\r\n\x1a\n")
     if extension in {".jpg", ".jpeg"}:
         return content.startswith(b"\xff\xd8\xff")
-    if extension in {".txt", ".md"}:
+    if extension in {".txt", ".md", ".csv"}:
         try:
             content.decode("utf-8")
         except UnicodeDecodeError:
             return False
         return True
+    
+    if extension in {".doc", ".docs", ".xls", ".exl"}:
+        return content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    if extension == ".docx":
+        return _is_zip_based_office_document(content=content, required_entry="word/document.xml")
+    if extension == ".xlsx":
+        return _is_zip_based_office_document(content=content, required_entry="xl/workbook.xml")
+    if extension == ".ods":
+        if not content.startswith(b"PK\x03\x04"):
+            return False
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if "mimetype" in names:
+                    mimetype = archive.read("mimetype")
+                    if mimetype == b"application/vnd.oasis.opendocument.spreadsheet":
+                        return True
+                return "content.xml" in names
+        except (zipfile.BadZipFile, KeyError):
+            return False
     return False
-
 
 def _sanitize_filename(filename: str) -> str:
     basename = Path(filename).name.strip()
@@ -263,6 +308,7 @@ async def get_contractor_request_view(
             "status_label": item.status_label,
             "deadline_at": item.deadline_at,
             "owner_user_id": item.owner_user_id,
+            "owner_full_name": item.owner_full_name,
             "files": [
                 RequestFileSchema(
                     id=f.id,
@@ -342,6 +388,7 @@ async def get_offer_workspace(
                 "status_label": item.request.status_label,
                 "deadline_at": item.request.deadline_at,
                 "owner_user_id": item.request.owner_user_id,
+                "owner_full_name": item.request.owner_full_name,
                 "created_at": item.request.created_at,
                 "updated_at": item.request.updated_at,
                 "closed_at": item.request.closed_at,

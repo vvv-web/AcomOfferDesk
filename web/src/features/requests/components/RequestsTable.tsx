@@ -224,7 +224,7 @@ export const RequestsTable = ({
                             ))}
                         </Select>
                     ) : (
-                        <Typography variant="body2">{row.id_user}</Typography>
+                        <Typography variant="body2">{row.owner_full_name ?? row.id_user}</Typography>
                     ),
                     <Typography variant="body2">{formatDate(row.updated_at, true)}</Typography>
                 ];

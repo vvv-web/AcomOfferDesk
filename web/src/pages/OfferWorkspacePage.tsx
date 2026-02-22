@@ -385,7 +385,7 @@ export const OfferWorkspacePage = () => {
     {
       id: 'owner',
       label: 'Ответственный',
-      value: workspace?.request.owner_user_id ?? '-'
+      value: workspace?.request.owner_full_name ?? workspace?.request.owner_user_id ?? '-'
     },
     { id: 'deadline', label: 'Дедлайн сбора КП', value: formatDate(workspace?.request.deadline_at ?? null) },
     { id: 'updated', label: 'Последнее изменение', value: formatDate(workspace?.request.updated_at ?? null) }
@@ -644,11 +644,6 @@ export const OfferWorkspacePage = () => {
           }
         }}
       >
-        {errorMessage ? (
-          <Typography color="error" sx={{ mb: 2 }}>
-            {errorMessage}
-          </Typography>
-        ) : null}
 
         <Stack direction="row" justifyContent="space-between" spacing={2} alignItems="center" sx={{ mb: 2 }}>
           <Button
@@ -890,6 +885,12 @@ export const OfferWorkspacePage = () => {
                 <Button sx={{ mt: 1.5 }} variant="outlined" disabled={isUploading} onClick={() => fileInputRef.current?.click()}>
                   {isUploading ? 'Загрузка...' : 'Прикрепить файл'}
                 </Button>
+              ) : null}
+
+              {isCurrent && errorMessage ? (
+                <Typography color="error" sx={{ mt: 1 }}>
+                  {errorMessage}
+                </Typography>
               ) : null}
               
             </Paper>

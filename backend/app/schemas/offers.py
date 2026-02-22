@@ -54,6 +54,7 @@ class ContractorRequestViewSchema(BaseModel):
     deadline_at: datetime
     owner_user_id: str
     files: list[RequestFileSchema]
+    owner_full_name: str | None
     existing_offer: ExistingOfferPreviewSchema | None
 
 
@@ -71,6 +72,7 @@ class OfferWorkspaceRequestSchema(BaseModel):
     status_label: str
     deadline_at: datetime
     owner_user_id: str
+    owner_full_name: str | None
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
