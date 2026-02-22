@@ -47,6 +47,12 @@ export const AppLayout = () => {
   const isLeadEconomistsTab = isLeadEconomist && location.pathname.startsWith('/admin');
   const canUseLeadTabs = isLeadEconomist && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
 
+  const isAdmin = roleId === 2;
+  const isAdminUsersPage = isAdmin && location.pathname.startsWith('/admin');
+  const adminUsersTabParam = searchParams.get('users_tab');
+  const adminUsersTab: 'contractors' | 'economists' | 'admins' =
+    adminUsersTabParam === 'economists' || adminUsersTabParam === 'admins' ? adminUsersTabParam : 'contractors';
+
   const sidebarButtons = (
     <Stack spacing={1.8}>
       {superadminItems.map((item) => {
@@ -186,6 +192,39 @@ export const AppLayout = () => {
                   }}
                 >
                   {isLeadRequestsTab ? 'Создать заявку' : 'Добавить экономиста'}
+                </Button>
+              ) : null}
+            </Stack>
+          ) : isAdminUsersPage ? (
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+              <Tabs
+                value={adminUsersTab}
+                onChange={(_, value: 'contractors' | 'economists' | 'admins') => {
+                  setSearchParams((prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.set('users_tab', value);
+                    return next;
+                  }, { replace: true });
+                }}
+                variant="scrollable"
+                scrollButtons="auto"
+              >
+                <Tab value="contractors" label="Контрагенты" />
+                <Tab value="economists" label="Экономисты" />
+                <Tab value="admins" label="Администраторы" />
+              </Tabs>
+              {canRegisterUser ? (
+                <Button
+                  variant="outlined"
+                  sx={{ px: 3, borderRadius: 999, textTransform: 'none', whiteSpace: 'nowrap' }}
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams);
+                    params.set('users_tab', adminUsersTab);
+                    params.set('create', '1');
+                    navigate(`/admin?${params.toString()}`);
+                  }}
+                >
+                  Добавить пользователя
                 </Button>
               ) : null}
             </Stack>

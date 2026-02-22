@@ -33,6 +33,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/users", method="GET"),
             Link(href="/api/v1/users/economists", method="GET"),
             Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
+            Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
             Link(href="/api/v1/requests", method="GET"),
             Link(href="/api/v1/requests", method="POST"),
             Link(href="/api/v1/requests/open", method="GET"),
@@ -56,6 +57,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/users", method="GET"),
             Link(href="/api/v1/users/economists", method="GET"),
             Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
+            Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
         ]
     elif role_id == settings.lead_economist_role_id:
         links.available_actions = [
