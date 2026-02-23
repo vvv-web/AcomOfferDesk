@@ -9,6 +9,7 @@ from app.repositories.files import FileRepository
 from app.repositories.messages import MessageRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.company_contacts import CompanyContactRepository
+from app.repositories.feedback import FeedBackRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
@@ -27,6 +28,7 @@ class UnitOfWork:
         self.files: FileRepository | None = None
         self.offers: OfferRepository | None = None
         self.messages: MessageRepository | None = None
+        self.feedback: FeedBackRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         self.session = self._session_factory()
@@ -39,6 +41,7 @@ class UnitOfWork:
         self.files = FileRepository(self.session)
         self.offers = OfferRepository(self.session)
         self.messages = MessageRepository(self.session)
+        self.feedback = FeedBackRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

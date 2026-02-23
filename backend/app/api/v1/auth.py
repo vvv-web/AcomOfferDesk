@@ -50,6 +50,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
             Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
+            Link(href="/api/v1/feedback", method="POST"),
         ]
     elif role_id == settings.admin_role_id:
         links.available_actions = [
@@ -58,6 +59,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/users/economists", method="GET"),
             Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
             Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
+            Link(href="/api/v1/feedback", method="POST"),
         ]
     elif role_id == settings.lead_economist_role_id:
         links.available_actions = [
@@ -81,6 +83,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
             Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
+            Link(href="/api/v1/feedback", method="POST"),
         ]
     elif role_id == settings.economist_role_id:
         links.available_actions = [
@@ -100,6 +103,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
             Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
+            Link(href="/api/v1/feedback", method="POST"),
         ]
     elif role_id == settings.contractor_role_id:
         links.available_actions = [
@@ -117,6 +121,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
             Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
+            Link(href="/api/v1/feedback", method="POST"),
         ]
     return LoginResponse(
         data={

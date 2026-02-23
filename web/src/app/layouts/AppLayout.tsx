@@ -4,6 +4,7 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
+import { FeedbackButton } from '@shared/components/FeedbackButton';
 
 const navLinkStyles = {
   textDecoration: 'none'
@@ -111,6 +112,7 @@ export const AppLayout = () => {
 
           <Stack spacing={1.2}>
             <Stack direction="row" spacing={1.2}>
+              <FeedbackButton />
               <RoleGuideButton />
             </Stack>
             <Button variant="outlined" onClick={logout} sx={{ height: 44 }}>
@@ -246,6 +248,7 @@ export const AppLayout = () => {
             <Box />
           )}
           <Stack direction="row" spacing={1.5} alignItems="center">
+            <FeedbackButton />
             <RoleGuideButton />
             <ProfileButton />
             <Button variant="outlined" onClick={logout}>
