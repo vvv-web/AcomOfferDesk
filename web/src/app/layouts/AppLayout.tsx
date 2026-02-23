@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'reac
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ProfileButton } from '@shared/components/ProfileButton';
+import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 
 const navLinkStyles = {
   textDecoration: 'none'
@@ -109,6 +110,9 @@ export const AppLayout = () => {
           {sidebarButtons}
 
           <Stack spacing={1.2}>
+            <Stack direction="row" spacing={1.2}>
+              <RoleGuideButton />
+            </Stack>
             <Button variant="outlined" onClick={logout} sx={{ height: 44 }}>
               Выйти
             </Button>
@@ -241,7 +245,8 @@ export const AppLayout = () => {
           ) : (
             <Box />
           )}
-          <Stack direction="row" spacing={3} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <RoleGuideButton />
             <ProfileButton />
             <Button variant="outlined" onClick={logout}>
               Выйти

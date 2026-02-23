@@ -14,6 +14,7 @@ export type OfferStatusOption = {
 type OffersTableProps = {
     offers: RequestDetailsOffer[];
     statusMap: Record<number, OfferDecisionStatus>;
+    acceptedOfferId?: number | null;
     isLoading?: boolean;
     errorMessage?: string | null;
     statusOptions: OfferStatusOption[];
@@ -168,6 +169,7 @@ const getUnreadMessagesLabel = (count: number) => {
 export const OffersTable = ({
     offers,
     statusMap,
+    acceptedOfferId,
     isLoading,
     errorMessage,
     statusOptions,
@@ -277,11 +279,14 @@ export const OffersTable = ({
                                 Выберите
                             </Typography>
                         </MenuItem>
-                        {statusOptions.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                                {option.label}
-                            </MenuItem>
-                        ))}
+                        {statusOptions.map((option) => {
+                            const isAcceptedBlocked = option.value === 'accepted' && Boolean(acceptedOfferId) && acceptedOfferId !== offer.offer_id;
+                            return (
+                                <MenuItem key={option.value} value={option.value} disabled={isAcceptedBlocked}>
+                                    {option.label}
+                                </MenuItem>
+                            );
+                        })}
                     </Select>,
                     <Stack spacing={1} alignItems="flex-start">
                         {(() => {

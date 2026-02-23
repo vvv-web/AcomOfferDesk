@@ -314,6 +314,10 @@ export const OfferWorkspacePage = () => {
     () => sortedOffers.find((item) => item.offer_id === selectedOfferId) ?? sortedOffers[0] ?? workspace?.offer ?? null,
     [selectedOfferId, sortedOffers, workspace?.offer]
   );
+  const acceptedOfferId = useMemo(
+    () => sortedOffers.find((item) => item.status === 'accepted')?.offer_id ?? null,
+    [sortedOffers]
+  );
   const isSelectedOfferSubmitted = selectedOffer?.status === 'submitted';
 
   const statusConfig = useMemo(
@@ -455,6 +459,11 @@ export const OfferWorkspacePage = () => {
     }
 
     const previousStatus = offerDecisionStatus;
+    if (nextStatus === 'accepted' && acceptedOfferId && acceptedOfferId !== selectedOffer.offer_id) {
+      setOfferDecisionStatus(previousStatus);
+      setErrorMessage('Нельзя одобрить более одного оффера в рамках одной заявки');
+      return;
+    }
     const confirmMessage =
       nextStatus === 'accepted'
         ? 'Если принять этот оффер, остальные офферы по заявке автоматически получат статус «Отказано». Продолжить?'
@@ -837,11 +846,14 @@ export const OfferWorkspacePage = () => {
                         Выберите статус
                       </Typography>
                     </MenuItem>
-                    {offerDecisionOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
+                    {offerDecisionOptions.map((option) => {
+                      const isAcceptedBlocked = option.value === 'accepted' && Boolean(acceptedOfferId) && acceptedOfferId !== offerItem.offer_id;
+                      return (
+                        <MenuItem key={option.value} value={option.value} disabled={isAcceptedBlocked}>
+                          {option.label}
+                        </MenuItem>
+                      );
+                    })}
                   </Select>
                 ) : null}
                 {isContractor && canDeleteOwnOffer && isCurrent ? (
