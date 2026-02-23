@@ -51,6 +51,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
             Link(href="/api/v1/feedback", method="POST"),
+            Link(href="/api/v1/feedback", method="GET"),
         ]
     elif role_id == settings.admin_role_id:
         links.available_actions = [

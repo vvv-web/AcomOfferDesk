@@ -19,6 +19,7 @@ type NavItem = {
 const superadminItems: NavItem[] = [
   { label: 'Пользователи', to: '/admin' },
   { label: 'Заявки', to: '/requests' },
+  { label: 'Фидбек', to: '/feedback' },
   { label: 'Офферы', disabled: true },
   { label: 'Роли', disabled: true }
 ];

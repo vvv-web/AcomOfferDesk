@@ -8,6 +8,7 @@ import { RequestsPage } from '@pages/RequestsPage';
 import { TgRegisterPage } from '@pages/TgRegisterPage';
 import { ContractorRequestDetailsPage } from '@pages/ContractorRequestDetailsPage';
 import { OfferWorkspacePage } from '@pages/OfferWorkspacePage';
+import { FeedbackPage } from '@pages/FeedbackPage';
 import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
@@ -39,6 +40,14 @@ export const App = () => {
               element={
                 <RoleRoute allowedRoles={[1, 2, 3]}>
                   <AdminPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/feedback"
+              element={
+                <RoleRoute allowedRoles={[1]}>
+                  <FeedbackPage />
                 </RoleRoute>
               }
             />

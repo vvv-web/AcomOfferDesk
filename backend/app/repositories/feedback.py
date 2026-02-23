@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import FeedBack
@@ -14,3 +15,7 @@ class FeedBackRepository:
         self._session.add(feedback)
         await self._session.flush()
         return feedback
+    
+    async def list_items(self) -> list[FeedBack]:
+        result = await self._session.execute(select(FeedBack).order_by(FeedBack.id.desc()))
+        return list(result.scalars().all())
