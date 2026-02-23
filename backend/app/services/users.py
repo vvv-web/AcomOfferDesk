@@ -15,9 +15,8 @@ from app.services.tg_notifications import notify_access_closed, notify_access_op
 
 
 class UserRegistrationService:
-    def __init__(self, users: UserRepository, profiles: ProfileRepository):
+    def __init__(self, users: UserRepository):
         self._users = users
-        self._profiles = profiles
 
     async def register_user(
         self,
@@ -53,15 +52,6 @@ class UserRegistrationService:
             id_role=role_id,
             status="active",
         )
-
-        if full_name is not None and phone is not None:
-            profile = Profile(
-                id=user_id,
-                full_name=full_name,
-                phone=phone,
-                mail=mail or "Не указано",
-            )
-            await self._profiles.add(profile)
 
         await self._users.add(user)
         return user
