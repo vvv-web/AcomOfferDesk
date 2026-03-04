@@ -29,4 +29,5 @@ jobs:
             git fetch upstream
             git checkout test
             git pull upstream test
+            docker compose down --remove-orphans || true
             docker compose up -d --build
