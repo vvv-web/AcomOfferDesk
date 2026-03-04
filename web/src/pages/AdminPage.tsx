@@ -6,6 +6,8 @@ import {
   DialogContent,
   MenuItem,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography
 } from '@mui/material';
@@ -25,23 +27,13 @@ const schema = z
     login: z.string().min(3, 'Минимум 3 символа'),
     password: z.string().min(6, 'Минимум 6 символов'),
     confirmPassword: z.string().min(6, 'Минимум 6 символов'),
-    role_id: z.number({ required_error: 'Выберите роль' }),
-    full_name: z.string().optional(),
-    phone: z.string().optional(),
-    mail: z.string().optional()
+    role_id: z.number({ required_error: 'Выберите роль' })
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Пароли не совпадают',
     path: ['confirmPassword']
     })
-  .refine((data) => data.role_id !== 4 || Boolean(data.full_name?.trim()), {
-    message: 'ФИО обязательно для экономиста',
-    path: ['full_name']
-  })
-  .refine((data) => data.role_id !== 4 || Boolean(data.phone?.trim()), {
-    message: 'Телефон обязателен для экономиста',
-    path: ['phone']
-  });
+;
 
 type FormValues = z.infer<typeof schema>;
 type UserTab = 'contractors' | 'economists' | 'admins';
@@ -58,6 +50,13 @@ const tabOptions: Array<{ value: UserTab; label: string }> = [
   { value: 'admins', label: 'Администраторы' }
 ];
 
+const resolveUserTabFromParam = (value: string | null): UserTab => {
+  if (value === 'economists' || value === 'admins') {
+    return value;
+  }
+  return 'contractors';
+};
+
 const roleLabelsById: Record<number, string> = {
   1: 'Суперадмин',
   2: 'Админ',
@@ -66,12 +65,12 @@ const roleLabelsById: Record<number, string> = {
   5: 'Контрагент'
 };
 
-const actionButtonSx = {
+const addUserButtonSx  = {
   borderRadius: 999,
   textTransform: 'none',
   px: 3,
-  height: 44,
-  minWidth: 180
+  minWidth: 220,
+  whiteSpace: 'nowrap'
 };
 
 const normalizeActionHref = (href: string) => {
@@ -95,31 +94,51 @@ const canPatchUserStatus = (href: string, method: string) => {
   return statusPattern.test(pathname);
 };
 
+const canPatchUserRole = (href: string, method: string) => {
+  const normalizedMethod = method.trim().toUpperCase();
+  if (normalizedMethod !== 'PATCH') return false;
+
+  const pathname = normalizeActionHref(href);
+  const rolePattern = /^\/api\/v1\/users\/(\{user_id\}|[^/]+)\/role$/;
+
+  return rolePattern.test(pathname);
+};
+
 export const AdminPage = () => {
   const { session } = useAuth();
   const isLeadEconomist = session?.roleId === 3;
+  const isAdmin = session?.roleId === 2;
   const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<UserTab>(isLeadEconomist ? 'economists' : 'contractors');
+  const [activeTab, setActiveTab] = useState<UserTab>(() =>
+    isLeadEconomist ? 'economists' : resolveUserTabFromParam(searchParams.get('users_tab'))
+  );
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [canUpdateStatus, setCanUpdateStatus] = useState(false);
+  const [canUpdateRole, setCanUpdateRole] = useState(false);
 
   const roleOptions = useMemo(() => {
     if (isLeadEconomist) {
       return [{ id: 4, label: roleLabelsById[4] }];
     }
 
+    if (session?.roleId === 1) {
+      return [
+        { id: 2, label: roleLabelsById[2] },
+        { id: 3, label: roleLabelsById[3] },
+        { id: 4, label: roleLabelsById[4] }
+      ];
+    }
+
     return [
       { id: 2, label: roleLabelsById[2] },
-      { id: 3, label: roleLabelsById[3] },
-      { id: 4, label: roleLabelsById[4] },
-      { id: 5, label: roleLabelsById[5] }
+      { id: 4, label: roleLabelsById[4] }
     ];
-  }, [isLeadEconomist]);
+  }, [isLeadEconomist, session?.roleId]);
 
   const userTabs = useMemo(
     () => (isLeadEconomist ? tabOptions.filter((tab) => tab.value === 'economists') : tabOptions),
@@ -134,8 +153,7 @@ export const AdminPage = () => {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-    reset,
-    watch
+    reset
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -143,19 +161,24 @@ export const AdminPage = () => {
       password: '',
       confirmPassword: '',
       role_id: roleOptions[0]?.id ?? 2,
-      full_name: '',
-      phone: '',
-      mail: ''
     }
   });
 
-  const selectedRoleId = watch('role_id');
 
   useEffect(() => {
     if (isLeadEconomist) {
       setActiveTab('economists');
     }
   }, [isLeadEconomist]);
+
+  useEffect(() => {
+    if (isLeadEconomist) {
+      return;
+    }
+    const nextTab = resolveUserTabFromParam(searchParams.get('users_tab'));
+    setActiveTab(nextTab);
+  }, [isLeadEconomist, searchParams]);
+
 
   useEffect(() => {
     if (!canCreateUser) {
@@ -188,9 +211,13 @@ export const AdminPage = () => {
       setCanUpdateStatus(
         response.availableActions.some((action) => canPatchUserStatus(action.href, action.method))
       );
+      setCanUpdateRole(
+        response.availableActions.some((action) => canPatchUserRole(action.href, action.method))
+      );
     } catch (error) {
       setUsersError(error instanceof Error ? error.message : 'Не удалось загрузить список пользователей');
       setCanUpdateStatus(false);
+      setCanUpdateRole(false);
     } finally {
       setIsLoadingUsers(false);
     }
@@ -206,9 +233,6 @@ export const AdminPage = () => {
       password: '',
       confirmPassword: '',
       role_id: roleOptions[0]?.id ?? 2,
-      full_name: '',
-      phone: '',
-      mail: ''
     });
   }, [reset, roleOptions]);
 
@@ -235,9 +259,6 @@ export const AdminPage = () => {
         login: values.login,
         password: values.password,
         role_id: values.role_id,
-        full_name: values.full_name?.trim() || undefined,
-        phone: values.phone?.trim() || undefined,
-        mail: values.mail?.trim() || undefined
       });
       setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
       resetForm();
@@ -250,26 +271,34 @@ export const AdminPage = () => {
 
   return (
     <Stack spacing={2}>
-      {!isLeadEconomist ? (
-        <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" gap={2} alignItems="center">
-          <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} sx={{ width: '100%' }}>
+      {!isLeadEconomist && !isAdmin ? (
+        <Stack
+          direction="row"
+          gap={1.5}
+          alignItems="center"
+          flexWrap="nowrap"
+          sx={{ width: '100%', overflowX: 'auto', pb: 0.5 }}
+        >
+          <Tabs
+            value={activeTab}
+            onChange={(_, value: UserTab) => {
+              setActiveTab(value);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('users_tab', value);
+                return next;
+              }, { replace: true });
+            }}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{ minHeight: 44, flexShrink: 0 }}
+          >
             {userTabs.map((tab) => (
-              <Button
-                key={tab.value}
-                variant="outlined"
-                onClick={() => setActiveTab(tab.value)}
-                sx={(theme) => ({
-                  ...actionButtonSx,
-                  backgroundColor:
-                    activeTab === tab.value ? theme.palette.primary.light : theme.palette.background.paper
-                })}
-              >
-                {tab.label}
-              </Button>
+              <Tab key={tab.value} value={tab.value} label={tab.label} sx={{ textTransform: 'none', minHeight: 44 }} />
             ))}
-          </Stack>
+          </Tabs>
           {canCreateUser ? (
-            <Button variant="outlined" sx={actionButtonSx} onClick={() => setIsDialogOpen(true)}>
+            <Button variant="outlined" sx={{ ...addUserButtonSx, flexShrink: 0 }} onClick={() => setIsDialogOpen(true)}>
               Добавить пользователя
             </Button>
           ) : (
@@ -289,6 +318,8 @@ export const AdminPage = () => {
         getRoleLabel={getRoleLabel}
         isContractorsTab={activeTab === 'contractors'}
         canUpdateStatus={canUpdateStatus}
+        canUpdateRole={canUpdateRole}
+        allowedRoleOptions={[2, 4]}
         onStatusUpdated={loadUsers}
       />
 
@@ -326,13 +357,7 @@ export const AdminPage = () => {
             <TextField label="Логин" error={Boolean(errors.login)} helperText={errors.login?.message} {...register('login')} />
             <TextField label="Пароль" type="password" error={Boolean(errors.password)} helperText={errors.password?.message} {...register('password')} />
             <TextField label="Повторите пароль" type="password" error={Boolean(errors.confirmPassword)} helperText={errors.confirmPassword?.message} {...register('confirmPassword')} />
-            {selectedRoleId === 4 ? (
-              <>
-                <TextField label="ФИО" error={Boolean(errors.full_name)} helperText={errors.full_name?.message} {...register('full_name')} />
-                <TextField label="Телефон" error={Boolean(errors.phone)} helperText={errors.phone?.message} {...register('phone')} />
-                <TextField label="E-mail" error={Boolean(errors.mail)} helperText={errors.mail?.message} {...register('mail')} />
-              </>
-            ) : null}
+      
             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
             {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="center">

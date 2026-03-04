@@ -84,6 +84,9 @@ class UserRepository:
     async def update_status(self, user: User, status: str) -> None:
         user.status = status
 
+    async def update_role(self, user: User, role_id: int) -> None:
+        user.id_role = role_id
+
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int) -> int | None:
         stmt = (
             select(TgUser.id)

@@ -242,6 +242,7 @@ export const RequestDetailsPage = () => {
         const isReopen = statusChanged && baselineStatus !== 'open' && currentStatus === 'open';
         const deadlineChanged = currentDeadline !== baselineDeadline;
 
+        const isFinalStatus = currentStatus === 'closed' || currentStatus === 'cancelled';
         if (!statusChanged && !deadlineChanged && !ownerChanged && !hasFileChanges) {
             return 'Нет изменений для сохранения';
         }
@@ -250,11 +251,11 @@ export const RequestDetailsPage = () => {
             return 'При повторном открытии заявки необходимо установить дедлайн';
         }
 
-        if (currentDeadline && currentDeadline < todayDate) {
+        if (!isFinalStatus && currentDeadline && currentDeadline < todayDate) {
             return 'Дедлайн не может быть раньше текущей даты';
         }
 
-        if (deadlineChanged && currentStatus !== 'open' && currentStatus !== 'review') {
+        if (!isFinalStatus && deadlineChanged && currentStatus !== 'open' && currentStatus !== 'review') {
             return 'Для изменения дедлайна заявку необходимо повторно открыть';
         }
 
@@ -278,6 +279,11 @@ export const RequestDetailsPage = () => {
 
     const effectiveDeadlineForValidation = status === 'review' ? todayDate : deadline;
     const saveValidationError = getSaveValidationError(status, effectiveDeadlineForValidation);
+
+    const acceptedOfferId = useMemo(
+        () => offers.find((offer) => offer.status === 'accepted')?.offer_id ?? null,
+        [offers]
+    );
 
     const handleSave = async () => {
         const currentRequest = requestDetails;
@@ -335,6 +341,14 @@ export const RequestDetailsPage = () => {
         }));
 
         if (!value) {
+            return;
+        }
+        if (value === 'accepted' && acceptedOfferId && acceptedOfferId !== offerId) {
+            setOffersStatusMap((prev) => ({
+                ...prev,
+                [offerId]: previousStatus
+            }));
+            setOffersError('Нельзя одобрить более одного оффера в рамках одной заявки');
             return;
         }
 
@@ -674,6 +688,7 @@ export const RequestDetailsPage = () => {
                 <OffersTable
                     offers={offers}
                     statusMap={offersStatusMap}
+                    acceptedOfferId={acceptedOfferId}
                     isLoading={offersLoading}
                     errorMessage={offersError}
                     statusOptions={offerStatusOptions}

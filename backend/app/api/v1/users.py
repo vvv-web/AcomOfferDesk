@@ -25,11 +25,14 @@ from app.schemas.users import (
     UserListData,
     UserListItemSchema,
     UserListResponse,
+    UserRoleUpdateData,
+    UserRoleUpdateRequest,
+    UserRoleUpdateResponse,
     UserStatusUpdateData,
     UserStatusUpdateRequest,
     UserStatusUpdateResponse,
 )
-from app.services.users import UserQueryService, UserSelfService, UserStatusService
+from app.services.users import UserQueryService, UserRoleService, UserSelfService, UserStatusService
 
 router = APIRouter()
 
@@ -86,6 +89,16 @@ def _status_management_links(current_user: CurrentUser) -> list[Link] | None:
     ]
 
 
+def _role_management_links(current_user: CurrentUser) -> list[Link] | None:
+    try:
+        UserPolicy.can_update_user_role(current_user)
+    except Forbidden:
+        return None
+    return [
+        Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
+    ]
+
+
 def _list_users_actions(current_user: CurrentUser) -> list[Link] | None:
     actions = [
         Link(href="/api/v1/users", method="GET"),
@@ -100,6 +113,10 @@ def _list_users_actions(current_user: CurrentUser) -> list[Link] | None:
     status_actions = _status_management_links(current_user)
     if status_actions:
         actions.extend(status_actions)
+
+    role_actions = _role_management_links(current_user)
+    if role_actions:
+        actions.extend(role_actions)
 
     return actions
 
@@ -349,6 +366,30 @@ async def update_user_status(
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/status", method="PATCH"),
+            available_actions=_list_users_actions(current_user),
+        ),
+    )
+
+
+@router.patch("/users/{user_id}/role", response_model=UserRoleUpdateResponse)
+async def update_user_role(
+    payload: UserRoleUpdateRequest,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserRoleUpdateResponse:
+    async with uow:
+        service = UserRoleService(uow.users)
+        result = await service.update_role(
+            current_user=current_user,
+            user_id=user_id,
+            role_id=payload.role_id,
+        )
+
+    return UserRoleUpdateResponse(
+        data=UserRoleUpdateData(user_id=result.user_id, role_id=result.role_id),
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/users/{result.user_id}/role", method="PATCH"),
             available_actions=_list_users_actions(current_user),
         ),
     )

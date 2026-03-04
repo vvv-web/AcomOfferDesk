@@ -50,6 +50,22 @@ class EconomistListResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
     
+class UserRoleUpdateRequest(BaseModel):
+    role_id: int = Field(ge=1)
+
+
+class UserRoleUpdateData(BaseModel):
+    user_id: str
+    role_id: int
+
+
+class UserRoleUpdateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: UserRoleUpdateData
+    links: LinkSet = Field(alias="_links")
+
+
 class UserStatusUpdateRequest(BaseModel):
     user_status: str
     tg_status: str | None = None

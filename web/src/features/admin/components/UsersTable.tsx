@@ -16,6 +16,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { UserListItem } from '@shared/api/getUsers';
 import { updateUserStatus } from '@shared/api/updateUserStatus';
+import { updateUserRole } from '@shared/api/updateUserRole';
 import { DataTable } from '@shared/components/DataTable';
 
 const contractorColumns = [
@@ -49,6 +50,8 @@ type UsersTableProps = {
   getRoleLabel: (roleId: number) => string;
   isContractorsTab: boolean;
   canUpdateStatus: boolean;
+  canUpdateRole: boolean;
+  allowedRoleOptions: number[];
   onStatusUpdated: () => Promise<void>;
 };
 
@@ -253,6 +256,8 @@ export const UsersTable = ({
   getRoleLabel,
   isContractorsTab,
   canUpdateStatus,
+  canUpdateRole,
+  allowedRoleOptions,
   onStatusUpdated
 }: UsersTableProps) => {
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
@@ -260,6 +265,7 @@ export const UsersTable = ({
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [inlineStatusError, setInlineStatusError] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
 
   const {
     register,
@@ -328,11 +334,26 @@ export const UsersTable = ({
     }
   };
 
+  const handleInlineRoleChange = async (userId: string, nextRoleId: number) => {
+    setInlineRoleError(null);
+    setUpdatingUserId(userId);
+
+    try {
+      await updateUserRole(userId, { role_id: nextRoleId });
+      await onStatusUpdated();
+    } catch (error) {
+      setInlineRoleError(error instanceof Error ? error.message : 'Не удалось обновить роль');
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
   if (!isContractorsTab) {
     return (
       <>
         <Stack spacing={1.2}>
           {inlineStatusError ? <Alert severity="error">{inlineStatusError}</Alert> : null}
+          {inlineRoleError ? <Alert severity="error">{inlineRoleError}</Alert> : null}
           <DataTable
             columns={defaultColumns}
             rows={rows}
@@ -350,7 +371,27 @@ export const UsersTable = ({
               <Typography variant="body2">{row.id}</Typography>,
               <Typography variant="body2">{row.password}</Typography>,
               <Typography variant="body2">{row.id_role}</Typography>,
-              <Typography variant="body2">{row.role}</Typography>,
+              <TextField
+                select
+                size="small"
+                value={row.id_role}
+                disabled={!canUpdateRole || updatingUserId === row.id}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  const nextRoleId = Number(event.target.value);
+                  if (nextRoleId === row.id_role) {
+                    return;
+                  }
+                  void handleInlineRoleChange(row.id, nextRoleId);
+                }}
+                sx={{ minWidth: 140 }}
+              >
+                {allowedRoleOptions.map((roleId) => (
+                  <MenuItem key={roleId} value={roleId}>
+                    {getRoleLabel(roleId)}
+                  </MenuItem>
+                ))}
+              </TextField>,
               <TextField
                 select
                 size="small"

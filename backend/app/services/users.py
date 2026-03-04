@@ -15,9 +15,8 @@ from app.services.tg_notifications import notify_access_closed, notify_access_op
 
 
 class UserRegistrationService:
-    def __init__(self, users: UserRepository, profiles: ProfileRepository):
+    def __init__(self, users: UserRepository):
         self._users = users
-        self._profiles = profiles
 
     async def register_user(
         self,
@@ -33,13 +32,18 @@ class UserRegistrationService:
         UserPolicy.can_register_user(current_user)
         if role_id == settings.superadmin_role_id or role_id not in settings.allowed_creation_role_ids:
             raise Conflict("Role is not allowed for creation")
+        if current_user.role_id == settings.superadmin_role_id and role_id not in {
+            settings.admin_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            raise Forbidden("Superadmin can create only admin, lead economist and economist users")
         if current_user.role_id == settings.lead_economist_role_id and role_id != settings.economist_role_id:
             raise Forbidden("Lead economist can create only economist users")
+        if current_user.role_id == settings.admin_role_id and role_id not in {settings.admin_role_id, settings.economist_role_id}:
+            raise Forbidden("Admin can create only admin and economist users")
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
-        
-        if role_id == settings.economist_role_id and (not full_name or not phone):
-            raise Conflict("Economist requires full_name and phone")
         
         password_hash = await hash_password(password)
         user = User(
@@ -48,15 +52,6 @@ class UserRegistrationService:
             id_role=role_id,
             status="active",
         )
-
-        if full_name is not None and phone is not None:
-            profile = Profile(
-                id=user_id,
-                full_name=full_name,
-                phone=phone,
-                mail=mail or "Не указано",
-            )
-            await self._profiles.add(profile)
 
         await self._users.add(user)
         return user
@@ -288,6 +283,38 @@ class UserQueryService:
             address=company_contact.address if company_contact else None,
             note=company_contact.note if company_contact else None,
         )
+
+@dataclass(frozen=True)
+class UserRoleUpdateResult:
+    user_id: str
+    role_id: int
+
+
+class UserRoleService:
+    def __init__(self, users: UserRepository):
+        self._users = users
+
+    async def update_role(
+        self,
+        *,
+        current_user: CurrentUser,
+        user_id: str,
+        role_id: int,
+    ) -> UserRoleUpdateResult:
+        UserPolicy.can_update_user_role(current_user)
+
+        if role_id not in {settings.admin_role_id, settings.economist_role_id}:
+            raise Conflict("Only admin and economist roles are allowed for update")
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("User not found")
+
+        if user.id_role == settings.superadmin_role_id:
+            raise Forbidden("Superadmin role cannot be changed")
+
+        await self._users.update_role(user, role_id)
+        return UserRoleUpdateResult(user_id=user.id, role_id=user.id_role)
 
 
 class UserStatusService:

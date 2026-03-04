@@ -7,7 +7,7 @@ type RoleRouteProps = {
 };
 
 const getDefaultPath = (roleId?: number | null) => {
-  if (roleId === 1) {
+  if (roleId === 1 || roleId === 2) {
     return '/admin';
   }
   return '/requests';

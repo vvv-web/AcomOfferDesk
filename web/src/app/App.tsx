@@ -8,6 +8,7 @@ import { RequestsPage } from '@pages/RequestsPage';
 import { TgRegisterPage } from '@pages/TgRegisterPage';
 import { ContractorRequestDetailsPage } from '@pages/ContractorRequestDetailsPage';
 import { OfferWorkspacePage } from '@pages/OfferWorkspacePage';
+import { FeedbackPage } from '@pages/FeedbackPage';
 import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
@@ -18,7 +19,7 @@ export const App = () => {
   const location = useLocation();
   const state = location.state as { backgroundLocation?: Location } | null;
   const backgroundLocation = state?.backgroundLocation;
-  const defaultPath = session?.roleId === 1 ? '/admin' : '/requests';
+  const defaultPath = session?.roleId === 1 || session?.roleId === 2 ? '/admin' : '/requests';
 
   return (
     <>
@@ -37,8 +38,16 @@ export const App = () => {
             <Route
               path="/admin"
               element={
-                <RoleRoute allowedRoles={[1, 3]}>
+                <RoleRoute allowedRoles={[1, 2, 3]}>
                   <AdminPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/feedback"
+              element={
+                <RoleRoute allowedRoles={[1]}>
+                  <FeedbackPage />
                 </RoleRoute>
               }
             />

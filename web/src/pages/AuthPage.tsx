@@ -13,6 +13,8 @@ const schema = z.object({
 
 type LoginFormValues = z.infer<typeof schema>;
 
+const getDefaultPathByRole = (roleId: number) => (roleId === 1 || roleId === 2 ? '/admin' : '/requests');
+
 export const AuthPage = () => {
     const navigate = useNavigate();
     const { login, isAuthenticated, session } = useAuth();
@@ -35,7 +37,7 @@ export const AuthPage = () => {
         if (tgToken || !isAuthenticated || !session) {
             return;
         }
-           const target = session.roleId === 1 ? '/admin' : '/requests';
+        const target = getDefaultPathByRole(session.roleId);
         navigate(target, { replace: true });
     }, [isAuthenticated, navigate, session, tgToken]);
 
@@ -43,7 +45,7 @@ export const AuthPage = () => {
         setErrorMessage(null);
         try {
             const nextSession = await login({ ...values, token: tgToken || undefined });
-            const target = nextSession.roleId === 1 ? '/admin' : '/requests';
+            const target = getDefaultPathByRole(nextSession.roleId);
             navigate(target, { replace: true });
         } catch (error) {
             setErrorMessage(error instanceof Error ? error.message : 'Ошибка авторизации');

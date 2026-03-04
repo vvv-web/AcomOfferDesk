@@ -15,6 +15,11 @@ class CurrentUser:
 
 class UserPolicy:
     @staticmethod
+    def can_view_feedback(current_user: CurrentUser) -> None:
+        if current_user.role_id != settings.superadmin_role_id:
+            raise Forbidden("Only superadmin can view feedback")
+        
+    @staticmethod
     def can_manage_economist_users(current_user: CurrentUser) -> None:
         if current_user.role_id not in {
             settings.superadmin_role_id,
@@ -40,6 +45,14 @@ class UserPolicy:
     def can_update_user_status(current_user: CurrentUser) -> None:
         UserPolicy.can_manage_economist_users(current_user)
         
+    @staticmethod
+    def can_update_user_role(current_user: CurrentUser) -> None:
+        if current_user.role_id not in {
+            settings.superadmin_role_id,
+            settings.admin_role_id,
+        }:
+            raise Forbidden("Only admin and superadmin can update user roles")
+
     @staticmethod
     def can_manage_own_profile(current_user: CurrentUser) -> None:
         allowed_roles = {
