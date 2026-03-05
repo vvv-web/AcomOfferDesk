@@ -13,13 +13,14 @@ import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
 import { useAuth } from '@app/providers/AuthProvider';
+import { ROLE } from '@shared/constants/roles';
 
 export const App = () => {
   const { session } = useAuth();
   const location = useLocation();
   const state = location.state as { backgroundLocation?: Location } | null;
   const backgroundLocation = state?.backgroundLocation;
-  const defaultPath = session?.roleId === 1 || session?.roleId === 2 ? '/admin' : '/requests';
+  const defaultPath = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.ADMIN ? '/admin' : '/requests';
 
   return (
     <>
@@ -38,7 +39,7 @@ export const App = () => {
             <Route
               path="/admin"
               element={
-                <RoleRoute allowedRoles={[1, 2, 3]}>
+                <RoleRoute allowedRoles={[ROLE.SUPERADMIN, ROLE.ADMIN, ROLE.LEAD_ECONOMIST]}>
                   <AdminPage />
                 </RoleRoute>
               }
@@ -46,7 +47,7 @@ export const App = () => {
             <Route
               path="/feedback"
               element={
-                <RoleRoute allowedRoles={[1]}>
+                <RoleRoute allowedRoles={[ROLE.SUPERADMIN]}>
                   <FeedbackPage />
                 </RoleRoute>
               }

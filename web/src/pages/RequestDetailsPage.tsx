@@ -22,6 +22,7 @@ import { updateOfferStatus } from '@shared/api/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/updateRequestDetails';
 import { downloadFile } from '@shared/api/fileDownload';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { ROLE } from '@shared/constants/roles';
 import { DataTable } from '@shared/components/DataTable';
 
 type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
@@ -130,7 +131,7 @@ export const RequestDetailsPage = () => {
         [requestDetails?.availableActions, requestId]
     );
     const canEditOwner = useMemo(
-        () => canEditRequest && (session?.roleId === 1 || session?.roleId === 3),
+        () => canEditRequest && (session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST),
         [canEditRequest, session?.roleId]
     );
 

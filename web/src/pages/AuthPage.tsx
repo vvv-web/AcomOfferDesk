@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { ROLE } from '@shared/constants/roles';
 
 const schema = z.object({
     login: z.string().min(1, 'Введите логин'),
@@ -13,8 +14,7 @@ const schema = z.object({
 
 type LoginFormValues = z.infer<typeof schema>;
 
-const getDefaultPathByRole = (roleId: number) => (roleId === 1 || roleId === 2 ? '/admin' : '/requests');
-
+const getDefaultPathByRole = (roleId: number) => (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN ? '/admin' : '/requests');
 export const AuthPage = () => {
     const navigate = useNavigate();
     const { login, isAuthenticated, session } = useAuth();

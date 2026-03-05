@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
+import { ROLE } from '@shared/constants/roles';
 
 type RoleRouteProps = {
   allowedRoles: number[];
@@ -7,7 +8,7 @@ type RoleRouteProps = {
 };
 
 const getDefaultPath = (roleId?: number | null) => {
-  if (roleId === 1 || roleId === 2) {
+  if (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN) {
     return '/admin';
   }
   return '/requests';

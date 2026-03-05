@@ -30,6 +30,7 @@ class RegisterUserRequest(BaseModel):
     login: str = Field(..., min_length=3, max_length=128)
     password: str = Field(..., min_length=6, max_length=72)
     role_id: int = Field(..., ge=1)
+    id_parent: str | None = Field(default=None, min_length=3, max_length=128)
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = Field(default=None, min_length=1, max_length=255)
     mail: str | None = Field(default=None, min_length=1, max_length=255)

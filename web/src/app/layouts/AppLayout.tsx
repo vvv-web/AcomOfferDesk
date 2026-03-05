@@ -5,6 +5,7 @@ import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
+import { ROLE } from '@shared/constants/roles';
 
 const navLinkStyles = {
   textDecoration: 'none'
@@ -34,13 +35,13 @@ export const AppLayout = () => {
   const contractorTabParam = searchParams.get('tab');
   const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
   const roleId = session?.roleId ?? null;
-  const isSuperadmin = roleId === 1;
+  const isSuperadmin = roleId === ROLE.SUPERADMIN;
   const isRequestsListPage = location.pathname === '/requests';
   const isRequestDetailsPage = /^\/requests\/\d+$/.test(location.pathname);
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(location.pathname);
   const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
-  const isContractor = roleId === 5;
-  const isLeadEconomist = roleId === 3;
+  const isContractor = roleId === ROLE.CONTRACTOR;
+  const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
   const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
   const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
   const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
@@ -50,7 +51,7 @@ export const AppLayout = () => {
   const isLeadEconomistsTab = isLeadEconomist && location.pathname.startsWith('/admin');
   const canUseLeadTabs = isLeadEconomist && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
 
-  const isAdmin = roleId === 2;
+  const isAdmin = roleId === ROLE.ADMIN;
   const isAdminUsersPage = isAdmin && location.pathname.startsWith('/admin');
   const adminUsersTabParam = searchParams.get('users_tab');
   const adminUsersTab: 'contractors' | 'economists' | 'admins' =

@@ -21,27 +21,39 @@ import { getEconomists } from '@shared/api/getEconomists';
 import { getUsers, type UserListItem } from '@shared/api/getUsers';
 import { registerUser } from '@shared/api/registerUser';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { ROLE } from '@shared/constants/roles';
+
 
 const schema = z
   .object({
     login: z.string().min(3, 'Минимум 3 символа'),
     password: z.string().min(6, 'Минимум 6 символов'),
     confirmPassword: z.string().min(6, 'Минимум 6 символов'),
-    role_id: z.number({ required_error: 'Выберите роль' })
+    role_id: z.number({ required_error: 'Выберите роль' }),
+    id_parent: z.string().optional()
+  })
+  .superRefine((data, ctx) => {
+    if ((data.role_id === ROLE.ECONOMIST || data.role_id === ROLE.LEAD_ECONOMIST) && !data.id_parent?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Выберите руководителя',
+        path: ['id_parent']
+      });
+    }
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Пароли не совпадают',
     path: ['confirmPassword']
-    })
-;
+  })
+  ;
 
 type FormValues = z.infer<typeof schema>;
 type UserTab = 'contractors' | 'economists' | 'admins';
 
 const roleByTab: Record<UserTab, number> = {
-  contractors: 5,
-  economists: 4,
-  admins: 2
+  contractors: ROLE.CONTRACTOR,
+  economists: ROLE.ECONOMIST,
+  admins: ROLE.ADMIN
 };
 
 const tabOptions: Array<{ value: UserTab; label: string }> = [
@@ -60,12 +72,14 @@ const resolveUserTabFromParam = (value: string | null): UserTab => {
 const roleLabelsById: Record<number, string> = {
   1: 'Суперадмин',
   2: 'Админ',
-  3: 'Ведущий экономист',
-  4: 'Экономист',
-  5: 'Контрагент'
+  3: 'Контрагент',
+  4: 'Руководитель проекта',
+  5: 'Ведущий экономист',
+  6: 'Экономист',
+  7: 'Оператор'
 };
 
-const addUserButtonSx  = {
+const addUserButtonSx = {
   borderRadius: 999,
   textTransform: 'none',
   px: 3,
@@ -106,8 +120,8 @@ const canPatchUserRole = (href: string, method: string) => {
 
 export const AdminPage = () => {
   const { session } = useAuth();
-  const isLeadEconomist = session?.roleId === 3;
-  const isAdmin = session?.roleId === 2;
+  const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
+  const isAdmin = session?.roleId === ROLE.ADMIN;
   const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -120,23 +134,28 @@ export const AdminPage = () => {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [canUpdateStatus, setCanUpdateStatus] = useState(false);
   const [canUpdateRole, setCanUpdateRole] = useState(false);
+  const [leadEconomistManagers, setLeadEconomistManagers] = useState<UserListItem[]>([]);
+  const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
 
   const roleOptions = useMemo(() => {
     if (isLeadEconomist) {
-      return [{ id: 4, label: roleLabelsById[4] }];
+      return [{ id: ROLE.ECONOMIST, label: roleLabelsById[ROLE.ECONOMIST] }];
     }
 
-    if (session?.roleId === 1) {
+    if (session?.roleId === ROLE.SUPERADMIN) {
       return [
-        { id: 2, label: roleLabelsById[2] },
-        { id: 3, label: roleLabelsById[3] },
-        { id: 4, label: roleLabelsById[4] }
+        { id: ROLE.ADMIN, label: roleLabelsById[ROLE.ADMIN] },
+        { id: ROLE.CONTRACTOR, label: roleLabelsById[ROLE.CONTRACTOR] },
+        { id: ROLE.PROJECT_MANAGER, label: roleLabelsById[ROLE.PROJECT_MANAGER] },
+        { id: ROLE.LEAD_ECONOMIST, label: roleLabelsById[ROLE.LEAD_ECONOMIST] },
+        { id: ROLE.ECONOMIST, label: roleLabelsById[ROLE.ECONOMIST] },
+        { id: ROLE.OPERATOR, label: roleLabelsById[ROLE.OPERATOR] }
       ];
     }
 
     return [
-      { id: 2, label: roleLabelsById[2] },
-      { id: 4, label: roleLabelsById[4] }
+      { id: ROLE.ECONOMIST, label: roleLabelsById[ROLE.ECONOMIST] },
+      { id: ROLE.OPERATOR, label: roleLabelsById[ROLE.OPERATOR] }
     ];
   }, [isLeadEconomist, session?.roleId]);
 
@@ -152,6 +171,8 @@ export const AdminPage = () => {
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
     reset
   } = useForm<FormValues>({
@@ -160,10 +181,14 @@ export const AdminPage = () => {
       login: '',
       password: '',
       confirmPassword: '',
-      role_id: roleOptions[0]?.id ?? 2,
+      role_id: roleOptions[0]?.id ?? ROLE.ADMIN,
+      id_parent: ''
     }
   });
 
+  const selectedRoleId = watch('role_id');
+  const requiresParent = selectedRoleId === ROLE.ECONOMIST || selectedRoleId === ROLE.LEAD_ECONOMIST;
+  const managerOptions = selectedRoleId === ROLE.ECONOMIST ? leadEconomistManagers : projectManagerManagers;
 
   useEffect(() => {
     if (isLeadEconomist) {
@@ -198,6 +223,33 @@ export const AdminPage = () => {
     }
   }, [canCreateUser, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (!isDialogOpen) {
+      return;
+    }
+
+    const loadManagers = async () => {
+      try {
+        const [leadEconomists, projectManagers] = await Promise.all([
+          getUsers(ROLE.LEAD_ECONOMIST),
+          getUsers(ROLE.PROJECT_MANAGER)
+        ]);
+        setLeadEconomistManagers(leadEconomists.items);
+        setProjectManagerManagers(projectManagers.items);
+      } catch {
+        setLeadEconomistManagers([]);
+        setProjectManagerManagers([]);
+      }
+    };
+
+    void loadManagers();
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!requiresParent) {
+      setValue('id_parent', '');
+    }
+  }, [requiresParent, setValue]);
 
   const loadUsers = useCallback(async () => {
     setIsLoadingUsers(true);
@@ -232,7 +284,8 @@ export const AdminPage = () => {
       login: '',
       password: '',
       confirmPassword: '',
-      role_id: roleOptions[0]?.id ?? 2,
+      role_id: roleOptions[0]?.id ?? ROLE.ADMIN,
+      id_parent: ''
     });
   }, [reset, roleOptions]);
 
@@ -259,6 +312,7 @@ export const AdminPage = () => {
         login: values.login,
         password: values.password,
         role_id: values.role_id,
+        id_parent: values.id_parent?.trim() || undefined
       });
       setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
       resetForm();
@@ -319,7 +373,7 @@ export const AdminPage = () => {
         isContractorsTab={activeTab === 'contractors'}
         canUpdateStatus={canUpdateStatus}
         canUpdateRole={canUpdateRole}
-        allowedRoleOptions={[2, 4]}
+        allowedRoleOptions={[ROLE.ADMIN, ROLE.ECONOMIST]}
         onStatusUpdated={loadUsers}
       />
 
@@ -357,11 +411,27 @@ export const AdminPage = () => {
             <TextField label="Логин" error={Boolean(errors.login)} helperText={errors.login?.message} {...register('login')} />
             <TextField label="Пароль" type="password" error={Boolean(errors.password)} helperText={errors.password?.message} {...register('password')} />
             <TextField label="Повторите пароль" type="password" error={Boolean(errors.confirmPassword)} helperText={errors.confirmPassword?.message} {...register('confirmPassword')} />
-      
+
+            {requiresParent ? (
+              <TextField
+                label={selectedRoleId === ROLE.ECONOMIST ? 'Руководитель (ведущий экономист)' : 'Руководитель (руководитель проекта)'}
+                select
+                error={Boolean(errors.id_parent)}
+                helperText={errors.id_parent?.message ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}
+                {...register('id_parent')}
+              >
+                {managerOptions.map((manager) => (
+                  <MenuItem key={manager.user_id} value={manager.user_id}>
+                    {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : null}
+
             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
             {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="center">
-              
+
               <Button
                 variant="contained"
                 onClick={handleSubmit(onSubmit)}

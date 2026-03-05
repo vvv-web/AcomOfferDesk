@@ -13,6 +13,12 @@ from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
 from app.services.tg_notifications import notify_access_closed, notify_access_opened
 
+ROLE_NAME_SUPERADMIN = "Суперадмин"
+ROLE_NAME_ADMIN = "Администратор"
+ROLE_NAME_PROJECT_MANAGER = "Руководитель Проекта"
+ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
+ROLE_NAME_ECONOMIST = "Экономист"
+ROLE_NAME_OPERATOR = "Оператор"
 
 class UserRegistrationService:
     def __init__(self, users: UserRepository):
@@ -25,23 +31,61 @@ class UserRegistrationService:
         user_id: str,
         password: str,
         role_id: int,
+        id_parent: str | None,
         full_name: str | None,
         phone: str | None,
         mail: str | None,
     ) -> User:
         UserPolicy.can_register_user(current_user)
-        if role_id == settings.superadmin_role_id or role_id not in settings.allowed_creation_role_ids:
+        target_role = await self._users.get_role_by_id(role_id)
+        if target_role is None:
             raise Conflict("Role is not allowed for creation")
-        if current_user.role_id == settings.superadmin_role_id and role_id not in {
-            settings.admin_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            raise Forbidden("Superadmin can create only admin, lead economist and economist users")
+        if current_user.role_id == settings.superadmin_role_id and role_id == settings.superadmin_role_id:
+            raise Forbidden("Superadmin cannot create superadmin users")
         if current_user.role_id == settings.lead_economist_role_id and role_id != settings.economist_role_id:
             raise Forbidden("Lead economist can create only economist users")
-        if current_user.role_id == settings.admin_role_id and role_id not in {settings.admin_role_id, settings.economist_role_id}:
-            raise Forbidden("Admin can create only admin and economist users")
+        current_role = await self._users.get_role_by_id(current_user.role_id)
+        if current_role is None:
+            raise Forbidden("Access denied")
+
+        if current_role.role not in {
+            ROLE_NAME_SUPERADMIN,
+            ROLE_NAME_ADMIN,
+            ROLE_NAME_LEAD_ECONOMIST,
+        }:
+            raise Forbidden("Access denied")
+
+        if target_role.role == ROLE_NAME_SUPERADMIN:
+            raise Forbidden("Superadmin cannot create superadmin users")
+
+        if current_role.role == ROLE_NAME_ADMIN and target_role.role not in {
+            ROLE_NAME_ECONOMIST,
+            ROLE_NAME_OPERATOR,
+        }:
+            raise Forbidden("Admin can create only economist and operator users")
+
+        if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
+            raise Forbidden("Lead economist can create only economist users")
+        if target_role.role == ROLE_NAME_ECONOMIST:
+            if id_parent is None:
+                raise Conflict("Economist user must have a lead economist manager")
+            parent_user = await self._users.get_by_id(id_parent)
+            if parent_user is None:
+                raise NotFound("Parent user not found")
+            parent_role = await self._users.get_role_by_id(parent_user.id_role)
+            if parent_role is None or parent_role.role != ROLE_NAME_LEAD_ECONOMIST:
+                raise Conflict("Economist user can have only lead economist manager")
+        elif target_role.role == ROLE_NAME_LEAD_ECONOMIST:
+            if id_parent is None:
+                raise Conflict("Lead economist user must have a project manager")
+            parent_user = await self._users.get_by_id(id_parent)
+            if parent_user is None:
+                raise NotFound("Parent user not found")
+            parent_role = await self._users.get_role_by_id(parent_user.id_role)
+            if parent_role is None or parent_role.role != ROLE_NAME_PROJECT_MANAGER:
+                raise Conflict("Lead economist user can have only project manager")
+        else:
+            id_parent = None
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
         
@@ -50,6 +94,7 @@ class UserRegistrationService:
             id=user_id,
             password_hash=password_hash,
             id_role=role_id,
+            id_parent=id_parent,
             status="active",
         )
 

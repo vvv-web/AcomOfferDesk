@@ -47,6 +47,11 @@ class User(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     id_role: Mapped[int] = mapped_column(SmallInteger, ForeignKey("roles.id"), nullable=False)
+    id_parent: Mapped[Optional[str]] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="review")
     tg_user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,

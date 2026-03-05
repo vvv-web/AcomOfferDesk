@@ -36,6 +36,7 @@ import type { AuthLink } from '@shared/api/loginWebUser';
 import { updateOfferStatus } from '@shared/api/updateOfferStatus';
 import { OfferWorkspaceChatPanel } from '@features/requests/components/OfferWorkspaceChatPanel';
 import { ProfileButton } from '@shared/components/ProfileButton';
+import { ROLE } from '@shared/constants/roles';
 
 const statusOptions = [
   { value: 'open', label: 'Открыта', color: '#2e7d32' },
@@ -325,8 +326,8 @@ export const OfferWorkspacePage = () => {
     [workspace?.request.status]
   );
 
-  const isContractor = session?.roleId === 5;
-  const isEconomist = session?.roleId === 1 || session?.roleId === 3 || session?.roleId === 4;
+  const isContractor = session?.roleId === ROLE.CONTRACTOR;
+  const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.ECONOMIST;
 
   const canUpload = useMemo(
     () =>
@@ -360,7 +361,7 @@ export const OfferWorkspacePage = () => {
     [availableActions, selectedOfferId]
   );
   const canEditOfferStatus = useMemo(
-    () => session?.roleId === 1 || session?.roleId === 3 || session?.roleId === 4,
+    () => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.ECONOMIST,
     [session?.roleId]
   );
   const canDeleteOwnOffer = useMemo(

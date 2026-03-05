@@ -1,5 +1,6 @@
 import { fetchJson } from './client';
 import type { UserListItem } from './getUsers';
+import { ROLE } from '@shared/constants/roles';
 
 type UserActionLink = {
   href: string;
@@ -41,7 +42,7 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
   return {
     items: response.data.items.map((item) => ({
       user_id: item.user_id,
-      role_id: 4,
+      role_id: ROLE.ECONOMIST,
       status: item.status,
       full_name: item.full_name ?? null,
       phone: item.phone ?? null,

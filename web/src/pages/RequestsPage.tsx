@@ -10,6 +10,7 @@ import { getRequestEconomists } from '@shared/api/getRequestEconomists';
 import { updateRequestDetails } from '@shared/api/updateRequestDetails';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { ROLE } from '@shared/constants/roles';
 
 export const RequestsPage = () => {
     const { session } = useAuth();
@@ -23,7 +24,7 @@ export const RequestsPage = () => {
     const contractorTabParam = searchParams.get('tab');
     const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
     const pollIntervalMs = 10000;
-    const isContractor = session?.roleId === 5;
+    const isContractor = session?.roleId === ROLE.CONTRACTOR;
     const canLoadOpenRequests = useMemo(
         () => hasAvailableAction(session, '/api/v1/requests/open', 'GET'),
         [session]
@@ -37,7 +38,7 @@ export const RequestsPage = () => {
     const shouldLoadOpenRequests = shouldLoadOnlyOpenRequests || (canUseContractorTabs && contractorTab === 'open');
 
 
-    const canEditOwner = useMemo(() => session?.roleId === 1 || session?.roleId === 3, [session?.roleId]);
+    const canEditOwner = useMemo(() => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST, [session?.roleId]);
 
     const fetchRequests = useCallback(
         async (showLoading: boolean) => {

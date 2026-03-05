@@ -5,6 +5,7 @@ export type RegisterUserPayload = {
   login: string;
   password: string;
   role_id: number;
+  id_parent?: string;
   full_name?: string;
   phone?: string;
   mail?: string;

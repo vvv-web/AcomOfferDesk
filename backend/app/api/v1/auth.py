@@ -148,6 +148,7 @@ async def register_user(
             user_id=payload.login.strip(),
             password=payload.password.strip(),
             role_id=payload.role_id,
+            id_parent=payload.id_parent.strip() if payload.id_parent else None,
             full_name=payload.full_name.strip() if payload.full_name else None,
             phone=payload.phone.strip() if payload.phone else None,
             mail=payload.mail.strip() if payload.mail else None,

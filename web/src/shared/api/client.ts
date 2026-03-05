@@ -34,10 +34,15 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Lead economist can view only economist users': 'Ведущий экономист может просматривать только экономистов',
   'Lead economist can update status only for economist users':
     'Ведущий экономист может менять статус только у экономистов',
-  'Admin can create only admin and economist users': 'Администратор может создавать только администраторов и экономистов',
-  'Superadmin can create only admin, lead economist and economist users': 'Суперадмин может создавать только администраторов, ведущих экономистов и экономистов',
+  'Admin can create only economist and operator users': 'Администратор может создавать только экономистов и операторов',
+  'Superadmin cannot create superadmin users': 'Суперадмин не может создавать суперадминов',
   'Only admin and superadmin can update user roles': 'Только администратор и суперадмин могут изменять роли пользователей',
   'Only admin and economist roles are allowed for update': 'Изменение возможно только на роли администратора и экономиста',
+  'Economist user must have a lead economist manager': 'Для экономиста необходимо указать руководителя с ролью ведущего экономиста',
+  'Economist user can have only lead economist manager': 'Руководителем экономиста может быть только ведущий экономист',
+  'Lead economist user must have a project manager': 'Для ведущего экономиста необходимо указать руководителя проекта',
+  'Lead economist user can have only project manager': 'Руководителем ведущего экономиста может быть только руководитель проекта',
+  'Parent user not found': 'Руководитель не найден',
   'Superadmin role cannot be changed': 'Роль суперадмина нельзя изменить',
   'Economist can edit only own requests': 'Экономист может редактировать только свои заявки',
   'Only lead economist and superadmin can change request owner':

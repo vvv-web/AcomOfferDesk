@@ -10,6 +10,10 @@ class UserRepository:
 
     async def get_by_id(self, user_id: str) -> User | None:
         return await self._session.get(User, user_id)
+    
+    async def get_role_by_id(self, role_id: int) -> Role | None:
+        result = await self._session.execute(select(Role).where(Role.id == role_id))
+        return result.scalar_one_or_none()
 
     async def get_by_tg_user_id(self, tg_user_id: int) -> User | None:
         result = await self._session.execute(select(User).where(User.tg_user_id == tg_user_id))

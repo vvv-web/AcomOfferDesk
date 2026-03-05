@@ -31,12 +31,13 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
-    superadmin_role_id: int = Field(default=1, validation_alias="SUPERADMIN_ROLE_ID")
-    admin_role_id: int = Field(default=2, validation_alias="ADMIN_ROLE_ID")
-    lead_economist_role_id: int = Field(default=3, validation_alias="LEAD_ECONOMIST_ROLE_ID")
-    economist_role_id: int = Field(default=4, validation_alias="ECONOMIST_ROLE_ID")
-    contractor_role_id: int = Field(default=5, validation_alias="CONTRACTOR_ROLE_ID")
-    request_upload_dir: str = Field(default="uploads/requests", validation_alias="REQUEST_UPLOAD_DIR")
+    superadmin_role_id: int = 1
+    admin_role_id: int = 2
+    contractor_role_id: int = 3
+    project_manager_role_id: int = 4
+    lead_economist_role_id: int = 5
+    economist_role_id: int = 6
+    operator_role_id: int = 7
     tg_link_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TG_LINK_SECRET", "TG_LINK_SALT"),
@@ -45,10 +46,7 @@ class Settings(BaseSettings):
     web_base_url: str | None = Field(default=None, validation_alias="WEB_BASE_URL")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
-    allowed_creation_role_ids: list[int] = Field(
-        default_factory=lambda: [2, 3, 4, 5],
-        validation_alias="ALLOWED_CREATION_ROLE_IDS",
-    )
+    allowed_creation_role_ids: list[int] = Field(default_factory=lambda: [2, 3, 4, 5, 6, 7])
     cors_allow_origins: list[str] = Field(
         default_factory=list,
         validation_alias="CORS_ALLOW_ORIGINS",
