@@ -138,13 +138,15 @@ const canPatchUserRole = (href: string, method: string) => {
 export const AdminPage = () => {
   const { session } = useAuth();
   const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
+  const isProjectManager = session?.roleId === ROLE.PROJECT_MANAGER;
+  const isLeadLike = isLeadEconomist || isProjectManager;
   const isAdmin = session?.roleId === ROLE.ADMIN;
   const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<UserTab>(() =>
-    isLeadEconomist ? 'economists' : resolveUserTabFromParam(searchParams.get('users_tab'))
+    isLeadLike ? 'economists' : resolveUserTabFromParam(searchParams.get('users_tab'))
   );
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -155,7 +157,7 @@ export const AdminPage = () => {
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
 
   const roleOptions = useMemo(() => {
-    if (isLeadEconomist) {
+    if (isLeadLike) {
       return [{ id: ROLE.ECONOMIST, label: roleLabelsById[ROLE.ECONOMIST] }];
     }
 
@@ -174,11 +176,11 @@ export const AdminPage = () => {
       { id: ROLE.ECONOMIST, label: roleLabelsById[ROLE.ECONOMIST] },
       { id: ROLE.OPERATOR, label: roleLabelsById[ROLE.OPERATOR] }
     ];
-  }, [isLeadEconomist, session?.roleId]);
+  }, [isLeadLike, session?.roleId]);
 
   const userTabs = useMemo(
     () => {
-      if (isLeadEconomist) {
+      if (isLeadLike) {
         return tabOptions.filter((tab) => tab.value === 'economists');
       }
 
@@ -188,7 +190,7 @@ export const AdminPage = () => {
 
       return tabOptions.filter((tab) => tab.value === 'contractors' || tab.value === 'economists' || tab.value === 'admins');
     },
-    [isLeadEconomist, session?.roleId]
+    [isLeadLike, session?.roleId]
   );
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
@@ -231,18 +233,18 @@ export const AdminPage = () => {
   const managerOptions = selectedRoleId === ROLE.ECONOMIST ? leadEconomistManagers : projectManagerManagers;
 
   useEffect(() => {
-    if (isLeadEconomist) {
+    if (isLeadLike) {
       setActiveTab('economists');
     }
-  }, [isLeadEconomist]);
+  }, [isLeadLike]);
 
   useEffect(() => {
-    if (isLeadEconomist) {
+    if (isLeadLike) {
       return;
     }
     const nextTab = resolveUserTabFromParam(searchParams.get('users_tab'));
     setActiveTab(nextTab);
-  }, [isLeadEconomist, searchParams]);
+  }, [isLeadLike, searchParams]);
 
 
   useEffect(() => {
@@ -362,7 +364,7 @@ export const AdminPage = () => {
 
   return (
     <Stack spacing={2}>
-      {!isLeadEconomist && !isAdmin ? (
+      {!isLeadLike && !isAdmin ? (
         <Stack
           direction="row"
           gap={1.5}

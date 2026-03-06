@@ -23,6 +23,8 @@ import {
 } from '@shared/api/getCurrentUserProfile';
 import type { CurrentUserProfile } from '@shared/api/getCurrentUserProfile';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { ROLE } from '@shared/constants/roles';
+
 
 const fallbackText = 'Не указано';
 
@@ -184,7 +186,7 @@ export const ProfileButton = () => {
   };
 
   const availableActions = useMemo(() => ({ availableActions: profile?.availableActions ?? [] }), [profile?.availableActions]);
-  const showCompanyInfo = (profile?.roleId ?? session?.roleId) === 5;
+  const showCompanyInfo = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
   const canEditCredentials = hasAvailableAction(availableActions, '/api/v1/users/me/credentials', 'PATCH');
   const canEditProfile = hasAvailableAction(availableActions, '/api/v1/users/me/profile', 'PATCH');
   const canEditCompany = hasAvailableAction(availableActions, '/api/v1/users/me/company-contacts', 'PATCH');

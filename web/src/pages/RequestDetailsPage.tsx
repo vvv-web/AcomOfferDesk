@@ -131,7 +131,7 @@ export const RequestDetailsPage = () => {
         [requestDetails?.availableActions, requestId]
     );
     const canEditOwner = useMemo(
-        () => canEditRequest && (session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST),
+        () => canEditRequest && (session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER),
         [canEditRequest, session?.roleId]
     );
 

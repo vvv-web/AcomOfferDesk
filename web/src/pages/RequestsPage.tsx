@@ -38,7 +38,7 @@ export const RequestsPage = () => {
     const shouldLoadOpenRequests = shouldLoadOnlyOpenRequests || (canUseContractorTabs && contractorTab === 'open');
 
 
-    const canEditOwner = useMemo(() => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST, [session?.roleId]);
+    const canEditOwner = useMemo(() => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER, [session?.roleId]);
 
     const fetchRequests = useCallback(
         async (showLoading: boolean) => {

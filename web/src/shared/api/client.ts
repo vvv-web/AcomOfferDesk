@@ -27,10 +27,19 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Insufficient permissions for file download': 'Недостаточно прав для скачивания файла',
   'Only admin, superadmin and lead economist can manage economist users':
     'Только администратор, суперадмин и ведущий экономист могут управлять экономистами',
+  'Only admin, superadmin, lead economist and project manager can manage economist users':
+    'Только администратор, суперадмин, ведущий экономист и руководитель проекта могут управлять экономистами',
   'Only contractor can manage company contacts': 'Только контрагент может управлять данными компании',
   'Only contractor can create offers': 'Только контрагент может создавать офферы',
   'Only contractor can view offered requests': 'Только контрагент может просматривать свои заявки',
+  'Lead economist and project manager can view only economist users':
+    'Ведущий экономист и руководитель проекта могут просматривать только экономистов',
   'Lead economist can create only economist users': 'Ведущий экономист может создавать только экономистов',
+
+  'Lead economist and project manager can update status only for economist users':
+    'Ведущий экономист и руководитель проекта могут менять статус только у экономистов',
+  'Lead economist and project manager can create only economist users':
+    'Ведущий экономист и руководитель проекта могут создавать только экономистов',
   'Lead economist can view only economist users': 'Ведущий экономист может просматривать только экономистов',
   'Lead economist can update status only for economist users':
     'Ведущий экономист может менять статус только у экономистов',
@@ -47,6 +56,8 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Economist can edit only own requests': 'Экономист может редактировать только свои заявки',
   'Only lead economist and superadmin can change request owner':
     'Только ведущий экономист и суперадмин могут менять ответственного по заявке',
+  'Only lead economist, project manager and superadmin can change request owner':
+    'Только ведущий экономист, руководитель проекта и суперадмин могут менять ответственного по заявке',
   'Contractor can view only own profile': 'Контрагент может просматривать только свой профиль',
   'Contractor can access only own offers': 'Контрагент может работать только со своими офферами',
 

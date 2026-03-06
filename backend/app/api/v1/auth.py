@@ -62,7 +62,7 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
             Link(href="/api/v1/feedback", method="POST"),
         ]
-    elif role_id == settings.lead_economist_role_id:
+    elif role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
         links.available_actions = [
             Link(href="/api/v1/users", method="GET"),
             Link(href="/api/v1/users/economists", method="GET"),

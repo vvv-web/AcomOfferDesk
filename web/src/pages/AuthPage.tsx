@@ -14,7 +14,8 @@ const schema = z.object({
 
 type LoginFormValues = z.infer<typeof schema>;
 
-const getDefaultPathByRole = (roleId: number) => (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN ? '/admin' : '/requests');
+const getDefaultPathByRole = (roleId: number) =>
+  roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN || roleId === ROLE.PROJECT_MANAGER ? '/admin' : '/requests';
 export const AuthPage = () => {
     const navigate = useNavigate();
     const { login, isAuthenticated, session } = useAuth();

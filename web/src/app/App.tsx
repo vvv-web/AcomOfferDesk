@@ -20,7 +20,10 @@ export const App = () => {
   const location = useLocation();
   const state = location.state as { backgroundLocation?: Location } | null;
   const backgroundLocation = state?.backgroundLocation;
-  const defaultPath = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.ADMIN ? '/admin' : '/requests';
+  const defaultPath =
+    session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.ADMIN || session?.roleId === ROLE.PROJECT_MANAGER
+      ? '/admin'
+      : '/requests';
 
   return (
     <>
@@ -39,7 +42,7 @@ export const App = () => {
             <Route
               path="/admin"
               element={
-                <RoleRoute allowedRoles={[ROLE.SUPERADMIN, ROLE.ADMIN, ROLE.LEAD_ECONOMIST]}>
+                <RoleRoute allowedRoles={[ROLE.SUPERADMIN, ROLE.ADMIN, ROLE.LEAD_ECONOMIST, ROLE.PROJECT_MANAGER]}>
                   <AdminPage />
                 </RoleRoute>
               }

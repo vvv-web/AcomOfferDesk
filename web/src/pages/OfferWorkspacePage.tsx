@@ -327,7 +327,7 @@ export const OfferWorkspacePage = () => {
   );
 
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
-  const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.ECONOMIST;
+  const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER || session?.roleId === ROLE.ECONOMIST;
 
   const canUpload = useMemo(
     () =>
@@ -361,7 +361,7 @@ export const OfferWorkspacePage = () => {
     [availableActions, selectedOfferId]
   );
   const canEditOfferStatus = useMemo(
-    () => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.ECONOMIST,
+    () => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER || session?.roleId === ROLE.ECONOMIST,
     [session?.roleId]
   );
   const canDeleteOwnOffer = useMemo(

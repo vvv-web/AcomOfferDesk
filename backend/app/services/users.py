@@ -42,8 +42,8 @@ class UserRegistrationService:
             raise Conflict("Role is not allowed for creation")
         if current_user.role_id == settings.superadmin_role_id and role_id == settings.superadmin_role_id:
             raise Forbidden("Superadmin cannot create superadmin users")
-        if current_user.role_id == settings.lead_economist_role_id and role_id != settings.economist_role_id:
-            raise Forbidden("Lead economist can create only economist users")
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id} and role_id != settings.economist_role_id:
+            raise Forbidden("Lead economist and project manager can create only economist users")
         current_role = await self._users.get_role_by_id(current_user.role_id)
         if current_role is None:
             raise Forbidden("Access denied")
@@ -52,6 +52,7 @@ class UserRegistrationService:
             ROLE_NAME_SUPERADMIN,
             ROLE_NAME_ADMIN,
             ROLE_NAME_LEAD_ECONOMIST,
+            ROLE_NAME_PROJECT_MANAGER,
         }:
             raise Forbidden("Access denied")
 
@@ -64,8 +65,8 @@ class UserRegistrationService:
         }:
             raise Forbidden("Admin can create only economist and operator users")
 
-        if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
-            raise Forbidden("Lead economist can create only economist users")
+        if current_role.role in {ROLE_NAME_LEAD_ECONOMIST, ROLE_NAME_PROJECT_MANAGER} and target_role.role != ROLE_NAME_ECONOMIST:
+            raise Forbidden("Lead economist and project manager can create only economist users")
         if target_role.role == ROLE_NAME_ECONOMIST:
             if id_parent is None:
                 raise Conflict("Economist user must have a lead economist manager")
@@ -234,9 +235,9 @@ class UserQueryService:
     async def list_users(self, current_user: CurrentUser, role_id: int | None = None) -> list[UserListItem]:
         UserPolicy.can_list_users(current_user)
 
-        if current_user.role_id == settings.lead_economist_role_id:
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
             if role_id is not None and role_id != settings.economist_role_id:
-                raise Forbidden("Lead economist can view only economist users")
+                raise Forbidden("Lead economist and project manager can view only economist users")
             role_id = settings.economist_role_id
 
         if role_id == settings.contractor_role_id:
@@ -389,8 +390,8 @@ class UserStatusService:
         if user is None:
             raise NotFound("User not found")
         
-        if current_user.role_id == settings.lead_economist_role_id and user.id_role != settings.economist_role_id:
-            raise Forbidden("Lead economist can update status only for economist users")
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id} and user.id_role != settings.economist_role_id:
+            raise Forbidden("Lead economist and project manager can update status only for economist users")
 
         tg_user: TgUser | None = None
         if user.tg_user_id is not None:

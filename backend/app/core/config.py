@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,6 +61,18 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_cors_allow_origins(cls, value: str | list[str] | None) -> list[str]:
         return _parse_str_list(value)
+    
+    @model_validator(mode="after")
+    def _enforce_fixed_role_ids(self) -> "Settings":
+        # Роли зафиксированы бизнес-схемой БД и не должны переопределяться окружением.
+        self.superadmin_role_id = 1
+        self.admin_role_id = 2
+        self.contractor_role_id = 3
+        self.project_manager_role_id = 4
+        self.lead_economist_role_id = 5
+        self.economist_role_id = 6
+        self.operator_role_id = 7
+        return self
 
     @property
     def resolved_cors_allow_origins(self) -> list[str]:

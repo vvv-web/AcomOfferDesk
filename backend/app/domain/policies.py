@@ -25,8 +25,9 @@ class UserPolicy:
             settings.superadmin_role_id,
             settings.admin_role_id,
             settings.lead_economist_role_id,
+            settings.project_manager_role_id,
         }:
-            raise Forbidden("Only admin, superadmin and lead economist can manage economist users")
+            raise Forbidden("Only admin, superadmin, lead economist and project manager can manage economist users")
         
     @staticmethod
     def can_register_user(current_user: CurrentUser) -> None:
@@ -59,6 +60,7 @@ class UserPolicy:
             settings.superadmin_role_id,
             settings.admin_role_id,
             settings.lead_economist_role_id,
+            settings.project_manager_role_id,
             settings.economist_role_id,
             settings.contractor_role_id,
         }
@@ -75,6 +77,7 @@ class UserPolicy:
         allowed_roles = {
             settings.superadmin_role_id,
             settings.lead_economist_role_id,
+            settings.project_manager_role_id,
             settings.economist_role_id,
         }
         if current_user.role_id not in allowed_roles:
@@ -85,6 +88,7 @@ class UserPolicy:
         allowed_roles = {
             settings.superadmin_role_id,
             settings.lead_economist_role_id,
+            settings.project_manager_role_id,
             settings.economist_role_id,
             settings.contractor_role_id,
         }
@@ -112,8 +116,12 @@ class RequestPolicy:
     @staticmethod
     def can_change_owner(current_user: CurrentUser, *, request_owner_user_id: str) -> None:
         RequestPolicy.can_edit(current_user, request_owner_user_id=request_owner_user_id)
-        if current_user.role_id not in {settings.superadmin_role_id, settings.lead_economist_role_id}:
-            raise Forbidden("Only lead economist and superadmin can change request owner")
+        if current_user.role_id not in {
+            settings.superadmin_role_id,
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+        }:
+            raise Forbidden("Only lead economist, project manager and superadmin can change request owner")
         
 class OfferPolicy:
     @staticmethod
@@ -122,6 +130,7 @@ class OfferPolicy:
             settings.superadmin_role_id,
             settings.economist_role_id,
             settings.lead_economist_role_id,
+            settings.project_manager_role_id,
         }
     
     @staticmethod
@@ -169,7 +178,11 @@ class OfferPolicy:
         if current_user.role_id == settings.contractor_role_id and current_user.user_id == offer_owner_user_id:
             return
         
-        if current_user.role_id in {settings.superadmin_role_id, settings.lead_economist_role_id}:
+        if current_user.role_id in {
+            settings.superadmin_role_id,
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+        }:
             return
 
         if current_user.role_id == settings.economist_role_id and current_user.user_id == request_owner_user_id:

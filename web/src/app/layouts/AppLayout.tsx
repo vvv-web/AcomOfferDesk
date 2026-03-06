@@ -42,14 +42,16 @@ export const AppLayout = () => {
   const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
   const isContractor = roleId === ROLE.CONTRACTOR;
   const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
+  const isProjectManager = roleId === ROLE.PROJECT_MANAGER;
+  const isLeadLike = isLeadEconomist || isProjectManager;
   const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
   const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
   const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
   const canOpenUsersPage = hasAvailableAction(session, '/api/v1/users', 'GET');
   const canRegisterUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
-  const isLeadRequestsTab = isLeadEconomist && location.pathname.startsWith('/requests');
-  const isLeadEconomistsTab = isLeadEconomist && location.pathname.startsWith('/admin');
-  const canUseLeadTabs = isLeadEconomist && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
+  const isLeadRequestsTab = isLeadLike && location.pathname.startsWith('/requests');
+  const isLeadEconomistsTab = isLeadLike && location.pathname.startsWith('/admin');
+  const canUseLeadTabs = isLeadLike && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
 
   const isAdmin = roleId === ROLE.ADMIN;
   const isAdminUsersPage = isAdmin && location.pathname.startsWith('/admin');
@@ -244,7 +246,7 @@ export const AppLayout = () => {
                 navigate('/requests/create', { state: { backgroundLocation: location } });
               }}
             >
-              {isLeadEconomist ? 'Добавить пользователя' : 'Создать заявку'}
+              {isLeadLike ? 'Добавить пользователя' : 'Создать заявку'}
             </Button>
           ) : (
             <Box />
