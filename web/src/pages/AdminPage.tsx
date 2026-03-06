@@ -5,9 +5,9 @@ import {
   Dialog,
   DialogContent,
   MenuItem,
+  Select,
+  type SelectChangeEvent,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography
 } from '@mui/material';
@@ -17,7 +17,6 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { useAuth } from '@app/providers/AuthProvider';
-import { getEconomists } from '@shared/api/getEconomists';
 import { getUsers, type UserListItem } from '@shared/api/getUsers';
 import { registerUser } from '@shared/api/registerUser';
 import { hasAvailableAction } from '@shared/auth/availableActions';
@@ -48,22 +47,40 @@ const schema = z
   ;
 
 type FormValues = z.infer<typeof schema>;
-type UserTab = 'contractors' | 'economists' | 'admins';
+type UserTab =
+  | 'contractors'  
+  | 'admins'
+  | 'economists'
+  | 'lead_economists'
+  | 'project_managers'
+  | 'operators';
 
 const roleByTab: Record<UserTab, number> = {
   contractors: ROLE.CONTRACTOR,
+  admins: ROLE.ADMIN,
   economists: ROLE.ECONOMIST,
-  admins: ROLE.ADMIN
+  lead_economists: ROLE.LEAD_ECONOMIST,
+  project_managers: ROLE.PROJECT_MANAGER,
+  operators: ROLE.OPERATOR
 };
 
 const tabOptions: Array<{ value: UserTab; label: string }> = [
   { value: 'contractors', label: 'Контрагенты' },
+  { value: 'admins', label: 'Администраторы' },
   { value: 'economists', label: 'Экономисты' },
-  { value: 'admins', label: 'Администраторы' }
+  { value: 'lead_economists', label: 'Ведущие экономисты' },
+  { value: 'project_managers', label: 'Руководители проекта' },
+  { value: 'operators', label: 'Операторы' }
 ];
 
 const resolveUserTabFromParam = (value: string | null): UserTab => {
-  if (value === 'economists' || value === 'admins') {
+  if (
+    value === 'economists'
+    || value === 'admins'
+    || value === 'lead_economists'
+    || value === 'project_managers'
+    || value === 'operators'
+  ) {
     return value;
   }
   return 'contractors';
@@ -160,13 +177,36 @@ export const AdminPage = () => {
   }, [isLeadEconomist, session?.roleId]);
 
   const userTabs = useMemo(
-    () => (isLeadEconomist ? tabOptions.filter((tab) => tab.value === 'economists') : tabOptions),
-    [isLeadEconomist]
+    () => {
+      if (isLeadEconomist) {
+        return tabOptions.filter((tab) => tab.value === 'economists');
+      }
+
+      if (session?.roleId === ROLE.SUPERADMIN) {
+        return tabOptions;
+      }
+
+      return tabOptions.filter((tab) => tab.value === 'contractors' || tab.value === 'economists' || tab.value === 'admins');
+    },
+    [isLeadEconomist, session?.roleId]
   );
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
 
   const canCreateUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
+
+  const handleTabChange = (value: UserTab) => {
+    setActiveTab(value);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('users_tab', value);
+      return next;
+    }, { replace: true });
+  };
+
+  const handleRoleSelectChange = (event: SelectChangeEvent<UserTab>) => {
+    handleTabChange(event.target.value as UserTab);
+  };
 
   const {
     register,
@@ -255,10 +295,7 @@ export const AdminPage = () => {
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      const response =
-        activeTab === 'economists'
-          ? await getEconomists()
-          : await getUsers(roleByTab[activeTab]);
+      const response = await getUsers(roleByTab[activeTab]);
       setUsers(response.items);
       setCanUpdateStatus(
         response.availableActions.some((action) => canPatchUserStatus(action.href, action.method))
@@ -333,24 +370,16 @@ export const AdminPage = () => {
           flexWrap="nowrap"
           sx={{ width: '100%', overflowX: 'auto', pb: 0.5 }}
         >
-          <Tabs
+          <Select
+            size="small"
             value={activeTab}
-            onChange={(_, value: UserTab) => {
-              setActiveTab(value);
-              setSearchParams((prev) => {
-                const next = new URLSearchParams(prev);
-                next.set('users_tab', value);
-                return next;
-              }, { replace: true });
-            }}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{ minHeight: 44, flexShrink: 0 }}
+            onChange={handleRoleSelectChange}
+            sx={{ minWidth: { xs: 220, sm: 300 }, flexShrink: 0 }}
           >
             {userTabs.map((tab) => (
-              <Tab key={tab.value} value={tab.value} label={tab.label} sx={{ textTransform: 'none', minHeight: 44 }} />
+              <MenuItem key={tab.value} value={tab.value}>{tab.label}</MenuItem>
             ))}
-          </Tabs>
+          </Select>
           {canCreateUser ? (
             <Button variant="outlined" sx={{ ...addUserButtonSx, flexShrink: 0 }} onClick={() => setIsDialogOpen(true)}>
               Добавить пользователя
