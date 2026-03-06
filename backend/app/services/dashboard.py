@@ -113,8 +113,8 @@ class DashboardService:
         tree.sort(key=lambda item: (item.role_id, item.full_name or item.user_id))
         self._sort_children(tree)
 
-        unassigned_rows = await self._requests.list_unassigned_requests_for_manager(
-            manager_user_id=current_user.user_id,
+        unassigned_rows = await self._requests.list_unassigned_requests(
+            operator_role_id=settings.operator_role_id,
         )
         unassigned_requests = [
             DashboardUnassignedRequest(

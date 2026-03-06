@@ -139,19 +139,45 @@ async def _validate_upload(file: UploadFile) -> tuple[str, bytes]:
 
 def _request_actions(current_user: CurrentUser) -> list[Link] | None:
     try:
-        UserPolicy.can_manage_requests(current_user)
+        UserPolicy.can_view_requests(current_user)
     except Forbidden:
         return None
-    return [
+    actions = [
         Link(href="/api/v1/requests", method="GET"),
-        Link(href="/api/v1/requests", method="POST"),
         Link(href="/api/v1/requests/{request_id}", method="GET"),
-        Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-        Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-        Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-        Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
+        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
+        Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
         Link(href="/api/v1/files/{file_id}/download", method="GET"),
     ]
+    try:
+        UserPolicy.can_create_request(current_user)
+        actions.append(Link(href="/api/v1/requests", method="POST"))
+    except Forbidden:
+        pass
+
+    try:
+        UserPolicy.can_manage_requests(current_user)
+    except Forbidden:
+        if current_user.role_id == settings.operator_role_id:
+            actions.extend(
+                [
+                    Link(href="/api/v1/requests/{request_id}", method="PATCH"),
+                    Link(href="/api/v1/requests/{request_id}/files", method="POST"),
+                    Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
+                ]
+            )
+        return actions
+
+    actions.extend(
+        [
+            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
+            Link(href="/api/v1/requests/{request_id}/files", method="POST"),
+            Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
+            Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
+        ]
+    )
+
+    return actions
 
 def _open_request_actions(current_user: CurrentUser) -> list[Link] | None:
     try:
@@ -199,15 +225,24 @@ def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner
     ]
 
     try:
+        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id)
+        actions.extend(
+            [
+                Link(href=f"/api/v1/requests/{request_id}", method="PATCH"),
+                Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
+                Link(href=f"/api/v1/requests/{request_id}/files/{{file_id}}", method="DELETE"),
+            ]
+        )
+    except Forbidden:
+        return actions
+
+    try:
         RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id)
     except Forbidden:
         return actions
 
     actions.extend(
         [
-            Link(href=f"/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
-            Link(href=f"/api/v1/requests/{request_id}/files/{{file_id}}", method="DELETE"),
             Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
             Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
             Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
@@ -621,7 +656,7 @@ async def download_file(
 ) -> FileResponse:
     can_download = False
     try:
-        UserPolicy.can_manage_requests(current_user)
+        UserPolicy.can_view_requests(current_user)
         can_download = True
     except Forbidden:
         UserPolicy.can_create_offer(current_user)

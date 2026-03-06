@@ -124,6 +124,17 @@ async def login(payload: LoginRequest, uow: UnitOfWork = Depends(get_uow)) -> Lo
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
             Link(href="/api/v1/feedback", method="POST"),
         ]
+    elif role_id == settings.operator_role_id:
+        links.available_actions = [
+            Link(href="/api/v1/requests", method="GET"),
+            Link(href="/api/v1/requests", method="POST"),
+            Link(href="/api/v1/requests/{request_id}", method="GET"),
+            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
+            Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
+            Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
+            Link(href="/api/v1/files/{file_id}/download", method="GET"),
+            Link(href="/api/v1/feedback", method="POST"),
+        ]
     return LoginResponse(
         data={
             "access_token": token,

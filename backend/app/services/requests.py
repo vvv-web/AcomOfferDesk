@@ -176,7 +176,7 @@ class RequestService:
         description: str | None,
         files: list[RequestFileCreateInput],
     ) -> tuple[int, list[int]]:
-        UserPolicy.can_manage_requests(current_user)
+        UserPolicy.can_create_request(current_user)
         if deadline_at < datetime.utcnow():
             raise Conflict("Deadline cannot be in the past")
         if not files:
@@ -215,7 +215,7 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
 
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
@@ -350,7 +350,7 @@ class RequestService:
         
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
-        UserPolicy.can_manage_requests(current_user)
+        UserPolicy.can_view_requests(current_user)
         rows = await self._requests.list_with_stats_and_files(current_user_id=current_user.user_id)
 
         grouped: dict[int, RequestListItem] = {}
@@ -522,7 +522,7 @@ class RequestService:
 
 
     async def get_request_details(self, *, current_user: CurrentUser, request_id: int) -> RequestDetailItem:
-        UserPolicy.can_manage_requests(current_user)
+        UserPolicy.can_view_requests(current_user)
 
         request_row = await self._requests.get_with_stats(request_id=request_id)
         if request_row is None:

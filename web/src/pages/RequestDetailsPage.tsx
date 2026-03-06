@@ -135,6 +135,16 @@ export const RequestDetailsPage = () => {
         [canEditRequest, session?.roleId]
     );
 
+    const canChangeOfferStatus = useMemo(
+        () =>
+            hasAvailableAction(
+                { availableActions: requestDetails?.availableActions ?? [] },
+                '/api/v1/offers/{offer_id}/status',
+                'PATCH'
+            ),
+        [requestDetails?.availableActions]
+    );
+
     const todayDate = useMemo(() => {
         const now = new Date();
         const offsetMs = now.getTimezoneOffset() * 60000;
@@ -334,6 +344,10 @@ export const RequestDetailsPage = () => {
     };
 
     const handleOfferStatusChange = async (offerId: number, value: OfferDecisionStatus) => {
+        if (!canChangeOfferStatus) {
+            return;
+        }
+        
         const previousStatus = offersStatusMap[offerId] ?? '';
 
         setOffersStatusMap((prev) => ({
@@ -696,6 +710,7 @@ export const RequestDetailsPage = () => {
                     onStatusChange={(offerId, value) => void handleOfferStatusChange(offerId, value)}
                     onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace`)}
                     onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
+                    canChangeStatus={canChangeOfferStatus}
                 />
             </Box>
         </Box>

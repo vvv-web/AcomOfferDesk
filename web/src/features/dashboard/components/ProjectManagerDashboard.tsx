@@ -515,7 +515,7 @@ export const ProjectManagerDashboard = () => {
                 <Typography color="text.secondary">Все заявки уже распределены по ответственным</Typography>
               ) : (
                 unassignedRequests.map((request) => (
-                  <Card key={request.request_id} variant="outlined" sx={{ borderRadius: 3 }}>
+                  <Card key={request.request_id} variant="outlined" sx={{ borderRadius: 2 }}>
                     <CardContent>
                       <Stack spacing={1.25}>
                         <Stack direction="row" justifyContent="space-between" spacing={1}>

@@ -207,14 +207,15 @@ class RequestRepository:
             for owner_id, status, count in result.all()
         ]
 
-    async def list_unassigned_requests_for_manager(
+    async def list_unassigned_requests(
         self,
         *,
-        manager_user_id: str,
+        operator_role_id: int,
     ) -> list[Request]:
         stmt = (
             select(Request)
-            .where(Request.id_user == manager_user_id, Request.status.in_(["open", "review"]))
+            .join(User, User.id == Request.id_user)
+            .where(User.id_role == operator_role_id, Request.status.in_(["open", "review"]))
             .order_by(Request.created_at.desc(), Request.id.desc())
         )
         result = await self._session.execute(stmt)

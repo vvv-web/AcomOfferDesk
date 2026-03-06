@@ -21,6 +21,7 @@ type OffersTableProps = {
     onStatusChange: (offerId: number, value: OfferDecisionStatus) => void;
     onOpenWorkspace: (offerId: number) => void;
     onDownloadFile: (downloadUrl: string, fileName: string) => void;
+    canChangeStatus?: boolean;
 };
 
 type NotificationStyle = {
@@ -175,7 +176,8 @@ export const OffersTable = ({
     statusOptions,
     onStatusChange,
     onOpenWorkspace,
-    onDownloadFile
+    onDownloadFile,
+    canChangeStatus = true
 }: OffersTableProps) => {
     const theme = useTheme();
     const statusContent = errorMessage ? <Typography color="error">{errorMessage}</Typography> : undefined;
@@ -271,7 +273,7 @@ export const OffersTable = ({
                         displayEmpty
                         onChange={(event) => onStatusChange(offer.offer_id, event.target.value as OfferDecisionStatus)}
                         onClick={(event) => event.stopPropagation()}
-                        disabled={offer.status === 'deleted'}
+                        disabled={!canChangeStatus || offer.status === 'deleted'}
                         sx={{ minWidth: 140 }}
                     >
                         <MenuItem value="">

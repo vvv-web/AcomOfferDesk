@@ -63,6 +63,7 @@ class UserPolicy:
             settings.project_manager_role_id,
             settings.economist_role_id,
             settings.contractor_role_id,
+            settings.operator_role_id,
         }
         if current_user.role_id not in allowed_roles:
             raise Forbidden("Insufficient permissions to access own profile")
@@ -82,6 +83,30 @@ class UserPolicy:
         }
         if current_user.role_id not in allowed_roles:
             raise Forbidden("Insufficient permissions for request management")
+        
+    @staticmethod
+    def can_view_requests(current_user: CurrentUser) -> None:
+        allowed_roles = {
+            settings.superadmin_role_id,
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
+        if current_user.role_id not in allowed_roles:
+            raise Forbidden("Insufficient permissions for request view")
+
+    @staticmethod
+    def can_create_request(current_user: CurrentUser) -> None:
+        allowed_roles = {
+            settings.superadmin_role_id,
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+            settings.economist_role_id,
+            settings.operator_role_id,
+        }
+        if current_user.role_id not in allowed_roles:
+            raise Forbidden("Insufficient permissions for request creation")
         
     @staticmethod
     def can_view_open_requests(current_user: CurrentUser) -> None:
@@ -118,9 +143,24 @@ class UserPolicy:
 class RequestPolicy:
     @staticmethod
     def can_edit(current_user: CurrentUser, *, request_owner_user_id: str) -> None:
-        UserPolicy.can_manage_requests(current_user)
+        if current_user.role_id not in {
+            settings.superadmin_role_id,
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+            settings.economist_role_id,
+        }:
+            raise Forbidden("Insufficient permissions to edit request")
         if current_user.role_id == settings.economist_role_id and current_user.user_id != request_owner_user_id:
             raise Forbidden("Economist can edit only own requests")
+        
+    @staticmethod
+    def can_edit_owned_unassigned(current_user: CurrentUser, *, request_owner_user_id: str) -> None:
+        if current_user.role_id == settings.operator_role_id:
+            if current_user.user_id != request_owner_user_id:
+                raise Forbidden("Operator can edit only own unassigned requests")
+            return
+
+        RequestPolicy.can_edit(current_user, request_owner_user_id=request_owner_user_id)
 
     @staticmethod
     def can_change_owner(current_user: CurrentUser, *, request_owner_user_id: str) -> None:
