@@ -1,5 +1,14 @@
 import { alpha, createTheme } from '@mui/material/styles';
 
+const dashboardPalette = {
+  status: {
+    open: '#6fa8dc',
+    review: '#f4b183'
+  },
+  workload: ['#6fa8dc', '#8ecae6', '#a4c2f4', '#f4b183', '#a8d5ba', '#c9b6e4', '#f7c9a9', '#b7d7e8']
+};
+
+
 const baseTheme = createTheme({
   palette: {
     mode: 'light',
@@ -19,7 +28,8 @@ const baseTheme = createTheme({
       primary: '#1f2a44',
       secondary: '#4a5875'
     },
-    divider: '#d3dbe7'
+    divider: '#d3dbe7',
+    dashboard: dashboardPalette
   },
   shape: {
     borderRadius: 16

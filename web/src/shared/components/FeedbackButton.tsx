@@ -62,7 +62,7 @@ export const FeedbackButton = () => {
   return (
     <>
       <Button variant="outlined" onClick={() => setOpen(true)}>
-        Обратная связь по сервису
+        Обратная связь
       </Button>
       <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
         <DialogTitle>Обратная связь по сервису</DialogTitle>

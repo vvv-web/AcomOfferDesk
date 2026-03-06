@@ -735,10 +735,11 @@ export const RoleGuideButton = () => {
                     p: 0,
                     borderColor: 'rgba(124, 77, 255, 0.55)',
                     background: 'linear-gradient(135deg, rgba(124, 77, 255, 0.12), rgba(0, 188, 212, 0.12))',
-                    boxShadow: '0 6px 16px rgba(64, 74, 112, 0.18)',
+                    
                     '&:hover': {
                         borderColor: 'rgba(124, 77, 255, 0.8)',
-                        background: 'linear-gradient(135deg, rgba(124, 77, 255, 0.2), rgba(0, 188, 212, 0.2))'
+                        background: 'linear-gradient(135deg, rgba(124, 77, 255, 0.2), rgba(0, 188, 212, 0.2))',
+                        boxShadow: 'none'
                     }
                 }}
                 aria-label="Открыть памятку по роли"

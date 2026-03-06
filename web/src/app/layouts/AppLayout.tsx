@@ -1,4 +1,4 @@
-import { Box, Button, Stack, Tab, Tabs } from '@mui/material';
+import { Box, Button,  Stack, Tab, Tabs, Typography } from '@mui/material';
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasAvailableAction } from '@shared/auth/availableActions';
@@ -53,6 +53,7 @@ export const AppLayout = () => {
   const canUseLeadTabs = isLeadLike && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
 
   const isAdmin = roleId === ROLE.ADMIN;
+  const isProjectManagerDashboard = roleId === ROLE.PROJECT_MANAGER && location.pathname === '/pm-dashboard';
   const isAdminUsersPage = isAdmin && location.pathname.startsWith('/admin');
   const adminUsersTabParam = searchParams.get('users_tab');
   const adminUsersTab: 'contractors' | 'economists' | 'admins' =
@@ -113,15 +114,24 @@ export const AppLayout = () => {
         >
           {sidebarButtons}
 
-          <Stack spacing={1.2}>
-            <Stack direction="row" spacing={1.2}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              gap: 1.2,
+              alignItems: 'center',
+              '& > .sa-feedback button': { width: '100%', height: 44 },
+              '& > .sa-logout': { gridColumn: '1 / -1', height: 44 }
+            }}
+          >
+            <Box className="sa-feedback">
               <FeedbackButton />
-              <RoleGuideButton />
-            </Stack>
-            <Button variant="outlined" onClick={logout} sx={{ height: 44 }}>
+            </Box>
+            <RoleGuideButton />
+            <Button className="sa-logout" variant="outlined" onClick={logout}>
               Выйти
             </Button>
-          </Stack>
+          </Box>
         </Stack>
         <Stack component="section" spacing={2} sx={{ minWidth: 0 }}>
           {isRequestsListPage && canCreateRequest ? (
@@ -155,7 +165,13 @@ export const AppLayout = () => {
     >
       {isOfferWorkspacePage ? null : (
         <Stack component="header" direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-          {isRequestDetailsPage ? (
+          {isProjectManagerDashboard ? (
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="h5" fontWeight={700} sx={{ color: '#1f3b6d', lineHeight: 1.1 }}>
+                Дашборд Руководителя проекта
+              </Typography>
+            </Stack>
+          ) : isRequestDetailsPage ? (
             <Button
               variant="outlined"
               sx={{ px: 4, borderColor: 'primary.main', color: 'primary.main', whiteSpace: 'nowrap' }}
