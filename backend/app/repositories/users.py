@@ -67,6 +67,20 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def list_staff_with_profiles_and_roles_for_dashboard(
+        self,
+        *,
+        role_ids: list[int],
+    ) -> list[tuple[User, Profile | None, Role]]:
+        stmt = (
+            select(User, Profile, Role)
+            .join(Role, Role.id == User.id_role)
+            .outerjoin(Profile, Profile.id == User.id)
+            .where(User.id_role.in_(role_ids), User.status == "active")
+            .order_by(User.id_role.asc(), User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
 
     async def get_with_profile_and_company_contacts(
         self,

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.core.config import settings
-from app.domain.exceptions import Conflict, NotFound
+from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
 from app.repositories.files import FileRepository
 from app.repositories.offers import OfferRepository
@@ -251,8 +251,36 @@ class RequestService:
             owner = await self._users.get_by_id(data.owner_user_id)
             if owner is None:
                 raise NotFound("Owner user not found")
+            
+            if current_user.role_id in {
+                settings.project_manager_role_id,
+                settings.lead_economist_role_id,
+            }:
+                if owner.id == current_user.user_id:
+                    raise Forbidden("Owner must be from current user's subordinates")
+                is_subordinate = await self._is_descendant(
+                    ancestor_user_id=current_user.user_id,
+                    target_user_id=owner.id,
+                )
+                if not is_subordinate:
+                    raise Forbidden("Owner must be from current user's subordinates")
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
 
+    async def _is_descendant(self, *, ancestor_user_id: str, target_user_id: str) -> bool:
+        cursor_id: str | None = target_user_id
+        visited: set[str] = set()
+
+        while cursor_id is not None and cursor_id not in visited:
+            visited.add(cursor_id)
+            if cursor_id == ancestor_user_id:
+                return True
+            cursor_user = await self._users.get_by_id(cursor_id)
+            if cursor_user is None:
+                return False
+            cursor_id = cursor_user.id_parent
+
+        return False
+    
     async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: int) -> DeletedAlertViewedResult:
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:

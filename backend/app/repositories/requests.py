@@ -186,6 +186,39 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.all())
+    
+    async def count_in_progress_requests_by_owner(
+        self,
+        *,
+        owner_ids: list[str],
+    ) -> list[tuple[str, str, int]]:
+        if not owner_ids:
+            return []
+
+        stmt = (
+            select(Request.id_user, Request.status, func.count(Request.id))
+            .where(Request.id_user.in_(owner_ids), Request.status.in_(["open", "review"]))
+            .group_by(Request.id_user, Request.status)
+            .order_by(Request.id_user.asc(), Request.status.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [
+            (owner_id, status, count)
+            for owner_id, status, count in result.all()
+        ]
+
+    async def list_unassigned_requests_for_manager(
+        self,
+        *,
+        manager_user_id: str,
+    ) -> list[Request]:
+        stmt = (
+            select(Request)
+            .where(Request.id_user == manager_user_id, Request.status.in_(["open", "review"]))
+            .order_by(Request.created_at.desc(), Request.id.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     async def decrement_deleted_alert(self, *, request_id: int) -> RequestOfferStats | None:
         stmt = select(RequestOfferStats).where(RequestOfferStats.request_id == request_id)

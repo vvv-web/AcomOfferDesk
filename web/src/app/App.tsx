@@ -9,6 +9,7 @@ import { TgRegisterPage } from '@pages/TgRegisterPage';
 import { ContractorRequestDetailsPage } from '@pages/ContractorRequestDetailsPage';
 import { OfferWorkspacePage } from '@pages/OfferWorkspacePage';
 import { FeedbackPage } from '@pages/FeedbackPage';
+import { ProjectManagerDashboardPage } from '@pages/ProjectManagerDashboardPage';
 import { AppLayout } from '@app/layouts/AppLayout';
 import { ProtectedRoute } from '@app/routes/ProtectedRoute';
 import { RoleRoute } from '@app/routes/RoleRoute';
@@ -21,9 +22,11 @@ export const App = () => {
   const state = location.state as { backgroundLocation?: Location } | null;
   const backgroundLocation = state?.backgroundLocation;
   const defaultPath =
-    session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.ADMIN || session?.roleId === ROLE.PROJECT_MANAGER
-      ? '/admin'
-      : '/requests';
+    session?.roleId === ROLE.PROJECT_MANAGER
+      ? '/pm-dashboard'
+      : session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.ADMIN
+        ? '/admin'
+        : '/requests';
 
   return (
     <>
@@ -42,9 +45,13 @@ export const App = () => {
             <Route
               path="/admin"
               element={
-                <RoleRoute allowedRoles={[ROLE.SUPERADMIN, ROLE.ADMIN, ROLE.LEAD_ECONOMIST, ROLE.PROJECT_MANAGER]}>
-                  <AdminPage />
-                </RoleRoute>
+                session?.roleId === ROLE.PROJECT_MANAGER ? (
+                  <Navigate to="/pm-dashboard" replace />
+                ) : (
+                  <RoleRoute allowedRoles={[ROLE.SUPERADMIN, ROLE.ADMIN, ROLE.LEAD_ECONOMIST]}>
+                    <AdminPage />
+                  </RoleRoute>
+                )
               }
             />
             <Route
@@ -52,6 +59,14 @@ export const App = () => {
               element={
                 <RoleRoute allowedRoles={[ROLE.SUPERADMIN]}>
                   <FeedbackPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/pm-dashboard"
+              element={
+                <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER]}>
+                  <ProjectManagerDashboardPage />
                 </RoleRoute>
               }
             />

@@ -42,8 +42,7 @@ export const AppLayout = () => {
   const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
   const isContractor = roleId === ROLE.CONTRACTOR;
   const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
-  const isProjectManager = roleId === ROLE.PROJECT_MANAGER;
-  const isLeadLike = isLeadEconomist || isProjectManager;
+  const isLeadLike = isLeadEconomist;
   const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
   const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
   const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
