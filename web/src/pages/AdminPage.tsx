@@ -153,7 +153,7 @@ export const AdminPage = () => {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [canUpdateStatus, setCanUpdateStatus] = useState(false);
   const [canUpdateRole, setCanUpdateRole] = useState(false);
-  const [leadEconomistManagers, setLeadEconomistManagers] = useState<UserListItem[]>([]);
+  const [economistAndLeadManagers, setEconomistAndLeadManagers] = useState<UserListItem[]>([]);
   const [projectManagerManagers, setProjectManagerManagers] = useState<UserListItem[]>([]);
 
   const roleOptions = useMemo(() => {
@@ -230,7 +230,7 @@ export const AdminPage = () => {
 
   const selectedRoleId = watch('role_id');
   const requiresParent = selectedRoleId === ROLE.ECONOMIST || selectedRoleId === ROLE.LEAD_ECONOMIST;
-  const managerOptions = selectedRoleId === ROLE.ECONOMIST ? leadEconomistManagers : projectManagerManagers;
+  const managerOptions = selectedRoleId === ROLE.ECONOMIST ? economistAndLeadManagers : projectManagerManagers;
 
   useEffect(() => {
     if (isLeadLike) {
@@ -271,17 +271,23 @@ export const AdminPage = () => {
     }
 
     const loadManagers = async () => {
-      try {
-        const [leadEconomists, projectManagers] = await Promise.all([
-          getUsers(ROLE.LEAD_ECONOMIST),
-          getUsers(ROLE.PROJECT_MANAGER)
-        ]);
-        setLeadEconomistManagers(leadEconomists.items);
-        setProjectManagerManagers(projectManagers.items);
-      } catch {
-        setLeadEconomistManagers([]);
-        setProjectManagerManagers([]);
+      const [leadEconomistsResult, economistsResult, projectManagersResult] = await Promise.allSettled([
+        getUsers(ROLE.LEAD_ECONOMIST),
+        getUsers(ROLE.ECONOMIST),
+        getUsers(ROLE.PROJECT_MANAGER)
+      ]);
+
+      const leadEconomists = leadEconomistsResult.status === 'fulfilled' ? leadEconomistsResult.value.items : [];
+      const economists = economistsResult.status === 'fulfilled' ? economistsResult.value.items : [];
+      const projectManagers = projectManagersResult.status === 'fulfilled' ? projectManagersResult.value.items : [];
+
+      const uniqueManagers = new Map<string, UserListItem>();
+      for (const manager of [...leadEconomists, ...economists]) {
+        uniqueManagers.set(manager.user_id, manager);
       }
+
+      setEconomistAndLeadManagers(Array.from(uniqueManagers.values()));
+      setProjectManagerManagers(projectManagers);
     };
 
     void loadManagers();
@@ -445,7 +451,7 @@ export const AdminPage = () => {
 
             {requiresParent ? (
               <TextField
-                label={selectedRoleId === ROLE.ECONOMIST ? 'Руководитель (ведущий экономист)' : 'Руководитель (руководитель проекта)'}
+                label={selectedRoleId === ROLE.ECONOMIST ? 'Руководитель (экономист или ведущий экономист)' : 'Руководитель (руководитель проекта)'}
                 select
                 error={Boolean(errors.id_parent)}
                 helperText={errors.id_parent?.message ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}

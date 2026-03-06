@@ -69,13 +69,13 @@ class UserRegistrationService:
             raise Forbidden("Lead economist and project manager can create only economist users")
         if target_role.role == ROLE_NAME_ECONOMIST:
             if id_parent is None:
-                raise Conflict("Economist user must have a lead economist manager")
+                raise Conflict("Economist user must have an economist or lead economist manager")
             parent_user = await self._users.get_by_id(id_parent)
             if parent_user is None:
                 raise NotFound("Parent user not found")
             parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_role.role != ROLE_NAME_LEAD_ECONOMIST:
-                raise Conflict("Economist user can have only lead economist manager")
+            if parent_role is None or parent_role.role not in {ROLE_NAME_ECONOMIST, ROLE_NAME_LEAD_ECONOMIST}:
+                raise Conflict("Economist user can have only economist or lead economist manager")
         elif target_role.role == ROLE_NAME_LEAD_ECONOMIST:
             if id_parent is None:
                 raise Conflict("Lead economist user must have a project manager")
