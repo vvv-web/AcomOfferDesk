@@ -377,6 +377,11 @@ class OfferService:
             for item in messages
         ]
 
+    def _can_acknowledge_chat_messages(self, *, current_user: CurrentUser, request_owner_user_id: str) -> bool:
+        if current_user.role_id == settings.contractor_role_id:
+            return True
+        return current_user.user_id == request_owner_user_id
+    
     async def create_message(
         self,
         *,
@@ -427,6 +432,12 @@ class OfferService:
             request_owner_user_id=request.id_user,
         )
 
+        if not self._can_acknowledge_chat_messages(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        ):
+            return 0
+
         chat = await self._offers.get_chat(offer_id=offer.id)
         if chat is None:
             raise NotFound("Chat not found")
@@ -446,6 +457,12 @@ class OfferService:
             offer_owner_user_id=offer.id_user,
             request_owner_user_id=request.id_user,
         )
+
+        if not self._can_acknowledge_chat_messages(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        ):
+            return 0
 
         chat = await self._offers.get_chat(offer_id=offer.id)
         if chat is None:

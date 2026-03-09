@@ -193,23 +193,32 @@ def _offer_workspace_actions(
         except Forbidden:
             pass
 
-    if offer_status != "deleted":
-        try:
-            OfferPolicy.can_send_chat_message(
-                current_user,
-                offer_owner_user_id=offer_owner_user_id,
-                request_owner_user_id=request_owner_user_id,
-            )
+    try:
+        OfferPolicy.can_send_chat_message(
+            current_user,
+            offer_owner_user_id=offer_owner_user_id,
+            request_owner_user_id=request_owner_user_id,
+        )
+        actions.extend(
+            [
+                Link(href=f"/api/v1/offers/{offer_id}/messages", method="POST"),
+                Link(href=f"/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
+            ]
+        )
+
+        can_acknowledge_messages = (
+            current_user.role_id == settings.contractor_role_id
+            or current_user.user_id == request_owner_user_id
+        )
+        if can_acknowledge_messages:
             actions.extend(
                 [
-                    Link(href=f"/api/v1/offers/{offer_id}/messages", method="POST"),
-                    Link(href=f"/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
                     Link(href=f"/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
                     Link(href=f"/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
                 ]
             )
-        except Forbidden:
-            pass
+    except Forbidden:
+        pass
 
     if can_create_new_offer:
         actions.append(Link(href=f"/api/v1/requests/{request_id}/offers", method="POST"))

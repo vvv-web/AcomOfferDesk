@@ -131,6 +131,60 @@ const formatDate = (value: string | null, withTime = false) => {
   }).format(date);
 };
 
+const buildUnifiedChat = async (offers: Array<{ offer_id: number; status: string; created_at: string | null }>) => {
+  const sortedByCreated = [...offers].sort(
+    (left, right) => new Date(left.created_at ?? 0).getTime() - new Date(right.created_at ?? 0).getTime()
+  );
+  const merged: OfferWorkspaceMessage[] = [];
+
+  for (let idx = 0; idx < sortedByCreated.length; idx += 1) {
+    const offer = sortedByCreated[idx];
+    const response = await getOfferMessages(offer.offer_id);
+    const offerMessages = response.items.map((message) => ({
+      ...message,
+      offer_id: offer.offer_id,
+      is_muted: offer.status === 'deleted'
+    }));
+
+    merged.push(...offerMessages);
+
+    if (offer.status === 'deleted') {
+      merged.push({
+        id: -1000000 - offer.offer_id,
+        offer_id: offer.offer_id,
+        user_id: 'system',
+        user_full_name: 'Система',
+        text: `Оффер №${offer.offer_id} был удален.`,
+        status: 'read',
+        created_at: offer.created_at ?? new Date().toISOString(),
+        updated_at: offer.created_at ?? new Date().toISOString(),
+        attachments: [],
+        is_system: true,
+        is_muted: true
+      });
+
+      const nextOffer = sortedByCreated[idx + 1];
+      if (nextOffer) {
+        merged.push({
+          id: -2000000 - nextOffer.offer_id,
+          offer_id: nextOffer.offer_id,
+          user_id: 'system',
+          user_full_name: 'Система',
+          text: `Создан новый оффер №${nextOffer.offer_id}.`,
+          status: 'read',
+          created_at: nextOffer.created_at ?? new Date().toISOString(),
+          updated_at: nextOffer.created_at ?? new Date().toISOString(),
+          attachments: [],
+          is_system: true,
+          is_muted: false
+        });
+      }
+    }
+  }
+
+  return merged.sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
+};
+
 export const OfferWorkspacePage = () => {
   const { id } = useParams<{ id: string }>();
   const { session, logout } = useAuth();
@@ -153,9 +207,10 @@ export const OfferWorkspacePage = () => {
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
 
   const loadMessages = useCallback(
-    async (targetOfferId: number, syncStatuses = true) => {
+    async (targetOfferId: number, offerItems: OfferWorkspace['offers'], syncStatuses = true) => {
       const messagesResponse = await getOfferMessages(targetOfferId);
-      setMessages(messagesResponse.items);
+      const mergedMessages = await buildUnifiedChat(offerItems);
+      setMessages(mergedMessages);
       setChatActions(messagesResponse.availableActions);
 
       if (!syncStatuses || !session?.login) {
@@ -180,7 +235,8 @@ export const OfferWorkspacePage = () => {
 
       if (hasStatusUpdates) {
         const refreshed = await getOfferMessages(targetOfferId);
-        setMessages(refreshed.items);
+        const refreshedMergedMessages = await buildUnifiedChat(offerItems);
+        setMessages(refreshedMergedMessages);
         setChatActions(refreshed.availableActions);
       }
     },
@@ -204,7 +260,7 @@ export const OfferWorkspacePage = () => {
       );
       const initialOfferId = sortedOffers.find((item) => item.offer_id === offerId)?.offer_id ?? sortedOffers[0]?.offer_id ?? offerId;
       setSelectedOfferId(initialOfferId);
-      await loadMessages(initialOfferId);
+      await loadMessages(initialOfferId, workspaceResponse.offers);
 
       if (workspaceResponse.offer.contractor_user_id) {
         try {
@@ -239,11 +295,11 @@ export const OfferWorkspacePage = () => {
     const nextContractorId = nextWorkspace.offer.contractor_user_id;
     if (!nextContractorId) {
       setContractorInfo(null);
-      return;
+      return nextWorkspace;
     }
 
     if (contractorInfoRef.current?.user_id === nextContractorId) {
-      return;
+      return nextWorkspace;
     }
 
     try {
@@ -252,6 +308,8 @@ export const OfferWorkspacePage = () => {
     } catch {
       setContractorInfo(null);
     }
+
+    return nextWorkspace;
   }, []);
 
   useEffect(() => {
@@ -268,8 +326,8 @@ export const OfferWorkspacePage = () => {
     }
 
     const syncWorkspaceData = async () => {
-      await refreshWorkspace(selectedOfferId);
-      await loadMessages(selectedOfferId);
+      const nextWorkspace = await refreshWorkspace(selectedOfferId);
+      await loadMessages(selectedOfferId, nextWorkspace.offers);
     };
 
     void syncWorkspaceData().catch(() => undefined);
@@ -282,12 +340,12 @@ export const OfferWorkspacePage = () => {
   }, [loadMessages, refreshWorkspace, selectedOfferId]);
 
   useEffect(() => {
-    if (!selectedOfferId) {
+    if (!selectedOfferId || !workspace) {
       return;
     }
 
-    void loadMessages(selectedOfferId).catch(() => undefined);
-  }, [loadMessages, selectedOfferId]);
+    void loadMessages(selectedOfferId, workspace.offers).catch(() => undefined);
+  }, [loadMessages, selectedOfferId, workspace]);
 
   const availableActions = useMemo(() => {
     if (chatActions.length > 0) {
@@ -430,7 +488,7 @@ export const OfferWorkspacePage = () => {
   };
 
   const handleSendMessage = async (text: string, files: File[]) => {
-    if (!canSendMessage || !selectedOffer) {
+    if (!canSendMessage || !selectedOffer || !workspace) {
       return;
     }
 
@@ -445,7 +503,7 @@ export const OfferWorkspacePage = () => {
       } else {
         await sendOfferMessage(selectedOffer.offer_id, text);
       }
-      await loadMessages(selectedOffer.offer_id, false);
+      await loadMessages(selectedOffer.offer_id, workspace.offers, false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить сообщение');
     } finally {
@@ -510,7 +568,7 @@ export const OfferWorkspacePage = () => {
       return;
     }
 
-    const isConfirmed = window.confirm('Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя, а чат с экономистом будет заблокирован.');
+    const isConfirmed = window.confirm('Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя.');
     if (!isConfirmed) {
       return;
     }
@@ -543,7 +601,7 @@ export const OfferWorkspacePage = () => {
   };
 
   const handleMessageInputClick = async () => {
-    if (!canSetReadMessages || !session?.login || messages.length === 0 || !selectedOffer) {
+    if (!canSetReadMessages || !session?.login || messages.length === 0 || !selectedOffer || !workspace) {
       return;
     }
 
@@ -569,7 +627,7 @@ export const OfferWorkspacePage = () => {
         await markOfferMessagesRead(selectedOffer.offer_id, readIds);
       }
 
-      await loadMessages(selectedOffer.offer_id, false);
+      await loadMessages(selectedOffer.offer_id, workspace.offers, false);
     } catch {
       // silent: keep typing flow uninterrupted
     }
@@ -614,7 +672,7 @@ export const OfferWorkspacePage = () => {
       const refreshedWorkspace = await getOfferWorkspace(createdOffer.offerId);
       setWorkspace(refreshedWorkspace);
       setSelectedOfferId(createdOffer.offerId);
-      await loadMessages(createdOffer.offerId, false);
+      await loadMessages(createdOffer.offerId, refreshedWorkspace.offers, false);
       navigate(createdOffer.workspacePath, { replace: true });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать новый отклик');
@@ -913,10 +971,7 @@ export const OfferWorkspacePage = () => {
 
       <OfferWorkspaceChatPanel
         offerId={selectedOffer.offer_id}
-        chatItems={sortedOffers.map((item) => ({ offerId: item.offer_id, label: `КП ${item.offer_id} · ${item.status_label}` }))}
-        activeOfferId={selectedOffer.offer_id}
-        onSelectOffer={setSelectedOfferId}
-        readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? 'Чат удаленного оффера доступен только для просмотра.' : null}
+        readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? 'Для вас чат доступен только для просмотра.' : null}
         isOpen={isChatOpen}
         onToggleOpen={setIsChatOpen}
         messages={messages}

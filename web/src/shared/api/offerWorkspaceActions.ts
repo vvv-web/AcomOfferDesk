@@ -6,6 +6,9 @@ import type { FileEntity, OfferMessageEntity } from '@shared/types/domain';
 export type OfferMessageAttachment = Pick<FileEntity, 'id' | 'name' | 'download_url'>;
 
 export type OfferWorkspaceMessage = OfferMessageEntity & {
+  offer_id: number;
+  is_system?: boolean;
+  is_muted?: boolean;
   attachments: OfferMessageAttachment[];
 };
 
@@ -63,6 +66,7 @@ export const getOfferMessages = async (offerId: number): Promise<OfferMessagesRe
     offerId: response.data.offer_id,
     items: (response.data.items ?? []).map((message) => ({
       ...message,
+      offer_id: response.data.offer_id,
       attachments: message.attachments ?? []
     })),
     availableActions: resolveAvailableActions(response)

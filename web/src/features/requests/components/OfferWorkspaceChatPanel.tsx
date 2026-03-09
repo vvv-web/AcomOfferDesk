@@ -2,23 +2,12 @@ import React from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { alpha } from '@mui/material/styles';
-import {
-  Box,
-  Button,
-  Chip,
-  Divider,
-  IconButton,
-  Paper,
-  Stack,
-  Tab,
-  Tabs,
-  SvgIcon,
-  TextField,
-  Typography
-} from '@mui/material';
+import { Box, Button, Chip, Divider, IconButton, Paper, Stack, SvgIcon, TextField, Typography } from '@mui/material';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { OfferWorkspaceMessage } from '@shared/api/offerWorkspaceActions';
+
+const AUTO_SCROLL_THRESHOLD_PX = 64;
 
 const chatSchema = z.object({
   text: z.string().trim().min(1, 'Введите сообщение').max(3000, 'Максимум 3000 символов'),
@@ -128,9 +117,6 @@ type OfferWorkspaceChatPanelProps = {
   onSendMessage: (text: string, files: File[]) => Promise<void>;
   onMessageInputClick: () => Promise<void> | void;
   onDownloadAttachment: (downloadUrl: string, name: string) => void;
-  chatItems?: Array<{ offerId: number; label: string; isReadOnly?: boolean }>;
-  activeOfferId?: number;
-  onSelectOffer?: (offerId: number) => void;
   readOnlyNotice?: string | null;
   contractorUserId?: string;
 };
@@ -147,9 +133,6 @@ export const OfferWorkspaceChatPanel = ({
   onSendMessage,
   onMessageInputClick,
   onDownloadAttachment,
-  chatItems = [],
-  activeOfferId = offerId,
-  onSelectOffer,
   readOnlyNotice,
   contractorUserId
 }: OfferWorkspaceChatPanelProps) => {
@@ -168,6 +151,21 @@ export const OfferWorkspaceChatPanel = ({
 
   const attachedFiles = watch('files');
   const messageText = watch('text');
+  const messagesContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const scrollToBottom = React.useCallback((force = false) => {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (!force && distanceToBottom > AUTO_SCROLL_THRESHOLD_PX) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }, []);
 
   const sortedMessages = React.useMemo(() => {
     return [...messages].sort(
@@ -180,6 +178,14 @@ export const OfferWorkspaceChatPanel = ({
     setValue('files', nextFiles, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
   };
 
+  React.useEffect(() => {
+    scrollToBottom(true);
+  }, [scrollToBottom, isOpen]);
+
+  React.useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom, sortedMessages]);
+
   const onSubmitMessage = async (values: ChatFormValues) => {
     if (!canSendMessage) return;
 
@@ -188,6 +194,7 @@ export const OfferWorkspaceChatPanel = ({
 
     await onSendMessage(trimmedText, values.files);
     reset({ text: '', files: [] });
+    scrollToBottom(true);
   };
 
   return (
@@ -199,8 +206,9 @@ export const OfferWorkspaceChatPanel = ({
         p: 0,
         display: 'flex',
         flexDirection: 'column',
-        minHeight: { xs: 420, lg: '100%' },
+        minHeight: { xs: 420, lg: 0 },
         height: { lg: '100%' },
+        overflow: 'hidden',
         transition: 'width 0.2s ease'
       }}
     >
@@ -218,25 +226,13 @@ export const OfferWorkspaceChatPanel = ({
           </Box>
           <Divider />
 
-          {chatItems.length > 1 ? (
-            <Box sx={{ px: 1.5, pt: 1 }}>
-              <Tabs
-                value={activeOfferId}
-                onChange={(_, nextOfferId: number) => onSelectOffer?.(nextOfferId)}
-                variant="scrollable"
-                scrollButtons="auto"
-              >
-                {chatItems.map((item) => (
-                  <Tab key={item.offerId} value={item.offerId} label={item.label} />
-                ))}
-              </Tabs>
-            </Box>
-          ) : null}
 
-          <Stack spacing={1} sx={{ p: 2, height: '100%' }}>
+          <Stack spacing={1} sx={{ p: 2, height: '100%', minHeight: 0 }}>
             <Box
+              ref={messagesContainerRef}
               sx={{
                 flex: 1,
+                minHeight: 0,
                 overflowY: 'auto',
                 scrollbarWidth: 'none',
                 '&::-webkit-scrollbar': {
@@ -256,6 +252,7 @@ export const OfferWorkspaceChatPanel = ({
                   {sortedMessages.map((item, idx) => {
                     const ownMessage = item.user_id === sessionLogin;
                     const isContractorMessage = Boolean(contractorUserId) && item.user_id === contractorUserId;
+                    const isSystemMessage = Boolean(item.is_system);
 
                     const prev = idx > 0 ? sortedMessages[idx - 1] : null;
 
@@ -301,7 +298,7 @@ export const OfferWorkspaceChatPanel = ({
                         <Box
                           sx={{
                             display: 'flex',
-                            justifyContent: ownMessage ? 'flex-end' : 'flex-start',
+                            justifyContent: isSystemMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
                             mt: showDateDivider ? 0.9 : isGroupedWithPrev ? 0.25 : 0.9
                           }}
                         >
@@ -312,28 +309,39 @@ export const OfferWorkspaceChatPanel = ({
                               const top = isGroupedWithPrev ? 10 : R;
 
                               return {
-                                maxWidth: '82%',
+                                maxWidth: isSystemMessage ? '100%' : '82%',
                                 px: 1.6,
-                                py: 1.1,
+                                 py: isSystemMessage ? 0.7 : 1.1,
 
-                                borderRadius: `${R}px`,
+                                borderRadius: isSystemMessage ? '999px' : `${R}px`,
                                 borderTopLeftRadius: ownMessage ? `${top}px` : `${CUT}px`,
                                 borderTopRightRadius: ownMessage ? `${CUT}px` : `${top}px`,
                                 borderBottomLeftRadius: `${R}px`,
                                 borderBottomRightRadius: `${R}px`,
 
-                                backgroundColor: ownMessage
+                                backgroundColor: isSystemMessage
+                                  ? alpha(theme.palette.warning.main, 0.12)
+                                  : ownMessage
                                   ? theme.palette.primary.main
                                   : isContractorMessage
                                     ? '#eaf4ff'
                                     : alpha(theme.palette.background.paper, 0.98),
-                                color: ownMessage ? 'rgba(255,255,255,0.96)' : theme.palette.text.primary,
+                                color: isSystemMessage
+                                  ? theme.palette.text.secondary
+                                  : ownMessage
+                                    ? 'rgba(255,255,255,0.96)'
+                                    : theme.palette.text.primary,
+                                opacity: item.is_muted ? 0.6 : 1,
 
-                                boxShadow: ownMessage
+                                boxShadow: isSystemMessage
+                                  ? 'none'
+                                  : ownMessage
                                   ? `0 6px 18px ${alpha(theme.palette.primary.main, 0.18)}`
                                   : '0 1px 4px rgba(0,0,0,0.06)',
 
-                                border: ownMessage
+                                border: isSystemMessage
+                                  ? `1px dashed ${alpha(theme.palette.warning.main, 0.4)}`
+                                  : ownMessage
                                   ? 'none'
                                   : isContractorMessage
                                     ? `1px solid ${alpha(theme.palette.primary.main, 0.16)}`
@@ -343,7 +351,7 @@ export const OfferWorkspaceChatPanel = ({
                               };
                             }}
                           >
-                            {!isGroupedWithPrev ? (
+                            {!isGroupedWithPrev && !isSystemMessage ? (
                               <Typography
                                 variant="caption"
                                 sx={{
@@ -359,11 +367,13 @@ export const OfferWorkspaceChatPanel = ({
                             ) : null}
                             
                             <Typography
-                              variant="body1"
+                              variant={isSystemMessage ? 'caption' : 'body1'}
                               sx={{
                                 mb: item.attachments.length > 0 ? 0.8 : 0.4,
                                 lineHeight: 1.32,
-                                whiteSpace: 'pre-wrap'
+                                whiteSpace: 'pre-wrap',
+                                fontStyle: isSystemMessage ? 'italic' : 'normal',
+                                textAlign: isSystemMessage ? 'center' : 'left'
                               }}
                             >
                               {item.text}
@@ -414,7 +424,7 @@ export const OfferWorkspaceChatPanel = ({
                                 {formatTime(item.created_at)}
                               </Typography>
 
-                              {ownMessage ? <MessageStatusIcon status={item.status} /> : null}
+                              {ownMessage && !isSystemMessage ? <MessageStatusIcon status={item.status} /> : null}
                             </Box>
                           </Box>
                         </Box>
@@ -429,7 +439,7 @@ export const OfferWorkspaceChatPanel = ({
               <Typography variant="caption" color="text.secondary">{readOnlyNotice}</Typography>
             ) : null}
 
-            <Box component="form" onSubmit={handleSubmit(onSubmitMessage)}>
+            <Box component="form" onSubmit={handleSubmit(onSubmitMessage)} sx={{ flexShrink: 0 }}>
               <TextField
                 placeholder="Введите сообщение"
                 multiline
