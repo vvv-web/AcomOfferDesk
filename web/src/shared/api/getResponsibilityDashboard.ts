@@ -22,7 +22,7 @@ export type ResponsibilityEmployeeNode = {
   children: ResponsibilityEmployeeNode[];
 };
 
-export type ResponsibilityUnassignedRequest = {
+export type ResponsibilityDashboardRequest  = {
   request_id: number;
   description: string | null;
   status: string;
@@ -30,12 +30,14 @@ export type ResponsibilityUnassignedRequest = {
   deadline_at: string;
   created_at: string;
   updated_at: string;
+  owner_user_id: string;
 };
 
 type ResponsibilityDashboardResponse = {
   data: {
     tree: ResponsibilityEmployeeNode[];
-    unassigned_requests: ResponsibilityUnassignedRequest[];
+    unassigned_requests: ResponsibilityDashboardRequest[];
+    assigned_requests: ResponsibilityDashboardRequest[];
   };
   _links?: {
     available_actions?: DashboardActionLink[];
@@ -45,7 +47,8 @@ type ResponsibilityDashboardResponse = {
 
 export type ResponsibilityDashboardResult = {
   tree: ResponsibilityEmployeeNode[];
-  unassignedRequests: ResponsibilityUnassignedRequest[];
+  unassignedRequests: ResponsibilityDashboardRequest[];
+  assignedRequests: ResponsibilityDashboardRequest[];
   availableActions: DashboardActionLink[];
 };
 
@@ -59,6 +62,7 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
   return {
     tree: response.data.tree,
     unassignedRequests: response.data.unassigned_requests,
+    assignedRequests: response.data.assigned_requests,
     availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
   };
 };

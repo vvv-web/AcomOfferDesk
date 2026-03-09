@@ -30,7 +30,7 @@ class DashboardEconomistNode:
 
 
 @dataclass(frozen=True)
-class DashboardUnassignedRequest:
+class DashboardRequestItem:
     request_id: int
     description: str | None
     status: str
@@ -38,12 +38,14 @@ class DashboardUnassignedRequest:
     deadline_at: datetime
     created_at: datetime
     updated_at: datetime
+    owner_user_id: str
 
 
 @dataclass(frozen=True)
 class ResponsibilityDashboard:
     tree: list[DashboardEconomistNode]
-    unassigned_requests: list[DashboardUnassignedRequest]
+    unassigned_requests: list[DashboardRequestItem]
+    assigned_requests: list[DashboardRequestItem]
 
 
 class DashboardService:
@@ -117,7 +119,7 @@ class DashboardService:
             operator_role_id=settings.operator_role_id,
         )
         unassigned_requests = [
-            DashboardUnassignedRequest(
+            DashboardRequestItem(
                 request_id=request.id,
                 description=request.description,
                 status=request.status,
@@ -125,11 +127,31 @@ class DashboardService:
                 deadline_at=request.deadline_at,
                 created_at=request.created_at,
                 updated_at=request.updated_at,
+                owner_user_id=request.id_user,
             )
             for request in unassigned_rows
         ]
 
-        return ResponsibilityDashboard(tree=tree, unassigned_requests=unassigned_requests)
+        assigned_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=list(descendant_ids))
+        assigned_requests = [
+            DashboardRequestItem(
+                request_id=request.id,
+                description=request.description,
+                status=request.status,
+                status_label=format_request_status(request.status),
+                deadline_at=request.deadline_at,
+                created_at=request.created_at,
+                updated_at=request.updated_at,
+                owner_user_id=request.id_user,
+            )
+            for request in assigned_rows
+        ]
+
+        return ResponsibilityDashboard(
+            tree=tree,
+            unassigned_requests=unassigned_requests,
+            assigned_requests=assigned_requests,
+        )
 
     def _sort_children(self, nodes: list[DashboardEconomistNode]) -> None:
         for node in nodes:

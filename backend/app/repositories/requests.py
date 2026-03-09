@@ -220,6 +220,22 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+    
+    async def list_in_progress_requests_by_owner_ids(
+        self,
+        *,
+        owner_ids: list[str],
+    ) -> list[Request]:
+        if not owner_ids:
+            return []
+
+        stmt = (
+            select(Request)
+            .where(Request.id_user.in_(owner_ids), Request.status.in_(["open", "review"]))
+            .order_by(Request.created_at.desc(), Request.id.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     async def decrement_deleted_alert(self, *, request_id: int) -> RequestOfferStats | None:
         stmt = select(RequestOfferStats).where(RequestOfferStats.request_id == request_id)

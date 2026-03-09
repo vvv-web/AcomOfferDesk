@@ -10,6 +10,8 @@ import {
   MenuItem,
   Select,
   Stack,
+  Tab,
+  Tabs,
   SvgIcon,
   Typography,
   useTheme
@@ -19,7 +21,7 @@ import {
   getResponsibilityDashboard,
   type ResponsibilityEmployeeNode,
   type ResponsibilityStatusCounter,
-  type ResponsibilityUnassignedRequest
+  type ResponsibilityDashboardRequest
 } from '@shared/api/getResponsibilityDashboard';
 import { updateRequestDetails } from '@shared/api/updateRequestDetails';
 
@@ -522,7 +524,9 @@ export const ProjectManagerDashboard = () => {
   const workloadColors = useMemo(() => theme.palette.dashboard.workload, [theme]);
 
   const [tree, setTree] = useState<ResponsibilityEmployeeNode[]>([]);
-  const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityUnassignedRequest[]>([]);
+  const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
+  const [assignedRequests, setAssignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
+  const [requestsTab, setRequestsTab] = useState<'unassigned' | 'assigned'>('unassigned');
   const [assignmentState, setAssignmentState] = useState<AssignmentState>({});
   const [expandedNodes, setExpandedNodes] = useState<ExpandedState>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -537,11 +541,12 @@ export const ProjectManagerDashboard = () => {
       const response = await getResponsibilityDashboard();
       setTree(response.tree);
       setUnassignedRequests(response.unassignedRequests);
+      setAssignedRequests(response.assignedRequests);
       setExpandedNodes((prev) => {
         const next = { ...prev };
         for (const node of flattenEmployees(response.tree)) {
           if (node.children.length > 0 && next[node.user_id] === undefined) {
-            next[node.user_id] = true;
+            next[node.user_id] = false;
           }
         }
         return next;
@@ -565,6 +570,15 @@ export const ProjectManagerDashboard = () => {
     () => Object.entries(assignmentState).filter(([, ownerId]) => Boolean(ownerId)).map(([requestId]) => Number(requestId)),
     [assignmentState]
   );
+
+  const employeeNameById = useMemo(() => {
+    return allSubordinates.reduce<Record<string, string>>((acc, employee) => {
+      acc[employee.user_id] = employee.full_name || employee.user_id;
+      return acc;
+    }, {});
+  }, [allSubordinates]);
+
+  const visibleRequests = requestsTab === 'unassigned' ? unassignedRequests : assignedRequests;
 
   const handleAssigneeChange = (requestId: number, ownerId: string) => {
     setAssignmentState((prev) => ({ ...prev, [requestId]: ownerId }));
@@ -657,7 +671,7 @@ export const ProjectManagerDashboard = () => {
         <Card sx={{ borderRadius: 2 }}>
           <CardContent>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>
-              Иерархия экономистов
+              Занятость штата
             </Typography>
             {isLoading ? (
               <Typography color="text.secondary">Загрузка...</Typography>
@@ -682,86 +696,106 @@ export const ProjectManagerDashboard = () => {
 
         <Card sx={{ borderRadius: 2 }}>
           <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>
-              Нераспределённые заявки
+            <Typography variant="h6" sx={{ mb: 0, fontWeight: 700 }}>
+              Заявки
             </Typography>
+            <Tabs
+              value={requestsTab}
+              onChange={(_, value: 'unassigned' | 'assigned') => setRequestsTab(value)}
+              sx={{ mb: 2 }}
+            >
+              <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
+              <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
+            </Tabs>
             <Stack spacing={1.5}>
-              {unassignedRequests.length === 0 ? (
-                <Typography color="text.secondary">Все заявки уже распределены по ответственным</Typography>
+              {visibleRequests.length === 0 ? (
+                <Typography color="text.secondary">
+                  {requestsTab === 'unassigned'
+                    ? 'Все заявки уже распределены по ответственным'
+                    : 'Нет распределённых заявок в работе'}
+                </Typography>
               ) : (
-                unassignedRequests.map((request) => (
-                  <Card key={request.request_id} variant="outlined" sx={{ borderRadius: 2 }}>
-                    <CardContent>
-                      <Stack
-                        direction={{ xs: 'column', md: 'row' }}
-                        spacing={1.5}
-                        justifyContent="space-between"
-                        alignItems={{ xs: 'stretch', md: 'flex-start' }}
-                      >
-                        <Stack spacing={0.9} sx={{ minWidth: 0 }}>
-                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                            <Typography fontWeight={700}>Заявка #{request.request_id}</Typography>
-                            <Chip
-                              size="small"
-                              label={STATUS_LABELS[request.status] ?? request.status_label}
-                              color={request.status === 'open' ? 'primary' : 'info'}
-                            />
-                          </Stack>
-                          <Typography variant="body2" color="text.secondary">
-                            {request.description || 'Описание не указано'}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Дедлайн: {formatDate(request.deadline_at)}
-                          </Typography>
-                        </Stack>
-
+                visibleRequests.map((request) => {
+                  const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'assigned' ? request.owner_user_id : '');
+                  return (
+                    <Card key={`${requestsTab}-${request.request_id}`} variant="outlined" sx={{ borderRadius: 2 }}>
+                      <CardContent>
                         <Stack
-                          spacing={1}
-                          sx={{ width: { xs: '100%', md: 300 }, minHeight: { md: 92 }, justifyContent: 'space-between' }}
+                          direction={{ xs: 'column', md: 'row' }}
+                          spacing={1.5}
+                          justifyContent="space-between"
+                          alignItems={{ xs: 'stretch', md: 'flex-start' }}
                         >
-                          <Select
-                            size="small"
-                            displayEmpty
-                            fullWidth
-                            value={assignmentState[request.request_id] ?? ''}
-                            onChange={(event) => handleAssigneeChange(request.request_id, String(event.target.value))}
-                          >
-                            <MenuItem value="">Выберите ответственного</MenuItem>
-                            {allSubordinates.map((employee) => (
-                              <MenuItem key={`${request.request_id}-${employee.user_id}`} value={employee.user_id}>
-                                {employee.full_name || employee.user_id} ({employee.role_name})
-                              </MenuItem>
-                            ))}
-                          </Select>
+                          <Stack spacing={0.9} sx={{ minWidth: 0 }}>
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                              <Typography fontWeight={700}>Заявка #{request.request_id}</Typography>
+                              <Chip
+                                size="small"
+                                label={STATUS_LABELS[request.status] ?? request.status_label}
+                                color={request.status === 'open' ? 'primary' : 'info'}
+                              />
+                            </Stack>
+                            <Typography variant="body2" color="text.secondary">
+                              {request.description || 'Описание не указано'}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Дедлайн: {formatDate(request.deadline_at)}
+                            </Typography>
+                            {requestsTab === 'assigned' ? (
+                              <Typography variant="caption" color="text.secondary">
+                                Ответственный: {employeeNameById[request.owner_user_id] ?? request.owner_user_id}
+                              </Typography>
+                            ) : null}
+                          </Stack>
 
-                        <Stack direction="row" justifyContent="flex-end" sx={{ pt: { xs: 0, md: 0.5 } }}>
-                            <Button
-                              variant="outlined"
+                          <Stack
+                            spacing={1}
+                            sx={{ width: { xs: '100%', md: 300 }, minHeight: { md: 92 }, justifyContent: 'space-between' }}
+                          >
+                            <Select
                               size="small"
-                              sx={{
-                                minWidth: 48,
-                                height: 32,
-                                px: 1.5,
-                                fontWeight: 700,
-                                borderRadius: 999,
-                                borderColor: 'divider',
-                                color: 'text.secondary',
-                                backgroundColor: 'background.paper'
-                              }}
-                              onClick={() => void handleAssignSingle(request.request_id)}
-                              disabled={!assignmentState[request.request_id] || isAssigning}
+                              displayEmpty
+                              fullWidth
+                              value={selectedOwner}
+                              onChange={(event) => handleAssigneeChange(request.request_id, String(event.target.value))}
                             >
-                              ОК
-                            </Button>
+                              <MenuItem value="">Выберите ответственного</MenuItem>
+                              {allSubordinates.map((employee) => (
+                                <MenuItem key={`${request.request_id}-${employee.user_id}`} value={employee.user_id}>
+                                  {employee.full_name || employee.user_id} ({employee.role_name})
+                                </MenuItem>
+                              ))}
+                            </Select>
+
+                            <Stack direction="row" justifyContent="flex-end" sx={{ pt: { xs: 0, md: 0.5 } }}>
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                sx={{
+                                  minWidth: 48,
+                                  height: 32,
+                                  px: 1.5,
+                                  fontWeight: 700,
+                                  borderRadius: 999,
+                                  borderColor: 'divider',
+                                  color: 'text.secondary',
+                                  backgroundColor: 'background.paper'
+                                }}
+                                onClick={() => void handleAssignSingle(request.request_id)}
+                                disabled={!assignmentState[request.request_id] || isAssigning}
+                              >
+                                ОК
+                              </Button>
+                            </Stack>
                           </Stack>
                         </Stack>
-                        </Stack>
-                    </CardContent>
-                  </Card>
-                ))
+                        </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </Stack>
-            {unassignedRequests.length > 0 ? (
+            {visibleRequests.length > 0 ? (
               <Button
                 variant="contained"
                 fullWidth
@@ -769,7 +803,7 @@ export const ProjectManagerDashboard = () => {
                 onClick={() => void handleAssignAllChanged()}
                 disabled={pendingAssignmentIds.length === 0 || isAssigning}
               >
-                Распределить заявки
+                {requestsTab === 'unassigned' ? 'Распределить заявки' : 'Сохранить изменения'}
               </Button>
             ) : null}
           </CardContent>

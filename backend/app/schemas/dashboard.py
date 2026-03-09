@@ -24,7 +24,7 @@ class DashboardEconomistNodeSchema(BaseModel):
     children: list["DashboardEconomistNodeSchema"] = Field(default_factory=list)
 
 
-class DashboardUnassignedRequestSchema(BaseModel):
+class DashboardRequestItemSchema(BaseModel):
     request_id: int
     description: str | None
     status: str
@@ -32,11 +32,13 @@ class DashboardUnassignedRequestSchema(BaseModel):
     deadline_at: datetime
     created_at: datetime
     updated_at: datetime
+    owner_user_id: str
 
 
 class ResponsibilityDashboardData(BaseModel):
     tree: list[DashboardEconomistNodeSchema]
-    unassigned_requests: list[DashboardUnassignedRequestSchema]
+    unassigned_requests: list[DashboardRequestItemSchema]
+    assigned_requests: list[DashboardRequestItemSchema]
 
 
 class ResponsibilityDashboardResponse(BaseModel):

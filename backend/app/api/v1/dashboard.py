@@ -8,7 +8,7 @@ from app.domain.policies import CurrentUser
 from app.schemas.dashboard import (
     DashboardEconomistNodeSchema,
     DashboardStatusCounterSchema,
-    DashboardUnassignedRequestSchema,
+    DashboardRequestItemSchema,
     ResponsibilityDashboardData,
     ResponsibilityDashboardResponse,
 )
@@ -51,7 +51,7 @@ async def get_responsibility_dashboard(
         data=ResponsibilityDashboardData(
             tree=[_map_node(node) for node in dashboard.tree],
             unassigned_requests=[
-                DashboardUnassignedRequestSchema(
+                DashboardRequestItemSchema(
                     request_id=item.request_id,
                     description=item.description,
                     status=item.status,
@@ -59,8 +59,22 @@ async def get_responsibility_dashboard(
                     deadline_at=item.deadline_at,
                     created_at=item.created_at,
                     updated_at=item.updated_at,
+                    owner_user_id=item.owner_user_id,
                 )
                 for item in dashboard.unassigned_requests
+            ],
+            assigned_requests=[
+                DashboardRequestItemSchema(
+                    request_id=item.request_id,
+                    description=item.description,
+                    status=item.status,
+                    status_label=item.status_label,
+                    deadline_at=item.deadline_at,
+                    created_at=item.created_at,
+                    updated_at=item.updated_at,
+                    owner_user_id=item.owner_user_id,
+                )
+                for item in dashboard.assigned_requests
             ],
         ),
         _links=LinkSet(
