@@ -10,6 +10,7 @@ from app.repositories.files import FileRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
+from app.services.email_notifications import EmailNotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 
 DEFAULT_PARTNER_CARD_PATH = "uploads/Карта_партнера.pdf"
@@ -162,11 +163,19 @@ class DeletedAlertViewedResult:
 
 
 class RequestService:
-    def __init__(self, requests: RequestRepository, files: FileRepository, users: UserRepository, offers: OfferRepository):
+    def __init__(
+        self,
+        requests: RequestRepository,
+        files: FileRepository,
+        users: UserRepository,
+        offers: OfferRepository,
+        email_notifications: EmailNotificationService | None = None,
+    ):
         self._requests = requests
         self._files = files
         self._users = users
         self._offers = offers
+        self._email_notifications = email_notifications
 
     async def create_request(
         self,
@@ -201,6 +210,13 @@ class RequestService:
             description=description,
             deadline_at=deadline_at,
         )
+
+        if self._email_notifications is not None:
+            await self._email_notifications.notify_new_request(
+                request_id=request.id,
+                description=description,
+                deadline_at=deadline_at,
+            )
 
         return request.id, file_ids
     

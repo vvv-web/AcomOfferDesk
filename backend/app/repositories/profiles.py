@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orm_models import Profile
+from app.models.orm_models import Profile, User
 
 
 class ProfileRepository:
@@ -34,3 +34,21 @@ class ProfileRepository:
 
         profile.mail = candidate
         return True
+    
+    async def list_active_contractor_emails(self, *, contractor_role_id: int) -> list[str]:
+        stmt = (
+            select(Profile.mail)
+            .join(User, User.id == Profile.id)
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .order_by(User.id)
+        )
+        result = await self._session.execute(stmt)
+
+        emails: list[str] = []
+        for mail in result.scalars().all():
+            normalized_mail = mail.strip()
+            if not normalized_mail or normalized_mail.lower() in {"не указано", "none", "null"}:
+                continue
+            emails.append(normalized_mail)
+        return list(dict.fromkeys(emails))

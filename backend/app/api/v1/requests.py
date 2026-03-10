@@ -40,6 +40,7 @@ from app.schemas.requests import (
     RequestStatsSchema,
 )
 from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
+from app.services.email_notifications import EmailNotificationService
 
 router = APIRouter()
 
@@ -516,7 +517,14 @@ async def create_request(
         file_inputs.append(RequestFileCreateInput(path=str(relative_path), name=safe_name))
 
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        email_notifications = EmailNotificationService(uow.profiles)
+        service = RequestService(
+            uow.requests,
+            uow.files,
+            uow.users,
+            uow.offers,
+            email_notifications=email_notifications,
+        )
         request_id, file_ids = await service.create_request(
             current_user=current_user,
             deadline_at=deadline_at,
