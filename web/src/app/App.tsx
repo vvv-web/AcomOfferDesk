@@ -6,6 +6,7 @@ import { CreateRequestPage } from '@pages/CreateRequestPage';
 import { RequestDetailsPage } from '@pages/RequestDetailsPage';
 import { RequestsPage } from '@pages/RequestsPage';
 import { TgRegisterPage } from '@pages/TgRegisterPage';
+import { VerifyEmailPage } from '@pages/VerifyEmailPage';
 import { ContractorRequestDetailsPage } from '@pages/ContractorRequestDetailsPage';
 import { OfferWorkspacePage } from '@pages/OfferWorkspacePage';
 import { FeedbackPage } from '@pages/FeedbackPage';
@@ -34,6 +35,7 @@ export const App = () => {
         <Route path="/login" element={<AuthPage />} />
         <Route path="/auth/login" element={<AuthPage />} />
         <Route path="/auth/tg/register" element={<TgRegisterPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Navigate to={defaultPath} replace />} />

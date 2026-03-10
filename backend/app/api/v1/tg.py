@@ -13,6 +13,7 @@ from app.core.uow import UnitOfWork
 from app.domain.exceptions import Forbidden
 from app.models.orm_models import TgUser
 from app.schemas.contractor_registration import (
+    ContractorEmailVerificationRequest,
     ContractorRegistrationRequest,
     ContractorRegistrationResponse,
     ContractorRegistrationData,
@@ -32,6 +33,8 @@ from app.services.tg_notifications import notify_expired_link, notify_registrati
 from app.services.tg_start import TgStartService
 from app.services.tg_users import TgUserRegistrationService
 from app.services.users import ContractorRegistrationService
+from app.services.email_verification import EmailVerificationService
+from app.core.email_token import EmailVerificationTokenCodec
 
 router = APIRouter(prefix="/tg")
 
@@ -116,6 +119,23 @@ async def handle_tg_start(
     )
 
 
+@router.post("/register/request-email-verification")
+@router.post("/register/request-email-verification/", include_in_schema=False)
+async def request_tg_registration_email_verification(
+    payload: ContractorEmailVerificationRequest,
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict[str, str]:
+    tg_id = await _resolve_tg_id_from_registration_token(payload.token)
+    async with uow:
+        service = EmailVerificationService(uow.profiles)
+        await service.request_tg_registration_verification(
+            tg_id=tg_id,
+            email=payload.mail.strip(),
+            tg_token=payload.token,
+        )
+    return {"detail": "Verification email sent"}
+
+
 @router.post("/register/complete", response_model=ContractorRegistrationResponse)
 @router.post("/register/complete/", response_model=ContractorRegistrationResponse, include_in_schema=False)
 async def complete_tg_registration(
@@ -124,6 +144,12 @@ async def complete_tg_registration(
 ) -> ContractorRegistrationResponse:
     tg_id = await _resolve_tg_id_from_registration_token(payload.token)
     async with uow:
+        verification_service = EmailVerificationService(uow.profiles)
+        claims = await verification_service.parse_claims(token=payload.email_verification_token)
+        if claims.purpose != EmailVerificationTokenCodec.PURPOSE_TG_REGISTER or claims.tg_id != tg_id:
+            raise Forbidden("Invalid email verification token")
+        verified_email = claims.email
+
         service = ContractorRegistrationService(
             uow.users,
             uow.profiles,
@@ -136,7 +162,7 @@ async def complete_tg_registration(
             password=payload.password.strip(),
             full_name=payload.full_name.strip(),
             phone=payload.phone.strip(),
-            mail=payload.mail.strip(),
+            mail=verified_email,
             company_name=payload.company_name.strip(),
             inn=payload.inn.strip(),
             company_phone=payload.company_phone.strip(),

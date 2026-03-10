@@ -24,6 +24,7 @@ import {
 import type { CurrentUserProfile } from '@shared/api/getCurrentUserProfile';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
+import { requestEmailVerification } from '@shared/api/emailVerification';
 
 
 const fallbackText = 'Не указано';
@@ -112,6 +113,7 @@ export const ProfileButton = () => {
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const {
     register: registerPassword,
@@ -167,6 +169,7 @@ export const ProfileButton = () => {
   const loadProfile = async () => {
     setIsLoading(true);
     setError(null);
+    setInfo(null);
     try {
       const data = await getCurrentUserProfile();
       setProfile(data);
@@ -193,6 +196,7 @@ export const ProfileButton = () => {
 
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);
+    setInfo(null);
     try {
       const nextProfile = await updateMyCredentials({
         current_password: values.oldPassword.trim(),
@@ -208,14 +212,21 @@ export const ProfileButton = () => {
 
   const onSubmitProfile = async (values: ProfileFormValues) => {
     setError(null);
+    setInfo(null);
     try {
+      const normalizedMail = normalizeOptional(values.mail);
       const nextProfile = await updateMyProfile({
         full_name: values.full_name.trim(),
-        phone: values.phone.trim(),
-        mail: normalizeOptional(values.mail)
+        phone: values.phone.trim()
       });
+      if (normalizedMail && normalizedMail !== (profile?.mail ?? '').trim()) {
+        await requestEmailVerification(normalizedMail);
+      }
       setProfile(nextProfile);
       setOpenProfile(false);
+      if (normalizedMail) {
+        setInfo('Письмо подтверждения отправлено. Email обновится после перехода по ссылке из письма.');
+      }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить личные данные');
     }
@@ -223,6 +234,7 @@ export const ProfileButton = () => {
 
   const onSubmitCompany = async (values: CompanyFormValues) => {
     setError(null);
+    setInfo(null);
     try {
       const nextProfile = await updateMyCompanyContacts({
         inn: values.inn.trim(),
@@ -274,7 +286,8 @@ export const ProfileButton = () => {
           ) : (
             <Stack spacing={2.5}>
               {error ? <Alert severity="error">{error}</Alert> : null}
-
+              {info ? <Alert severity="info">{info}</Alert> : null}
+              
               <Stack spacing={1.5}>
                 <Typography variant="h5" fontWeight={700}>
                   Личные данные

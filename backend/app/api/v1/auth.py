@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
@@ -15,8 +16,43 @@ from app.schemas.links import Link, LinkSet
 from app.core.config import settings
 from app.services.auth import AuthService
 from app.services.users import UserRegistrationService
+from app.services.email_verification import EmailVerificationService
 
 router = APIRouter()
+
+
+class RequestEmailVerificationRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+
+
+class EmailVerificationActionResponse(BaseModel):
+    detail: str
+
+
+@router.post("/auth/request-email-verification", response_model=EmailVerificationActionResponse)
+async def request_email_verification(
+    payload: RequestEmailVerificationRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> EmailVerificationActionResponse:
+    async with uow:
+        service = EmailVerificationService(uow.profiles)
+        await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
+    return EmailVerificationActionResponse(detail="Verification email sent")
+
+
+@router.get("/auth/verify-email", response_model=EmailVerificationActionResponse)
+async def verify_email(
+    token: str = Query(..., min_length=20),
+    uow: UnitOfWork = Depends(get_uow),
+) -> EmailVerificationActionResponse:
+    async with uow:
+        service = EmailVerificationService(uow.profiles)
+        updated = await service.confirm_profile_verification(token=token)
+
+    if updated:
+        return EmailVerificationActionResponse(detail="Email verified")
+    return EmailVerificationActionResponse(detail="Email already verified")
 
 
 @router.post("/auth/login", response_model=LoginResponse)

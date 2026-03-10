@@ -22,3 +22,15 @@ class ProfileRepository:
             return []
         result = await self._session.execute(select(Profile).where(Profile.id.in_(user_ids)))
         return list(result.scalars().all())
+    
+    async def update_mail_after_verification(self, user_id: str, email: str) -> bool:
+        profile = await self.get_by_id(user_id)
+        if profile is None:
+            return False
+
+        candidate = email.strip()
+        if profile.mail.strip().lower() == candidate.lower():
+            return True
+
+        profile.mail = candidate
+        return True

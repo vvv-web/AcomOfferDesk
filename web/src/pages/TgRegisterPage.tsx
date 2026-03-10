@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Alert, Box, Button, IconButton, Paper, Snackbar, Stack, TextField, Typography } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
-import { completeTgRegistration } from '@shared/api/completeTgRegistration';
+import { completeTgRegistration, requestTgEmailVerification } from '@shared/api/completeTgRegistration';
 
 type RegistrationField = {
     label: string;
@@ -122,12 +122,14 @@ export const TgRegisterPage = () => {
     const currentStep = useMemo(() => stepTitles[step], [step]);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
 
     const {
         register,
         handleSubmit,
-        formState: { errors, isSubmitting },
         trigger,
+        getValues,
+        formState: { errors, isSubmitting },
         reset
     } = useForm<RegistrationFormValues>({
         resolver: zodResolver(schema),
@@ -160,6 +162,38 @@ export const TgRegisterPage = () => {
         setStep((prev) => Math.max(prev - 1, 0));
     };
 
+    useEffect(() => {
+        const verifiedToken = searchParams.get('email_verification_token');
+        if (verifiedToken) {
+            setEmailVerificationToken(verifiedToken);
+            setSuccessMessage('Email подтвержден. Можно завершить регистрацию.');
+        }
+    }, [searchParams]);
+
+
+    const handleRequestEmailVerification = async () => {
+        const token = searchParams.get('token');
+        if (!token) {
+            setErrorMessage('Ссылка недействительна. Перейдите по ссылке из Telegram-бота.');
+            return;
+        }
+
+        const email = getValues('mail')?.trim();
+        if (!email || !emailRegex.test(email)) {
+            setErrorMessage('Введите корректный email и повторите отправку письма.');
+            return;
+        }
+
+        setErrorMessage(null);
+        setSuccessMessage(null);
+        try {
+            await requestTgEmailVerification({ token, mail: email });
+            setSuccessMessage('Письмо для подтверждения отправлено. Перейдите по ссылке из письма.');
+        } catch (error) {
+            setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить письмо подтверждения');
+        }
+    };
+
     const onSubmit = async (values: RegistrationFormValues) => {
         const token = searchParams.get('token');
         if (!token) {
@@ -168,15 +202,19 @@ export const TgRegisterPage = () => {
         }
         setErrorMessage(null);
         setSuccessMessage(null);
+        if (!emailVerificationToken) {
+            setErrorMessage('Сначала подтвердите email через письмо.');
+            return;
+        }
         try {
             await completeTgRegistration({
                 token,
+                email_verification_token: emailVerificationToken,
                 login: values.login,
                 password: values.password,
                 password_confirm: values.password_confirm,
                 full_name: values.full_name,
                 phone: values.phone,
-                mail: values.mail,
                 company_name: values.company_name,
                 inn: values.inn,
                 company_phone: values.company_phone,
@@ -275,6 +313,16 @@ export const TgRegisterPage = () => {
                                 />
                             ))}
                             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
+                            {step === 1 ? (
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => void handleRequestEmailVerification()}
+                                    type="button"
+                                    sx={{ width: '100%', borderRadius: 999, textTransform: 'none', paddingY: 1.1 }}
+                                >
+                                    Отправить письмо для подтверждения email
+                                </Button>
+                            ) : null}
                             <Button
                                 variant="outlined"
                                 onClick={step === stepTitles.length - 1 ? undefined : handleNext}

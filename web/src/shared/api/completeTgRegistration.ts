@@ -1,13 +1,18 @@
 import { fetchJson } from './client';
 
+export type RequestTgEmailVerificationPayload = {
+  token: string;
+  mail: string;
+};
+
 export type CompleteTgRegistrationPayload = {
   token: string;
+  email_verification_token: string;
   login: string;
   password: string;
   password_confirm: string;
   full_name: string;
   phone: string;
-  mail: string;
   company_name: string;
   inn: string;
   company_phone: string;
@@ -26,6 +31,18 @@ export type CompleteTgRegistrationResponse = {
     self: { href: string; method: string };
     available_action?: { href: string; method: string };
   };
+};
+
+export const requestTgEmailVerification = async (payload: RequestTgEmailVerificationPayload): Promise<{ detail: string }> => {
+  return fetchJson<{ detail: string }>(
+    '/api/v1/tg/register/request-email-verification/',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    },
+    'Ошибка отправки письма подтверждения',
+    false
+  );
 };
 
 export const completeTgRegistration = async (

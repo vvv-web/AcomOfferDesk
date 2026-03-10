@@ -4,15 +4,25 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.links import LinkSet
 
+class ContractorEmailVerificationRequest(BaseModel):
+    token: str = Field(..., min_length=1, description="Signed Telegram token for contractor registration")
+    mail: str = Field(..., min_length=1, max_length=256)
+
+    @field_validator("mail")
+    @classmethod
+    def _validate_mail(cls, value: str) -> str:
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value):
+            raise ValueError("Invalid email format")
+        return value
 
 class ContractorRegistrationRequest(BaseModel):
     token: str = Field(..., min_length=1, description="Signed Telegram token for contractor registration")
+    email_verification_token: str = Field(..., min_length=1, description="Signed email verification token")
     login: str = Field(..., min_length=3, max_length=128)
     password: str = Field(..., min_length=6, max_length=72)
     password_confirm: str = Field(..., min_length=6, max_length=72)
     full_name: str = Field(..., min_length=1, max_length=256)
     phone: str = Field(..., min_length=1, max_length=64)
-    mail: str = Field(..., min_length=1, max_length=256)
     company_name: str = Field(..., min_length=1, max_length=256)
     inn: str = Field(..., min_length=1, max_length=32)
     company_phone: str = Field(..., min_length=1, max_length=64)
@@ -49,12 +59,6 @@ class ContractorRegistrationRequest(BaseModel):
             raise ValueError("Invalid phone format")
         return value
 
-    @field_validator("mail")
-    @classmethod
-    def _validate_mail(cls, value: str) -> str:
-        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value):
-            raise ValueError("Invalid email format")
-        return value
 
     @field_validator("company_mail")
     @classmethod
