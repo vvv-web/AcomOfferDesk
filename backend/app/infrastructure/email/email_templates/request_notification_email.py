@@ -16,7 +16,7 @@ def build_request_notification_email_payload(
     reply_token: str,
     attachment_warning: str | None = None,
 ) -> EmailMessagePayload:
-    subject = f"AcomOfferDesk — новая заявка №{request_id} [rt:{reply_token}]"
+    subject = f"AcomOfferDesk — новая заявка №{request_id}"
     return EmailMessagePayload(
         to_email=to_email,
         subject=subject,
@@ -36,6 +36,7 @@ def build_request_notification_email_payload(
             reply_token=reply_token,
             attachment_warning=attachment_warning,
         ),
+        reply_token=reply_token,
     )
 
 
@@ -57,8 +58,11 @@ def _build_request_notification_text_template(
         f"Новая заявка №{request_id}\n"
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
-        f"Открыть заявку: {request_url}\n"
-        f"Reply token: {reply_token}"
+        "Как можно оставить отклик:\n"
+        "Вариант 1. Откройте веб-сервис по ссылке ниже и оставьте отклик самостоятельно.\n"
+        "Вариант 2. Ответьте на это письмо — мы автоматически создадим отклик с чатом для обсуждения в веб-сервисе.\n"
+        "Если есть документы, пожалуйста, прикрепите файлы к ответному письму.\n\n"
+        f"Открыть заявку: {request_url}"
         f"{warning_block}\n"
     )
 
@@ -75,7 +79,6 @@ def _build_request_notification_html_template(
     deadline_label = deadline_at.strftime("%d.%m.%Y %H:%M")
     request_description = escape(description or "Описание не указано")
     escaped_url = escape(request_url)
-    escaped_reply_token = escape(reply_token)
     warning_html = (
         f"""
             <tr>
@@ -109,6 +112,14 @@ def _build_request_notification_html_template(
               </td>
             </tr>
             <tr>
+              <td style="padding:14px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                <strong>Как можно оставить отклик:</strong><br/>
+                Вариант 1. Откройте веб-сервис по ссылке ниже и оставьте отклик самостоятельно.<br/>
+                Вариант 2. Ответьте на это письмо — мы автоматически создадим отклик с чатом для обсуждения в веб-сервисе.<br/>
+                Если есть документы, пожалуйста, прикрепите файлы к ответному письму.
+              </td>
+            </tr>
+            <tr>
               <td style="padding:24px 28px 8px 28px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
@@ -122,11 +133,6 @@ def _build_request_notification_html_template(
               </td>
             </tr>
             {warning_html}
-            <tr>
-              <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
-                Reply token: <span style="word-break:break-all;">{escaped_reply_token}</span>
-              </td>
-            </tr>
             <tr>
               <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Если кнопка не работает, откройте ссылку вручную:<br/>

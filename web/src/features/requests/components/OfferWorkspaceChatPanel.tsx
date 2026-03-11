@@ -38,6 +38,25 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
+const AUTO_EMAIL_MESSAGE_LABEL = 'Сообщение сформировано автоматически из письма';
+const AUTO_EMAIL_PREFIXES = ['📧 Из письма контрагента', AUTO_EMAIL_MESSAGE_LABEL, '🤖 Сообщение сформировано автоматически из письма'];
+const AUTO_EMAIL_OFFER_CREATED_TEXTS = [
+  'Оффер сформирован автоматически из письма',
+  '📧 Оффер создан из ответа на e-mail',
+  '🤖 Оффер сформирован автоматически из письма'
+];
+
+const parseEmailOriginText = (text: string) => {
+  const normalized = text.trimStart();
+  const prefix = AUTO_EMAIL_PREFIXES.find((item) => normalized.startsWith(item));
+  if (!prefix) {
+    return { isEmailOrigin: false, body: text };
+  }
+
+  const body = normalized.slice(prefix.length).trimStart();
+  return { isEmailOrigin: true, body };
+};
+
 const formatDayLabel = (iso: string | null) => {
   if (!iso) return 'Без даты';
 
@@ -253,6 +272,13 @@ export const OfferWorkspaceChatPanel = ({
                     const ownMessage = item.user_id === sessionLogin;
                     const isContractorMessage = Boolean(contractorUserId) && item.user_id === contractorUserId;
                     const isSystemMessage = Boolean(item.is_system);
+                    const parsedEmailText = parseEmailOriginText(item.text);
+                    const isEmailOriginMessage = !isSystemMessage && parsedEmailText.isEmailOrigin;
+                    const normalizedText = item.text.trim();
+                    const isAutoOfferCreatedMessage = !isSystemMessage
+                      && AUTO_EMAIL_OFFER_CREATED_TEXTS.some((text) => normalizedText.startsWith(text));
+                    const isSystemVisualMessage = isSystemMessage || isAutoOfferCreatedMessage;
+                    const displayText = isEmailOriginMessage ? parsedEmailText.body : item.text;
 
                     const prev = idx > 0 ? sortedMessages[idx - 1] : null;
 
@@ -298,7 +324,7 @@ export const OfferWorkspaceChatPanel = ({
                         <Box
                           sx={{
                             display: 'flex',
-                            justifyContent: isSystemMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
+                            justifyContent: isSystemVisualMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
                             mt: showDateDivider ? 0.9 : isGroupedWithPrev ? 0.25 : 0.9
                           }}
                         >
@@ -309,49 +335,55 @@ export const OfferWorkspaceChatPanel = ({
                               const top = isGroupedWithPrev ? 10 : R;
 
                               return {
-                                maxWidth: isSystemMessage ? '100%' : '82%',
+                                maxWidth: isSystemVisualMessage ? '100%' : '82%',
                                 px: 1.6,
-                                 py: isSystemMessage ? 0.7 : 1.1,
+                                py: isSystemVisualMessage ? 0.7 : 1.1,
 
-                                borderRadius: isSystemMessage ? '999px' : `${R}px`,
+                                borderRadius: isSystemVisualMessage  ? '999px' : `${R}px`,
                                 borderTopLeftRadius: ownMessage ? `${top}px` : `${CUT}px`,
                                 borderTopRightRadius: ownMessage ? `${CUT}px` : `${top}px`,
                                 borderBottomLeftRadius: `${R}px`,
                                 borderBottomRightRadius: `${R}px`,
 
-                                backgroundColor: isSystemMessage
+                                backgroundColor: isSystemVisualMessage 
                                   ? alpha(theme.palette.warning.main, 0.12)
-                                  : ownMessage
-                                  ? theme.palette.primary.main
-                                  : isContractorMessage
-                                    ? '#eaf4ff'
-                                    : alpha(theme.palette.background.paper, 0.98),
-                                color: isSystemMessage
+                                  : isEmailOriginMessage
+                                    ? alpha(theme.palette.primary.main, 0.12)
+                                    : ownMessage
+                                      ? theme.palette.primary.main
+                                      : isContractorMessage
+                                        ? '#eaf4ff'
+                                        : alpha(theme.palette.background.paper, 0.98),
+                                color: isSystemVisualMessage
                                   ? theme.palette.text.secondary
-                                  : ownMessage
-                                    ? 'rgba(255,255,255,0.96)'
-                                    : theme.palette.text.primary,
+                                  : isEmailOriginMessage
+                                    ? theme.palette.text.primary
+                                    : ownMessage
+                                      ? 'rgba(255,255,255,0.96)'
+                                      : theme.palette.text.primary,
                                 opacity: item.is_muted ? 0.6 : 1,
 
-                                boxShadow: isSystemMessage
+                                boxShadow: isSystemVisualMessage
                                   ? 'none'
                                   : ownMessage
                                   ? `0 6px 18px ${alpha(theme.palette.primary.main, 0.18)}`
                                   : '0 1px 4px rgba(0,0,0,0.06)',
 
-                                border: isSystemMessage
+                                border: isSystemVisualMessage
                                   ? `1px dashed ${alpha(theme.palette.warning.main, 0.4)}`
-                                  : ownMessage
-                                  ? 'none'
-                                  : isContractorMessage
-                                    ? `1px solid ${alpha(theme.palette.primary.main, 0.16)}`
-                                    : 'none',
+                                  : isEmailOriginMessage
+                                    ? `1px dashed ${alpha(theme.palette.primary.main, 0.35)}`
+                                    : ownMessage
+                                      ? 'none'
+                                      : isContractorMessage
+                                        ? `1px solid ${alpha(theme.palette.primary.main, 0.16)}`
+                                        : 'none',
 
                                 overflowWrap: 'anywhere'
                               };
                             }}
                           >
-                            {!isGroupedWithPrev && !isSystemMessage ? (
+                            {!isGroupedWithPrev && !isSystemVisualMessage  ? (
                               <Typography
                                 variant="caption"
                                 sx={{
@@ -365,18 +397,33 @@ export const OfferWorkspaceChatPanel = ({
                                 {ownMessage ? 'Я' : senderName}
                               </Typography>
                             ) : null}
+
+                            {isEmailOriginMessage ? (
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  display: 'block',
+                                  mb: 0.45,
+                                  fontStyle: 'italic',
+                                  color: 'text.secondary'
+                                }}
+                              >
+                                {AUTO_EMAIL_MESSAGE_LABEL}
+                              </Typography>
+                            ) : null}
                             
                             <Typography
-                              variant={isSystemMessage ? 'caption' : 'body1'}
+                              variant={isSystemVisualMessage  ? 'caption' : 'body1'}
                               sx={{
                                 mb: item.attachments.length > 0 ? 0.8 : 0.4,
                                 lineHeight: 1.32,
                                 whiteSpace: 'pre-wrap',
-                                fontStyle: isSystemMessage ? 'italic' : 'normal',
-                                textAlign: isSystemMessage ? 'center' : 'left'
+                                fontStyle: isSystemVisualMessage ? 'italic' : 'normal',
+                                textAlign: isSystemVisualMessage ? 'center' : 'left',
+                                display: isEmailOriginMessage && !displayText ? 'none' : 'block'
                               }}
                             >
-                              {item.text}
+                              {displayText}
                             </Typography>
 
                             {item.attachments.length > 0 ? (
@@ -389,7 +436,7 @@ export const OfferWorkspaceChatPanel = ({
                                     variant="outlined"
                                     onClick={() => onDownloadAttachment(attachment.download_url, attachment.name)}
                                     sx={(theme) => ({
-                                      alignSelf: ownMessage ? 'flex-end' : 'flex-start',
+                                      alignSelf: isSystemVisualMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
                                       borderColor: ownMessage
                                         ? alpha(theme.palette.common.white, 0.35)
                                         : theme.palette.divider,
@@ -407,7 +454,7 @@ export const OfferWorkspaceChatPanel = ({
                             <Box
                               sx={{
                                 display: 'flex',
-                                justifyContent: 'flex-end',
+                                justifyContent: isSystemVisualMessage ? 'center' : 'flex-end',
                                 alignItems: 'center',
                                 gap: 0.6,
                                 mt: 0.2
@@ -418,13 +465,13 @@ export const OfferWorkspaceChatPanel = ({
                                 sx={{
                                   fontSize: 12,
                                   lineHeight: 1,
-                                  color: ownMessage ? alpha('#fff', 0.82) : 'text.secondary'
+                                  color: ownMessage && !isSystemVisualMessage ? alpha('#fff', 0.82) : 'text.secondary'
                                 }}
                               >
                                 {formatTime(item.created_at)}
                               </Typography>
 
-                              {ownMessage && !isSystemMessage ? <MessageStatusIcon status={item.status} /> : null}
+                              {ownMessage && !isSystemVisualMessage ? <MessageStatusIcon status={item.status} /> : null}
                             </Box>
                           </Box>
                         </Box>

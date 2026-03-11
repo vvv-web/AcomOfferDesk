@@ -11,3 +11,4 @@ class EmailMessagePayload:
     text_content: str
     html_content: str | None = None
     attachments: list[EmailAttachment] | None = None
+    reply_token: str | None = None

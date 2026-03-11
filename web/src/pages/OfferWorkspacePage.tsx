@@ -131,7 +131,7 @@ const formatDate = (value: string | null, withTime = false) => {
   }).format(date);
 };
 
-const buildUnifiedChat = async (offers: Array<{ offer_id: number; status: string; created_at: string | null }>) => {
+const buildUnifiedChat = async (offers: Array<{ offer_id: number; status: string; created_at: string | null; updated_at: string | null }>) => {
   const sortedByCreated = [...offers].sort(
     (left, right) => new Date(left.created_at ?? 0).getTime() - new Date(right.created_at ?? 0).getTime()
   );
@@ -156,8 +156,8 @@ const buildUnifiedChat = async (offers: Array<{ offer_id: number; status: string
         user_full_name: 'Система',
         text: `Оффер №${offer.offer_id} был удален.`,
         status: 'read',
-        created_at: offer.created_at ?? new Date().toISOString(),
-        updated_at: offer.created_at ?? new Date().toISOString(),
+        created_at: offer.updated_at ?? offer.created_at ?? new Date().toISOString(),
+        updated_at: offer.updated_at ?? offer.created_at ?? new Date().toISOString(),
         attachments: [],
         is_system: true,
         is_muted: true

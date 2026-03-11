@@ -70,6 +70,7 @@ class SendRequestNotificationEmailUseCase:
                     text_content=payload.text_content,
                     html_content=payload.html_content,
                     attachments=attachments,
+                    reply_token=payload.reply_token,
                 )
             except smtplib.SMTPException:
                 continue

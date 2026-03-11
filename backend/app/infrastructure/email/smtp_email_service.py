@@ -40,6 +40,7 @@ class SMTPEmailService:
         text_content: str,
         html_content: str | None = None,
         attachments: list[EmailAttachment] | None = None,
+        reply_token: str | None = None,
     ) -> None:
         payload = EmailMessagePayload(
             to_email=to_email,
@@ -47,6 +48,7 @@ class SMTPEmailService:
             text_content=text_content,
             html_content=html_content,
             attachments=attachments,
+            reply_token=reply_token,
         )
         message = self._build_mime_message(payload)
         await anyio.to_thread.run_sync(self._send_sync, message, payload.to_email)
@@ -56,7 +58,7 @@ class SMTPEmailService:
         message["Subject"] = payload.subject
         message["From"] = formataddr((self._from_name, self._from_address))
         message["To"] = payload.to_email
-        message["Reply-To"] = self._from_address
+        message["Reply-To"] = self._build_reply_to_address(payload.reply_token)
         message["Date"] = formatdate(localtime=True)
         message["Message-ID"] = make_msgid(domain=self._from_address.split("@")[-1])
         message["MIME-Version"] = "1.0"
@@ -77,6 +79,17 @@ class SMTPEmailService:
             )
 
         return message
+    
+    def _build_reply_to_address(self, reply_token: str | None) -> str:
+        if not reply_token:
+            return self._from_address
+
+        local_part, _, domain_part = self._from_address.partition("@")
+        if not local_part or not domain_part:
+            return self._from_address
+
+        tagged_address = f"{local_part}+rt-{reply_token}@{domain_part}"
+        return formataddr((self._from_name, tagged_address))
 
     def _send_sync(self, message: EmailMessage, to_email: str) -> None:
         context = ssl.create_default_context()

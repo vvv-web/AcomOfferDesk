@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+import fcntl
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +16,32 @@ from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 
 logger = logging.getLogger(__name__)
 
+class _PollingLeaderLock:
+    def __init__(self, lock_path: Path) -> None:
+        self._lock_path = lock_path
+        self._fd = None
+
+    def try_acquire(self) -> bool:
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = self._lock_path.open("a+")
+        try:
+            fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            fd.close()
+            return False
+        self._fd = fd
+        return True
+
+    def release(self) -> None:
+        if self._fd is None:
+            return
+        try:
+            fcntl.flock(self._fd.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        finally:
+            self._fd.close()
+            self._fd = None
 
 async def _request_reply_polling_worker(stop_event: asyncio.Event) -> None:
     try:
@@ -44,12 +72,22 @@ async def _request_reply_polling_worker(stop_event: asyncio.Event) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     stop_event = asyncio.Event()
-    task = asyncio.create_task(_request_reply_polling_worker(stop_event))
+    leader_lock = _PollingLeaderLock(Path('/tmp/acom_offerdesk_reply_polling.lock'))
+    is_leader = leader_lock.try_acquire()
+
+    task: asyncio.Task[None] | None = None
+    if is_leader:
+        task = asyncio.create_task(_request_reply_polling_worker(stop_event))
+    else:
+        logger.info('Request reply background task skipped in current worker: leader lock is held by another worker')
     try:
         yield
     finally:
         stop_event.set()
-        await task
+        if task is not None:
+            await task
+        if is_leader:
+            leader_lock.release()
 
 
 app = FastAPI(title="Order Backend", version="0.1.0", lifespan=lifespan)

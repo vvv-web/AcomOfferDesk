@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import parseaddr
 from urllib.parse import parse_qs, unquote, urlparse
 
 from app.domain.exceptions import Unauthorized
@@ -23,6 +24,7 @@ class ReplyTokenClaims:
 class ReplyTokenCodec:
     PURPOSE = "request_reply"
     _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+    _REPLY_TO_ALIAS_PATTERN = re.compile(r"(?:\+|%2B)rt-([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", re.IGNORECASE)
 
     def __init__(self, *, secret: str) -> None:
         self._secret = secret.encode("utf-8")
@@ -134,23 +136,34 @@ class ReplyTokenCodec:
         for raw_token in self._TOKEN_PATTERN.findall(text):
             extracted.append(raw_token)
 
-        if "?" in text or "mailto:" in text:
-            parts = re.split(r"[\s,<>()]", text)
-            for part in parts:
-                candidate = part.strip().strip('"\'')
-                if not candidate:
-                    continue
-                try:
-                    parsed = urlparse(candidate)
-                except ValueError:
-                    continue
-                if parsed.scheme and parsed.query:
-                    query_items = parse_qs(parsed.query)
-                    for key in ("reply_token", "token", "rt"):
-                        for token in query_items.get(key, []):
-                            decoded = unquote(token).strip()
-                            if decoded:
-                                extracted.append(decoded)
+        for alias_token in self._REPLY_TO_ALIAS_PATTERN.findall(text):
+            extracted.append(alias_token)
+
+        parts = re.split(r"[\s,<>()]", text)
+        for part in parts:
+            candidate = part.strip().strip("\"'")
+            if not candidate:
+                continue
+
+            address = parseaddr(candidate)[1].strip()
+            if address:
+                extracted.extend(self._extract_from_reply_alias_address(address))
+
+            if "?" not in candidate and "mailto:" not in candidate:
+                continue
+
+            try:
+                parsed = urlparse(candidate)
+            except ValueError:
+                continue
+
+            if parsed.scheme and parsed.query:
+                query_items = parse_qs(parsed.query)
+                for key in ("reply_token", "token", "rt"):
+                    for token in query_items.get(key, []):
+                        decoded = unquote(token).strip()
+                        if decoded:
+                            extracted.append(decoded)
 
         unique_tokens = []
         seen: set[str] = set()
@@ -160,6 +173,15 @@ class ReplyTokenCodec:
             seen.add(token)
             unique_tokens.append(token)
         return unique_tokens
+
+    def _extract_from_reply_alias_address(self, address: str) -> list[str]:
+        local_part, _, _ = address.partition("@")
+        if not local_part:
+            return []
+
+        normalized_local = unquote(local_part)
+        matches = self._REPLY_TO_ALIAS_PATTERN.findall(normalized_local)
+        return [token.strip() for token in matches if token.strip()]
 
     @staticmethod
     def _b64_encode(raw: bytes) -> str:
