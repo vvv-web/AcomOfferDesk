@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -9,6 +10,7 @@ from email.utils import formataddr, formatdate, make_msgid
 import anyio
 
 from app.infrastructure.email.email_message_payload import EmailMessagePayload
+from app.infrastructure.email.email_attachment import EmailAttachment
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +39,14 @@ class SMTPEmailService:
         subject: str,
         text_content: str,
         html_content: str | None = None,
+        attachments: list[EmailAttachment] | None = None,
     ) -> None:
         payload = EmailMessagePayload(
             to_email=to_email,
             subject=subject,
             text_content=text_content,
             html_content=html_content,
+            attachments=attachments,
         )
         message = self._build_mime_message(payload)
         await anyio.to_thread.run_sync(self._send_sync, message, payload.to_email)
@@ -60,6 +64,17 @@ class SMTPEmailService:
         message.set_content(payload.text_content, subtype="plain", charset="utf-8")
         if payload.html_content:
             message.add_alternative(payload.html_content, subtype="html", charset="utf-8")
+
+        for attachment in payload.attachments or []:
+            guessed_mime_type = mimetypes.guess_type(attachment.filename)[0]
+            mime_type = guessed_mime_type or attachment.mime_type or "application/octet-stream"
+            maintype, subtype = mime_type.split("/", 1)
+            message.add_attachment(
+                attachment.content_bytes,
+                maintype=maintype,
+                subtype=subtype,
+                filename=attachment.filename,
+            )
 
         return message
 

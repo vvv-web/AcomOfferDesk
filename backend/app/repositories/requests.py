@@ -48,6 +48,16 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
     
+    async def list_files_by_request_id(self, *, request_id: int) -> list[File]:
+        stmt = (
+            select(File)
+            .join(RequestFile, RequestFile.id == File.id)
+            .where(RequestFile.id_request == request_id)
+            .order_by(File.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+    
     async def get_latest_accepted_offer_id(self, *, request_id: int) -> int | None:
         stmt = (
             select(Offer.id)

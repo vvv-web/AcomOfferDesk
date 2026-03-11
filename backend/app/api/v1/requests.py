@@ -517,7 +517,7 @@ async def create_request(
         file_inputs.append(RequestFileCreateInput(path=str(relative_path), name=safe_name))
 
     async with uow:
-        email_notifications = EmailNotificationService(uow.profiles)
+        email_notifications = EmailNotificationService(uow.profiles, uow.requests)
         service = RequestService(
             uow.requests,
             uow.files,

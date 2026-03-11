@@ -214,8 +214,6 @@ class RequestService:
         if self._email_notifications is not None:
             await self._email_notifications.notify_new_request(
                 request_id=request.id,
-                description=description,
-                deadline_at=deadline_at,
             )
 
         return request.id, file_ids
