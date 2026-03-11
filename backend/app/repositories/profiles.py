@@ -52,3 +52,36 @@ class ProfileRepository:
                 continue
             emails.append(normalized_mail)
         return list(dict.fromkeys(emails))
+    
+    async def list_active_contractors(self, *, contractor_role_id: int) -> list[Profile]:
+        stmt = (
+            select(Profile)
+            .join(User, User.id == Profile.id)
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .order_by(User.id)
+        )
+        result = await self._session.execute(stmt)
+
+        profiles: list[Profile] = []
+        for profile in result.scalars().all():
+            normalized_mail = profile.mail.strip()
+            if not normalized_mail or normalized_mail.lower() in {"не указано", "none", "null"}:
+                continue
+            profiles.append(profile)
+        return profiles
+
+    async def get_active_contractor_by_mail(self, *, email: str, contractor_role_id: int) -> Profile | None:
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            return None
+
+        stmt = (
+            select(Profile)
+            .join(User, User.id == Profile.id)
+            .where(User.id_role == contractor_role_id, User.status == "active")
+            .where(Profile.mail.ilike(normalized_email))
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()

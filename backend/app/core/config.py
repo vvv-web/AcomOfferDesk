@@ -51,6 +51,30 @@ class Settings(BaseSettings):
     smtp_port: int = Field(default=465, validation_alias="SMTP_PORT")
     email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
     email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
+    reply_email_token_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("REPLY_EMAIL_TOKEN_SECRET", "EMAIL_REPLY_SECRET"),
+    )
+    reply_email_ttl_seconds: int = Field(
+        default=604800,
+        validation_alias=AliasChoices("REPLY_EMAIL_TTL_SECONDS", "EMAIL_REPLY_TTL_SECONDS"),
+    )
+    imap_host: str | None = Field(default=None, validation_alias="IMAP_HOST")
+    imap_port: int = Field(default=993, validation_alias="IMAP_PORT")
+    imap_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("IMAP_USERNAME", "EMAIL_ADDRESS"),
+    )
+    imap_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("IMAP_PASSWORD", "EMAIL_APP_PASSWORD"),
+    )
+    imap_mailbox: str = Field(default="INBOX", validation_alias="IMAP_MAILBOX")
+    request_mailbox_poll_limit: int = Field(default=20, validation_alias="REQUEST_MAILBOX_POLL_LIMIT")
+    request_mailbox_poll_interval_seconds: int = Field(
+        default=60,
+        validation_alias="REQUEST_MAILBOX_POLL_INTERVAL_SECONDS",
+    )
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
     allowed_creation_role_ids: list[int] = Field(default_factory=lambda: [2, 3, 4, 5, 6, 7])

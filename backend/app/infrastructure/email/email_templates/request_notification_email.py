@@ -13,16 +13,19 @@ def build_request_notification_email_payload(
     description: str | None,
     deadline_at: datetime,
     request_url: str,
+    reply_token: str,
     attachment_warning: str | None = None,
 ) -> EmailMessagePayload:
+    subject = f"AcomOfferDesk — новая заявка №{request_id} [rt:{reply_token}]"
     return EmailMessagePayload(
         to_email=to_email,
-        subject=f"AcomOfferDesk — новая заявка №{request_id}",
+        subject=subject,
         text_content=_build_request_notification_text_template(
             request_id=request_id,
             description=description,
             deadline_at=deadline_at,
             request_url=request_url,
+            reply_token=reply_token,
             attachment_warning=attachment_warning,
         ),
         html_content=_build_request_notification_html_template(
@@ -30,6 +33,7 @@ def build_request_notification_email_payload(
             description=description,
             deadline_at=deadline_at,
             request_url=request_url,
+            reply_token=reply_token,
             attachment_warning=attachment_warning,
         ),
     )
@@ -41,6 +45,7 @@ def _build_request_notification_text_template(
     description: str | None,
     deadline_at: datetime,
     request_url: str,
+    reply_token: str,
     attachment_warning: str | None,
 ) -> str:
     deadline_label = deadline_at.strftime("%d.%m.%Y %H:%M")
@@ -52,7 +57,8 @@ def _build_request_notification_text_template(
         f"Новая заявка №{request_id}\n"
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
-        f"Открыть заявку: {request_url}"
+        f"Открыть заявку: {request_url}\n"
+        f"Reply token: {reply_token}"
         f"{warning_block}\n"
     )
 
@@ -63,11 +69,13 @@ def _build_request_notification_html_template(
     description: str | None,
     deadline_at: datetime,
     request_url: str,
+    reply_token: str,
     attachment_warning: str | None,
 ) -> str:
     deadline_label = deadline_at.strftime("%d.%m.%Y %H:%M")
     request_description = escape(description or "Описание не указано")
     escaped_url = escape(request_url)
+    escaped_reply_token = escape(reply_token)
     warning_html = (
         f"""
             <tr>
@@ -114,6 +122,11 @@ def _build_request_notification_html_template(
               </td>
             </tr>
             {warning_html}
+            <tr>
+              <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                Reply token: <span style="word-break:break-all;">{escaped_reply_token}</span>
+              </td>
+            </tr>
             <tr>
               <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
                 Если кнопка не работает, откройте ссылку вручную:<br/>

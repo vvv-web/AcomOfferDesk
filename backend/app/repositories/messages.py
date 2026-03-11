@@ -1,12 +1,38 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import re
 
 from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import File, Message, MessageFile
 
+
+EMAIL_MESSAGE_ID_MARKER = "[email_message_id:"
+AUTO_EMAIL_MESSAGE_PREFIX = "🤖 Сообщение сформировано автоматически из письма"
+AUTO_EMAIL_OFFER_CREATED_TEXT = "🤖 Оффер сформирован автоматически из письма"
+
+
+def strip_email_message_marker(text: str) -> str:
+    normalized = text.strip()
+    pattern = rf"^{re.escape(EMAIL_MESSAGE_ID_MARKER)}[^\]]+\]\s*"
+    cleaned = re.sub(pattern, "", normalized, count=1)
+    return cleaned.strip()
+
+def build_auto_email_content(*, text: str) -> str:
+    clean_text = text.strip()
+    if clean_text:
+        return f"{AUTO_EMAIL_MESSAGE_PREFIX}\n\n{clean_text}"
+    return AUTO_EMAIL_MESSAGE_PREFIX
+
+
+def build_email_message_text(*, text: str, message_id: str) -> str:
+    marker = f"{EMAIL_MESSAGE_ID_MARKER}{message_id}]"
+    clean_text = text.strip()
+    if clean_text:
+        return f"{marker}\n\n{clean_text}"
+    return marker
 
 class MessageRepository:
     def __init__(self, session: AsyncSession):
@@ -74,3 +100,9 @@ class MessageRepository:
         )
         result = await self._session.execute(stmt)
         return int(result.rowcount or 0)
+    
+    async def exists_with_email_message_id(self, *, email_message_id: str) -> bool:
+        marker = f"{EMAIL_MESSAGE_ID_MARKER}{email_message_id}]"
+        stmt = select(Message.id).where(Message.text.contains(marker)).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None

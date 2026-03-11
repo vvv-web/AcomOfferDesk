@@ -4,8 +4,10 @@ import smtplib
 
 import anyio
 
+from app.core.config import settings
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.infrastructure.email.email_templates.request_notification_email import build_request_notification_email_payload
+from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
@@ -32,22 +34,33 @@ class SendRequestNotificationEmailUseCase:
         if request is None:
             return
 
-        recipients = await self._profile_repository.list_active_contractor_emails(
+        recipients = await self._profile_repository.list_active_contractors(
             contractor_role_id=contractor_role_id,
         )
         if not recipients:
             return
 
+        reply_secret = settings.reply_email_token_secret
+        if not reply_secret:
+            return
+
+        token_codec = ReplyTokenCodec(secret=reply_secret)
         attachments, attachment_warning = await self._build_attachments(request_id=request_id)
         request_url = f"{self._app_url}/requests/{request_id}"
 
         for recipient in recipients:
+            reply_token = await token_codec.create_token(
+                request_id=request_id,
+                user_id=recipient.id,
+                ttl_seconds=settings.reply_email_ttl_seconds,
+            )
             payload = build_request_notification_email_payload(
-                to_email=recipient,
+                to_email=recipient.mail.strip(),
                 request_id=request_id,
                 description=request.description,
                 deadline_at=request.deadline_at,
                 request_url=request_url,
+                reply_token=reply_token,
                 attachment_warning=attachment_warning,
             )
             try:

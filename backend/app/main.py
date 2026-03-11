@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,7 +12,47 @@ from app.core.config import settings
 from app.api.v1 import router as v1_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 
-app = FastAPI(title="Order Backend", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+
+async def _request_reply_polling_worker(stop_event: asyncio.Event) -> None:
+    try:
+        from app.services.process_request_reply_use_case import ProcessRequestReplyUseCase
+    except ModuleNotFoundError as exc:
+        logger.warning("Request reply background task disabled: module is unavailable: %s", exc)
+        return
+
+    try:
+        use_case = ProcessRequestReplyUseCase.from_settings()
+    except ValueError as exc:
+        logger.warning("Request reply background task disabled: %s", exc)
+        return
+
+    poll_interval = max(5, settings.request_mailbox_poll_interval_seconds)
+    while not stop_event.is_set():
+        try:
+            await use_case.execute()
+        except Exception:
+            logger.exception("Request reply background processing failed")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
+        except TimeoutError:
+            continue
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    stop_event = asyncio.Event()
+    task = asyncio.create_task(_request_reply_polling_worker(stop_event))
+    try:
+        yield
+    finally:
+        stop_event.set()
+        await task
+
+
+app = FastAPI(title="Order Backend", version="0.1.0", lifespan=lifespan)
 
 cors_allow_origins = settings.resolved_cors_allow_origins
 if cors_allow_origins:

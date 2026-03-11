@@ -8,7 +8,7 @@ from app.domain.exceptions import Conflict, NotFound
 from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPolicy
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.files import FileRepository
-from app.repositories.messages import MessageRepository
+from app.repositories.messages import MessageRepository, strip_email_message_marker
 from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
@@ -368,7 +368,7 @@ class OfferService:
                 id=item.id,
                 user_id=item.id_user,
                 user_full_name=full_name_by_user_id.get(item.id_user),
-                text=item.text,
+                text=strip_email_message_marker(item.text),
                 status=item.status,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
