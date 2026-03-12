@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.dependencies import get_uow
@@ -10,7 +11,7 @@ from app.core.config import settings
 from app.core.tg_links import decode_token
 from app.core.tg_shortcodes import TgShortcodeCodec
 from app.core.uow import UnitOfWork
-from app.domain.exceptions import Forbidden
+from app.domain.exceptions import Conflict, Forbidden
 from app.models.orm_models import TgUser
 from app.schemas.contractor_registration import (
     ContractorEmailVerificationRequest,
@@ -34,7 +35,6 @@ from app.services.tg_start import TgStartService
 from app.services.tg_users import TgUserRegistrationService
 from app.services.users import ContractorRegistrationService
 from app.services.email_verification import EmailVerificationService
-from app.core.email_token import EmailVerificationTokenCodec
 
 router = APIRouter(prefix="/tg")
 
@@ -133,7 +133,31 @@ async def request_tg_registration_email_verification(
             email=payload.mail.strip(),
             tg_token=payload.token,
         )
-    return {"detail": "Verification email sent"}
+    return {"detail": "Письмо для подтверждения email отправлено"}
+
+class TgLoginAvailabilityResponse(BaseModel):
+    available: bool
+    detail: str
+
+
+@router.get("/register/login-availability", response_model=TgLoginAvailabilityResponse)
+@router.get("/register/login-availability/", response_model=TgLoginAvailabilityResponse, include_in_schema=False)
+async def check_tg_registration_login_availability(
+    token: str = Query(..., min_length=1),
+    login: str = Query(..., min_length=3, max_length=128),
+    uow: UnitOfWork = Depends(get_uow),
+) -> TgLoginAvailabilityResponse:
+    await _resolve_tg_id_from_registration_token(token)
+    normalized_login = login.strip()
+    if not normalized_login:
+        return TgLoginAvailabilityResponse(available=False, detail="Введите логин")
+
+    async with uow:
+        exists = await uow.users.exists(normalized_login)
+
+    if exists:
+        return TgLoginAvailabilityResponse(available=False, detail="Логин уже занят")
+    return TgLoginAvailabilityResponse(available=True, detail="Логин свободен")
 
 
 @router.post("/register/complete", response_model=ContractorRegistrationResponse)
@@ -143,13 +167,10 @@ async def complete_tg_registration(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorRegistrationResponse:
     tg_id = await _resolve_tg_id_from_registration_token(payload.token)
-    async with uow:
-        verification_service = EmailVerificationService(uow.profiles)
-        claims = await verification_service.parse_claims(token=payload.email_verification_token)
-        if claims.purpose != EmailVerificationTokenCodec.PURPOSE_TG_REGISTER or claims.tg_id != tg_id:
-            raise Forbidden("Invalid email verification token")
-        verified_email = claims.email
+    normalized_mail_raw = payload.mail.strip()
+    normalized_mail = "" if normalized_mail_raw in {"", "Не указано"} else normalized_mail_raw
 
+    async with uow:
         service = ContractorRegistrationService(
             uow.users,
             uow.profiles,
@@ -162,14 +183,21 @@ async def complete_tg_registration(
             password=payload.password.strip(),
             full_name=payload.full_name.strip(),
             phone=payload.phone.strip(),
-            mail=verified_email,
             company_name=payload.company_name.strip(),
             inn=payload.inn.strip(),
             company_phone=payload.company_phone.strip(),
-            company_mail=payload.company_mail.strip(),
+            company_mail=payload.company_mail.strip() if payload.company_mail.strip() else "Не указано",
             address=payload.address.strip(),
             note=payload.note.strip(),
         )
+
+    if normalized_mail:
+        try:
+            async with uow:
+                verification_service = EmailVerificationService(uow.profiles)
+                await verification_service.request_profile_verification(user_id=user.id, email=normalized_mail)
+        except Conflict:
+            pass
 
     await notify_registration_completed(tg_id)
 

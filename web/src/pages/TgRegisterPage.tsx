@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Alert, Box, Button, IconButton, Paper, Snackbar, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
-import { completeTgRegistration, requestTgEmailVerification } from '@shared/api/completeTgRegistration';
+import { checkTgLoginAvailability, completeTgRegistration } from '@shared/api/completeTgRegistration';
 
 type RegistrationField = {
     label: string;
@@ -77,9 +77,9 @@ const schema = z
             }, 'Некорректный телефон'),
         mail: z
             .string()
-            .min(1, 'Введите email')
             .max(256, 'Максимум 256 символов')
-            .refine((value) => emailRegex.test(value), 'Некорректный email'),
+            .optional()
+            .refine((value) => !value?.trim() || emailRegex.test(value), 'Некорректный email'),
         company_name: z.string().min(1, 'Введите наименование').max(256, 'Максимум 256 символов'),
         inn: z
             .string()
@@ -98,7 +98,7 @@ const schema = z
             .string()
             .max(256, 'Максимум 256 символов')
             .optional()
-            .refine((value) => !value || value === 'Не указано' || emailRegex.test(value), 'Некорректный email'),
+            .refine((value) => !value?.trim() || emailRegex.test(value), 'Некорректный email'),
         address: z.string().max(256, 'Максимум 256 символов').optional(),
         note: z.string().max(1024, 'Максимум 1024 символа').optional()
     })
@@ -117,22 +117,27 @@ const stepFields: Array<Array<keyof RegistrationFormValues>> = [
 
 export const TgRegisterPage = () => {
     const [searchParams] = useSearchParams();
-    const hasToken = Boolean(searchParams.get('token'));
+    const token = searchParams.get('token');
+    const hasToken = Boolean(token);
     const [step, setStep] = useState(0);
     const currentStep = useMemo(() => stepTitles[step], [step]);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
-    const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
+    const [isCompleted, setIsCompleted] = useState(false);
+    const [loginStatus, setLoginStatus] = useState<{ available: boolean; detail: string } | null>(null);
 
     const {
         register,
         handleSubmit,
         trigger,
-        getValues,
+        watch,
         formState: { errors, isSubmitting },
-        reset
+        reset,
+        setError,
+        clearErrors
     } = useForm<RegistrationFormValues>({
         resolver: zodResolver(schema),
+        mode: 'onChange',
+        reValidateMode: 'onChange',
         defaultValues: {
             login: '',
             password: '',
@@ -149,82 +154,96 @@ export const TgRegisterPage = () => {
         }
     });
 
+    const loginValue = watch('login');
+    const watchedValues = watch();
+
+    useEffect(() => {
+        if (!token || loginValue.trim().length < 3) {
+            setLoginStatus(null);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            try {
+                const result = await checkTgLoginAvailability(token, loginValue.trim());
+                setLoginStatus(result);
+            } catch {
+                setLoginStatus({ available: false, detail: 'Не удалось проверить логин. Повторите позже.' });
+            }
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [loginValue, token]);
+
+    useEffect(() => {
+        if (errorMessage) {
+            setErrorMessage(null);
+        }
+    }, [watchedValues, errorMessage]);
+
+    useEffect(() => {
+        if (step !== 0 || !loginStatus) {
+            return;
+        }
+
+        if (loginStatus.available) {
+            clearErrors('login');
+            if (errorMessage === 'Логин уже занят') {
+                setErrorMessage(null);
+            }
+            return;
+        }
+
+        if (loginValue.trim().length >= 3) {
+            setError('login', { type: 'manual', message: loginStatus.detail });
+        }
+    }, [loginStatus, step, loginValue, clearErrors, setError, errorMessage]);
+
     const handleNext = async () => {
         const fields = stepFields[step];
         const isValid = await trigger(fields, { shouldFocus: true });
         if (!isValid) {
             return;
         }
+
+        if (step === 0 && loginStatus && !loginStatus.available) {
+            setErrorMessage('Логин уже занят');
+            return;
+        }
+
         setStep((prev) => Math.min(prev + 1, stepTitles.length - 1));
     };
 
     const handleBack = () => {
         setStep((prev) => Math.max(prev - 1, 0));
-    };
 
-    useEffect(() => {
-        const verifiedToken = searchParams.get('email_verification_token');
-        if (verifiedToken) {
-            setEmailVerificationToken(verifiedToken);
-            setSuccessMessage('Email подтвержден. Можно завершить регистрацию.');
-        }
-    }, [searchParams]);
-
-
-    const handleRequestEmailVerification = async () => {
-        const token = searchParams.get('token');
-        if (!token) {
-            setErrorMessage('Ссылка недействительна. Перейдите по ссылке из Telegram-бота.');
-            return;
-        }
-
-        const email = getValues('mail')?.trim();
-        if (!email || !emailRegex.test(email)) {
-            setErrorMessage('Введите корректный email и повторите отправку письма.');
-            return;
-        }
-
-        setErrorMessage(null);
-        setSuccessMessage(null);
-        try {
-            await requestTgEmailVerification({ token, mail: email });
-            setSuccessMessage('Письмо для подтверждения отправлено. Перейдите по ссылке из письма.');
-        } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить письмо подтверждения');
-        }
     };
 
     const onSubmit = async (values: RegistrationFormValues) => {
-        const token = searchParams.get('token');
         if (!token) {
             setErrorMessage('Ссылка недействительна. Перейдите по ссылке из Telegram-бота.');
             return;
         }
         setErrorMessage(null);
-        setSuccessMessage(null);
-        if (!emailVerificationToken) {
-            setErrorMessage('Сначала подтвердите email через письмо.');
-            return;
-        }
+
         try {
             await completeTgRegistration({
                 token,
-                email_verification_token: emailVerificationToken,
                 login: values.login,
                 password: values.password,
                 password_confirm: values.password_confirm,
                 full_name: values.full_name,
                 phone: values.phone,
+                mail: values.mail?.trim() ? values.mail.trim() : "Не указано",
                 company_name: values.company_name,
                 inn: values.inn,
                 company_phone: values.company_phone,
-                company_mail: values.company_mail?.trim() ? values.company_mail : 'Не указано',
+                company_mail: values.company_mail?.trim() ? values.company_mail.trim() : 'Не указано',
                 address: values.address?.trim() ? values.address : 'Не указано',
                 note: values.note?.trim() ? values.note : 'Не указано'
             });
-            setSuccessMessage('Данные отправлены. Мы свяжемся с вами после проверки.');
+            setIsCompleted(true);
             reset();
-            setStep(0);
         } catch (error) {
             setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить данные регистрации');
         }
@@ -251,45 +270,47 @@ export const TgRegisterPage = () => {
                 })}
             >
                 <Stack spacing={4} alignItems="center" component="form" onSubmit={handleSubmit(onSubmit)}>
-                    <Stack width="100%" spacing={2} alignItems="center">
-                        <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center">
-                            {step > 0 && hasToken ? (
-                                <IconButton
-                                    aria-label="Назад"
-                                    onClick={handleBack}
-                                    sx={{ padding: 0, color: 'text.primary' }}
-                                >
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                        <path
-                                            d="M15 6L9 12L15 18"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        />
-                                    </svg>
-                                </IconButton>
-                            ) : (
-                                <span />
-                            )}
-                            <Typography variant="body2" color="text.secondary">
-                                шаг {step + 1} / {stepTitles.length}
-                            </Typography>
+                    {!isCompleted ? (
+                        <Stack width="100%" spacing={2} alignItems="center">
+                            <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center">
+                                {step > 0 && hasToken && !isCompleted ? (
+                                    <IconButton aria-label="Назад" onClick={handleBack} sx={{ padding: 0, color: 'text.primary' }}>
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <path
+                                                d="M15 6L9 12L15 18"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
+                                        </svg>
+                                    </IconButton>
+                                ) : (
+                                    <span />
+                                )}
+                                <Typography variant="body2" color="text.secondary">
+                                    шаг {step + 1} / {stepTitles.length}
+                                </Typography>
+                            </Stack>
+                            <Stack spacing={1} alignItems="center">
+                                <Typography variant="h5" fontWeight={600} color="text.primary">
+                                    Регистрация
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" textAlign="center">
+                                    {currentStep.subtitle}
+                                </Typography>
+                            </Stack>
                         </Stack>
-                        <Stack spacing={1} alignItems="center">
-                            <Typography variant="h5" fontWeight={600} color="text.primary">
-                                Регистрация
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" textAlign="center">
-                                {currentStep.subtitle}
-                            </Typography>
-                        </Stack>
-                    </Stack>
+                    ) : null}
 
                     {!hasToken ? (
                         <Typography variant="body2" color="error" textAlign="center">
                             Ссылка недействительна. Пожалуйста, перейдите по ссылке из Telegram-бота.
                         </Typography>
+                    ) : isCompleted ? (
+                        <Alert severity="success" sx={{ width: '100%', fontSize: 18, lineHeight: 1.4, py: 3, px: 2 }}>
+                            Регистрация завершена. Данные отправлены на проверку, повторно заполнять форму не нужно.
+                        </Alert>
                     ) : (
                         <Stack spacing={2.5} width="100%" alignItems="center">
                             {currentStep.fields.map((field) => (
@@ -312,22 +333,17 @@ export const TgRegisterPage = () => {
                                     {...register(field.name)}
                                 />
                             ))}
-                            {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-                            {step === 1 ? (
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => void handleRequestEmailVerification()}
-                                    type="button"
-                                    sx={{ width: '100%', borderRadius: 999, textTransform: 'none', paddingY: 1.1 }}
-                                >
-                                    Отправить письмо для подтверждения email
-                                </Button>
+                            {step === 0 && loginStatus ? (
+                                <Alert severity={loginStatus.available ? 'success' : 'warning'} sx={{ width: '100%' }}>
+                                    {loginStatus.detail}
+                                </Alert>
                             ) : null}
+                            {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
                             <Button
                                 variant="outlined"
                                 onClick={step === stepTitles.length - 1 ? undefined : handleNext}
                                 type={step === stepTitles.length - 1 ? 'submit' : 'button'}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || isCompleted}
                                 sx={(theme) => ({
                                     width: '100%',
                                     borderRadius: 999,
@@ -336,26 +352,12 @@ export const TgRegisterPage = () => {
                                     paddingY: 1.3
                                 })}
                             >
-                                {step === stepTitles.length - 1
-                                    ? isSubmitting
-                                        ? 'Отправка...'
-                                        : 'Зарегистрироваться'
-                                    : 'Далее'}
+                                {step === stepTitles.length - 1 ? (isSubmitting ? 'Отправка...' : 'Зарегистрироваться') : 'Далее'}
                             </Button>
                         </Stack>
                     )}
                 </Stack>
             </Paper>
-            <Snackbar
-                open={Boolean(successMessage)}
-                autoHideDuration={4000}
-                onClose={() => setSuccessMessage(null)}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            >
-                <Alert severity="success" sx={{ width: '100%' }}>
-                    {successMessage}
-                </Alert>
-            </Snackbar>
         </Box>
     );
 };

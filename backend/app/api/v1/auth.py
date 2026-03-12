@@ -37,8 +37,13 @@ async def request_email_verification(
 ) -> EmailVerificationActionResponse:
     async with uow:
         service = EmailVerificationService(uow.profiles)
-        await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
-    return EmailVerificationActionResponse(detail="Verification email sent")
+        status = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
+
+    if status == "same_email":
+        return EmailVerificationActionResponse(detail="Указан текущий подтвержденный email")
+    if status == "already_sent":
+        return EmailVerificationActionResponse(detail="Письмо уже отправлено. Проверьте вашу почту")
+    return EmailVerificationActionResponse(detail="Письмо для подтверждения email отправлено")
 
 
 @router.get("/auth/verify-email", response_model=EmailVerificationActionResponse)
@@ -51,8 +56,8 @@ async def verify_email(
         updated = await service.confirm_profile_verification(token=token)
 
     if updated:
-        return EmailVerificationActionResponse(detail="Email verified")
-    return EmailVerificationActionResponse(detail="Email already verified")
+        return EmailVerificationActionResponse(detail="Email подтвержден")
+    return EmailVerificationActionResponse(detail="Email уже подтвержден")
 
 
 @router.post("/auth/login", response_model=LoginResponse)

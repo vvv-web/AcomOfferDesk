@@ -85,3 +85,14 @@ class ProfileRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+    
+    async def exists_by_mail(self, *, email: str, exclude_user_id: str | None = None) -> bool:
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            return False
+
+        stmt = select(Profile.id).where(Profile.mail.ilike(normalized_email))
+        if exclude_user_id:
+            stmt = stmt.where(Profile.id != exclude_user_id)
+        result = await self._session.execute(stmt.limit(1))
+        return result.scalar_one_or_none() is not None

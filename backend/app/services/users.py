@@ -124,7 +124,6 @@ class ContractorRegistrationService:
         password: str,
         full_name: str,
         phone: str,
-        mail: str,
         company_name: str,
         inn: str,
         company_phone: str,
@@ -153,7 +152,7 @@ class ContractorRegistrationService:
             id=login,
             full_name=full_name,
             phone=phone,
-            mail=mail,
+            mail="Не указано",
         )
         company_contact = CompanyContact(
             id=login,

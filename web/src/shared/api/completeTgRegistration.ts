@@ -5,14 +5,19 @@ export type RequestTgEmailVerificationPayload = {
   mail: string;
 };
 
+export type CheckTgLoginAvailabilityResponse = {
+  available: boolean;
+  detail: string;
+};
+
 export type CompleteTgRegistrationPayload = {
   token: string;
-  email_verification_token: string;
   login: string;
   password: string;
   password_confirm: string;
   full_name: string;
   phone: string;
+  mail: string;
   company_name: string;
   inn: string;
   company_phone: string;
@@ -41,6 +46,19 @@ export const requestTgEmailVerification = async (payload: RequestTgEmailVerifica
       body: JSON.stringify(payload)
     },
     'Ошибка отправки письма подтверждения',
+    false
+  );
+};
+
+export const checkTgLoginAvailability = async (
+  token: string,
+  login: string
+): Promise<CheckTgLoginAvailabilityResponse> => {
+  const query = new URLSearchParams({ token, login }).toString();
+  return fetchJson<CheckTgLoginAvailabilityResponse>(
+    `/api/v1/tg/register/login-availability/?${query}`,
+    { method: 'GET' },
+    'Ошибка проверки логина',
     false
   );
 };

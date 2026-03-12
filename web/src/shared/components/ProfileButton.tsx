@@ -219,13 +219,15 @@ export const ProfileButton = () => {
         full_name: values.full_name.trim(),
         phone: values.phone.trim()
       });
-      if (normalizedMail && normalizedMail !== (profile?.mail ?? '').trim()) {
-        await requestEmailVerification(normalizedMail);
+      let verificationDetail: string | null = null;
+      if (normalizedMail) {
+        const verificationResult = await requestEmailVerification(normalizedMail);
+        verificationDetail = verificationResult.detail;
       }
       setProfile(nextProfile);
       setOpenProfile(false);
-      if (normalizedMail) {
-        setInfo('Письмо подтверждения отправлено. Email обновится после перехода по ссылке из письма.');
+      if (verificationDetail) {
+        setInfo(verificationDetail);
       }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить личные данные');
