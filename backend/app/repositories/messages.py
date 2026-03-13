@@ -24,7 +24,7 @@ def build_auto_email_content(*, text: str) -> str:
     clean_text = text.strip()
     if clean_text:
         return f"{AUTO_EMAIL_MESSAGE_PREFIX}\n\n{clean_text}"
-    return AUTO_EMAIL_MESSAGE_PREFIX
+    return ""
 
 
 def build_email_message_text(*, text: str, message_id: str) -> str:

@@ -65,6 +65,8 @@ RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 > Для PostgreSQL укажите ваш `DATABASE_URL`, например:  
 > `postgresql+asyncpg://user:password@host:5432/dbname`
 
+> `notifications_worker` использует `backend/.env` (SMTP и `BOT_TOKEN`) для фактической отправки email и Telegram-уведомлений.
+
 ### 2) Telegram bot
 
 Создайте файл `tg_bot/.env`:
@@ -95,6 +97,7 @@ docker compose up -d --build
 - Приложение: `http://localhost:8080`
 - API: `http://localhost:8080/api/v1/...`
 - RabbitMQ UI: `http://localhost:15672`
+- Если после обновления контейнеров фронт отвечает `502` (чаще всего из-за смены IP у `web`), перезапустите `gateway`: `docker compose restart gateway`.
 
 ### Запуск с ngrok
 
@@ -104,6 +107,7 @@ docker compose --profile ngrok up -d --build
 
 - Локальный UI ngrok: `http://localhost:4040`
 
+`gateway` в compose настроен с `restart: unless-stopped` и запускается после healthcheck `backend` и `web`, чтобы снизить риск старта с неготовыми upstream-сервисами.
 ---
 
 ## Полезные команды

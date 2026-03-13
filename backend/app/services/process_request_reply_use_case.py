@@ -250,6 +250,7 @@ class ProcessRequestReplyUseCase:
                     incoming.message_id,
                     offer.id,
                 )
+                message_created = True
 
                 email_text = build_auto_email_content(text=incoming.text)
                 if incoming.text.strip():
@@ -266,25 +267,16 @@ class ProcessRequestReplyUseCase:
                         offer.id,
                         message.id,
                     )
-                    message_created = True
                 elif incoming.attachments:
-                    message = await uow.messages.create(
-                        chat_id=offer.id,
-                        user_id=contractor_profile.id,
-                        text=build_email_message_text(text=build_auto_email_content(text=""), message_id=incoming.message_id),
-                        status="received",
-                    )
                     logger.info(
-                        "Created marker message for attachment-only email: uid=%s message_id=%s chat_id=%s message_id_db=%s",
+                        "Attachment-only email for new offer: skip extra text message uid=%s message_id=%s chat_id=%s",
                         incoming.uid,
                         incoming.message_id,
                         offer.id,
-                        message.id,
                     )
-                    message_created = True
                 else:
                     logger.info(
-                        "New offer created without message: empty text and no attachments uid=%s message_id=%s",
+                        "New offer created with system message only: empty text and no attachments uid=%s message_id=%s",
                         incoming.uid,
                         incoming.message_id,
                     )
