@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import urllib.parse
-import urllib.request
 from collections.abc import Iterable
 from datetime import datetime
 
 from app.core.config import settings
 from app.core.tg_shortcodes import TgShortcodeCodec
+from app.infrastructure.notification_publisher import publish_notification
+from shared.broker import RK_TG
 
 async def notify_expired_link(tg_id: int) -> None:
     await _notify(
@@ -38,7 +36,7 @@ async def notify_access_closed(tg_id: int) -> None:
     )
 
 async def notify_new_message(*, tg_id: int, request_id: int) -> None:
-    link =  _build_web_service_link(tg_id=tg_id)
+    link = _build_web_service_link(tg_id=tg_id)
     await _notify(
         tg_id=tg_id,
         text=f"💬 Новое сообщение по заявке №{request_id}",
@@ -57,7 +55,7 @@ async def notify_new_request(
     deadline_text = deadline_at.strftime("%d.%m.%Y, %H:%M")
     tasks = []
     for tg_id in tg_ids:
-        link =  _build_web_service_link(tg_id=tg_id)
+        link = _build_web_service_link(tg_id=tg_id)
         text = (
             f"📄 Новая заявка №{request_id}\n\n"
             f"📝 Описание: {description_text}\n"
@@ -127,30 +125,12 @@ async def _notify(
     button_text: str | None = None,
     button_url: str | None = None,
 ) -> None:
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        return
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload_data: dict[str, str | int] = {"chat_id": tg_id, "text": text}
-    if button_text and button_url:
-        payload_data["reply_markup"] = json.dumps(
-            {"inline_keyboard": [[{"text": button_text, "url": button_url}]]},
-            ensure_ascii=False,
-        )
-
-    payload = urllib.parse.urlencode(payload_data)
-    request = urllib.request.Request(
-        url=url,
-        data=payload.encode("utf-8"),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
+    await publish_notification(
+        RK_TG,
+        {
+            "chat_id": tg_id,
+            "text": text,
+            "button_text": button_text,
+            "button_url": button_url,
+        },
     )
-    try:
-        await asyncio.to_thread(_send_request, request)
-    except Exception:
-        return
-
-def _send_request(request: urllib.request.Request) -> None:
-    with urllib.request.urlopen(request, timeout=5):
-        return None

@@ -25,6 +25,8 @@
 - `web` — frontend SPA (`web`)
 - `gateway` — Nginx reverse proxy (входная точка)
 - `tg_bot` — Telegram bot (`tg_bot`)
+- `rabbitmq` — брокер событий + UI (`http://localhost:15672`)
+- `notifications_worker` — воркер обработки email/tg уведомлений
 - `ngrok` — опционально, через профиль `ngrok`
 
 Все контейнеры работают в одной сети `project_net`.
@@ -57,6 +59,7 @@ JWT_SECRET=change_me
 BOT_TOKEN=123456:ABCDEF...
 PUBLIC_BACKEND_BASE_URL=http://localhost:8080
 WEB_BASE_URL=http://localhost:8080
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 ```
 
 > Для PostgreSQL укажите ваш `DATABASE_URL`, например:  
@@ -91,6 +94,7 @@ docker compose up -d --build
 
 - Приложение: `http://localhost:8080`
 - API: `http://localhost:8080/api/v1/...`
+- RabbitMQ UI: `http://localhost:15672`
 
 ### Запуск с ngrok
 
@@ -117,6 +121,8 @@ docker compose logs -f backend
 docker compose logs -f web
 docker compose logs -f gateway
 docker compose logs -f tg_bot
+docker compose logs -f rabbitmq
+docker compose logs -f notifications_worker
 docker compose logs -f ngrok
 ```
 

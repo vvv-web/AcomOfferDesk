@@ -6,6 +6,10 @@ services:
       - ./backend/.env
     volumes:
       - ./backend/uploads:/app/uploads
+      - ./shared:/app/shared:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - project_net
 
@@ -37,6 +41,36 @@ services:
       - ./tg_bot/.env
     depends_on:
       - gateway
+    networks:
+      - project_net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - project_net
+
+  notifications_worker:
+    build:
+      context: .
+      dockerfile: notifications_worker/Dockerfile
+    container_name: notifications_worker
+    env_file:
+      - ./backend/.env
+    environment:
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+    volumes:
+      - ./shared:/app/shared:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - project_net
 

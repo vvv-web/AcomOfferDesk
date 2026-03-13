@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     email_app_password: str = Field(..., validation_alias="EMAIL_APP_PASSWORD")
     smtp_host: str = Field(..., validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=465, validation_alias="SMTP_PORT")
+    rabbitmq_url: str = Field(default="amqp://guest:guest@rabbitmq:5672/", validation_alias="RABBITMQ_URL")
     email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
     email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
     reply_email_token_secret: str | None = Field(
