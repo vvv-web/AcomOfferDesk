@@ -20,11 +20,11 @@ import {
   updateMyCompanyContacts,
   updateMyCredentials,
   updateMyProfile
-} from '@shared/api/getCurrentUserProfile';
-import type { CurrentUserProfile } from '@shared/api/getCurrentUserProfile';
+} from '@shared/api/users/getCurrentUserProfile';
+import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
-import { requestEmailVerification } from '@shared/api/emailVerification';
+import { requestEmailVerification } from '@shared/api/auth/emailVerification';
 
 
 const fallbackText = 'Не указано';

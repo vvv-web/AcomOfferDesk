@@ -14,9 +14,9 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import type { UserListItem } from '@shared/api/getUsers';
-import { updateUserStatus } from '@shared/api/updateUserStatus';
-import { updateUserRole } from '@shared/api/updateUserRole';
+import type { UserListItem } from '@shared/api/users/getUsers';
+import { updateUserStatus } from '@shared/api/users/updateUserStatus';
+import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { DataTable } from '@shared/components/DataTable';
 
 const contractorColumns = [

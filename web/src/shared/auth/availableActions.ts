@@ -1,4 +1,4 @@
-import type { AuthLink } from '@shared/api/loginWebUser';
+import type { AuthLink } from '@shared/api/auth/loginWebUser';
 
 type SessionWithAvailableAction = {
   availableActions?: AuthLink[];

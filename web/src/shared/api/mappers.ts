@@ -1,6 +1,6 @@
-import type { AuthLink } from './loginWebUser';
+import type { AuthLink } from './auth/loginWebUser';
 import type { RequestEntity } from '@shared/types/domain';
-import type { RequestWithOfferStats } from './getRequests';
+import type { RequestWithOfferStats } from './requests/getRequests';
 
 type LinksContainer = {
   _links?: {

@@ -22,8 +22,8 @@ import {
   type ResponsibilityEmployeeNode,
   type ResponsibilityStatusCounter,
   type ResponsibilityDashboardRequest
-} from '@shared/api/getResponsibilityDashboard';
-import { updateRequestDetails } from '@shared/api/updateRequestDetails';
+} from '@shared/api/users/getResponsibilityDashboard';
+import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Сбор КП',
