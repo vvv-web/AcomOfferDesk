@@ -67,6 +67,16 @@ class UserPolicy:
         }
         if current_user.role_id not in allowed_roles:
             raise Forbidden("Insufficient permissions to access own profile")
+        
+    @staticmethod
+    def can_manage_own_unavailability(current_user: CurrentUser) -> None:
+        allowed_roles = {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }
+        if current_user.role_id not in allowed_roles:
+            raise Forbidden("Only project manager, lead economist and economist can manage unavailable period")
 
     @staticmethod
     def can_manage_own_company_contacts(current_user: CurrentUser) -> None:

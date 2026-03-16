@@ -14,6 +14,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
+from app.repositories.user_status_periods import UserStatusPeriodRepository
 
 
 class UnitOfWork:
@@ -29,6 +30,7 @@ class UnitOfWork:
         self.offers: OfferRepository | None = None
         self.messages: MessageRepository | None = None
         self.feedback: FeedBackRepository | None = None
+        self.user_status_periods: UserStatusPeriodRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         self.session = self._session_factory()
@@ -42,6 +44,7 @@ class UnitOfWork:
         self.offers = OfferRepository(self.session)
         self.messages = MessageRepository(self.session)
         self.feedback = FeedBackRepository(self.session)
+        self.user_status_periods = UserStatusPeriodRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

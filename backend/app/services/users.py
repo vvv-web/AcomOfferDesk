@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.security import hash_password, verify_password
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import CurrentUser, UserPolicy
-from app.models.orm_models import CompanyContact, Profile, TgUser, User
+from app.models.orm_models import CompanyContact, Profile, TgUser, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.tg_users import TgUserRepository
+from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.tg_notifications import notify_access_closed, notify_access_opened
 
@@ -19,6 +21,11 @@ ROLE_NAME_PROJECT_MANAGER = "Руководитель Проекта"
 ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
+
+def _normalize_db_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 class UserRegistrationService:
     def __init__(self, users: UserRepository):
@@ -212,6 +219,14 @@ class UserStatusUpdateResult:
 
 
 @dataclass(frozen=True)
+class UnavailabilityPeriodData:
+    id: int
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
+@dataclass(frozen=True)
 class MeResult:
     user_id: str
     role_id: int
@@ -226,10 +241,13 @@ class MeResult:
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    unavailable_period: UnavailabilityPeriodData | None = None
+    unavailable_periods: list[UnavailabilityPeriodData] = field(default_factory=list)
 
 class UserQueryService:
-    def __init__(self, users: UserRepository):
+    def __init__(self, users: UserRepository, user_status_periods: UserStatusPeriodRepository):
         self._users = users
+        self._user_status_periods = user_status_periods
 
     async def list_users(self, current_user: CurrentUser, role_id: int | None = None) -> list[UserListItem]:
         UserPolicy.can_list_users(current_user)
@@ -312,6 +330,8 @@ class UserQueryService:
             raise NotFound("User not found")
 
         user, profile, company_contact = row
+        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=current_user.user_id)
+        unavailable_periods = await self._user_status_periods.list_for_user(user_id=current_user.user_id)
 
         return MeResult(
             user_id=user.id,
@@ -327,6 +347,25 @@ class UserQueryService:
             company_mail=company_contact.mail if company_contact else None,
             address=company_contact.address if company_contact else None,
             note=company_contact.note if company_contact else None,
+            unavailable_period=(
+                UnavailabilityPeriodData(
+                    id=unavailable_period.id,
+                    status=unavailable_period.status,
+                    started_at=unavailable_period.started_at,
+                    ended_at=unavailable_period.ended_at,
+                )
+                if unavailable_period is not None
+                else None
+            ),
+            unavailable_periods=[
+                UnavailabilityPeriodData(
+                    id=period.id,
+                    status=period.status,
+                    started_at=period.started_at,
+                    ended_at=period.ended_at,
+                )
+                for period in unavailable_periods
+            ],
         )
 
 @dataclass(frozen=True)
@@ -427,15 +466,19 @@ class UserStatusService:
         return result
     
 class UserSelfService:
+    VALID_UNAVAILABILITY_STATUSES = {"sick", "vacation", "fired", "maternity", "business_trip", "unavailable"}
+
     def __init__(
         self,
         users: UserRepository,
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
+        user_status_periods: UserStatusPeriodRepository,
     ):
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
+        self._user_status_periods = user_status_periods
 
     async def update_my_credentials(
         self,
@@ -514,3 +557,35 @@ class UserSelfService:
             company_contacts.address = address
         if note is not None:
             company_contacts.note = note
+
+    async def set_my_unavailability_period(
+        self,
+        current_user: CurrentUser,
+        *,
+        status: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> None:
+        UserPolicy.can_manage_own_unavailability(current_user)
+
+        if status not in self.VALID_UNAVAILABILITY_STATUSES:
+            raise Conflict("Unsupported user_status_periods.status value")
+
+        normalized_started_at = _normalize_db_timestamp(started_at)
+        normalized_ended_at = _normalize_db_timestamp(ended_at)
+
+        if normalized_ended_at < normalized_started_at:
+            raise Conflict("Period end date must be greater than or equal to start date")
+
+        user = await self._users.get_by_id(current_user.user_id)
+        if user is None:
+            raise NotFound("User not found")
+
+        await self._user_status_periods.add(
+            UserStatusPeriod(
+                id_user=current_user.user_id,
+                status=status,
+                started_at=normalized_started_at,
+                ended_at=normalized_ended_at,
+            )
+        )

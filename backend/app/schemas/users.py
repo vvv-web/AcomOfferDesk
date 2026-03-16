@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.links import LinkSet
@@ -102,10 +104,19 @@ class RequestEconomistListResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
+class UserUnavailabilityPeriodSchema(BaseModel):
+    id: int
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
 class MeData(BaseModel):
     user_id: str
     role_id: int
     status: str
+    unavailable_period: UserUnavailabilityPeriodSchema | None = None
+    unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
     tg_user_id: int | None = None
     full_name: str | None = None
     phone: str | None = None
@@ -143,3 +154,16 @@ class UpdateMyCompanyContactsRequest(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+
+
+class SetMyUnavailabilityPeriodRequest(BaseModel):
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
+class SetMyUnavailabilityPeriodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: MeData
+    links: LinkSet = Field(alias="_links")

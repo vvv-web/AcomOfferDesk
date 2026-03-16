@@ -820,7 +820,7 @@ export const OfferWorkspacePage = () => {
               <Typography variant="body2">ИНН: {contractorInfo?.inn ?? workspace.company_contacts?.inn ?? '-'}</Typography>
               <Typography variant="body2">Наименование компании: {contractorInfo?.company_name ?? workspace.company_contacts?.company_name ?? '-'}</Typography>
               <Typography variant="body2">Телефон: {contractorInfo?.company_phone ?? workspace.company_contacts?.phone ?? '-'}</Typography>
-              <Typography variant="body2">E-mail: {contractorInfo?.company_mail ?? workspace.company_contacts?.mail ?? '-'}</Typography>
+              <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>E-mail: {contractorInfo?.company_mail ?? workspace.company_contacts?.mail ?? '-'}</Typography>
               <Typography variant="body2">Адрес: {contractorInfo?.address ?? workspace.company_contacts?.address ?? '-'}</Typography>
             </Paper>
             <Paper variant="outlined" sx={{ p: 1.5, width: { xs: '100%', md: 260 } }}>
@@ -832,7 +832,7 @@ export const OfferWorkspacePage = () => {
             <Paper variant="outlined" sx={{ p: 1.5, width: { xs: '100%', md: 220 } }}>
               <Typography variant="body2">ФИО: {contractorInfo?.full_name ?? workspace.profile?.full_name ?? '-'}</Typography>
               <Typography variant="body2">Телефон: {contractorInfo?.phone ?? workspace.profile?.phone ?? '-'}</Typography>
-              <Typography variant="body2">E-mail: {contractorInfo?.mail ?? workspace.profile?.mail ?? '-'}</Typography>
+              <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>E-mail: {contractorInfo?.mail ?? workspace.profile?.mail ?? '-'}</Typography>
             </Paper>
           </Stack>
         </Paper>

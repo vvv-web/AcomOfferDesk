@@ -19,6 +19,8 @@ from app.schemas.users import (
     RequestEconomistItemSchema,
     RequestEconomistListData,
     RequestEconomistListResponse,
+    SetMyUnavailabilityPeriodRequest,
+    SetMyUnavailabilityPeriodResponse,
     UpdateMyCompanyContactsRequest,
     UpdateMyCredentialsRequest,
     UpdateMyProfileRequest,
@@ -44,6 +46,15 @@ USER_STATUS_RU = {
     "blacklist": "В черном списке",
 }
 
+UNAVAILABILITY_STATUS_RU = {
+    "sick": "Больничный",
+    "vacation": "Отпуск",
+    "fired": "Уволен",
+    "maternity": "Декрет",
+    "business_trip": "Командировка",
+    "unavailable": "Недоступен",
+}
+
 TG_STATUS_RU = {
     "approved": "Одобрен",
     "disapproved": "Не одобрен",
@@ -53,6 +64,10 @@ TG_STATUS_RU = {
 
 def _ru_user_status(status: str) -> str:
     return USER_STATUS_RU.get(status, status)
+
+
+def _ru_unavailability_status(status: str) -> str:
+    return UNAVAILABILITY_STATUS_RU.get(status, status)
 
 
 def _ru_tg_status(status: str | None) -> str | None:
@@ -77,6 +92,13 @@ def _economist_list_schema(item) -> EconomistListItemSchema:
 def _me_data(item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
+    unavailable_period = data.get("unavailable_period")
+    if unavailable_period is not None:
+        unavailable_period["status"] = _ru_unavailability_status(unavailable_period["status"])
+
+    unavailable_periods = data.get("unavailable_periods") or []
+    for period in unavailable_periods:
+        period["status"] = _ru_unavailability_status(period["status"])
     return MeData(**data)
 
 def _status_management_links(current_user: CurrentUser) -> list[Link] | None:
@@ -129,6 +151,11 @@ def _my_profile_actions(current_user: CurrentUser) -> list[Link]:
     ]
     if current_user.role_id == settings.contractor_role_id:
         actions.append(Link(href="/api/v1/users/me/company-contacts", method="PATCH"))
+    try:
+        UserPolicy.can_manage_own_unavailability(current_user)
+        actions.append(Link(href="/api/v1/users/me/unavailability-period", method="POST"))
+    except Forbidden:
+        pass
     return actions
 
 
@@ -140,7 +167,7 @@ async def list_users(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserListResponse:
     async with uow:
-        service = UserQueryService(uow.users)
+        service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_users(current_user=current_user, role_id=role_id)
     available_actions = _list_users_actions(current_user)
     return UserListResponse(
@@ -159,7 +186,7 @@ async def list_economists(
     uow: UnitOfWork = Depends(get_uow),
 ) -> EconomistListResponse:
     async with uow:
-        service = UserQueryService(uow.users)
+        service = UserQueryService(uow.users, uow.user_status_periods)
         economists = await service.list_economists(current_user=current_user)
 
     return EconomistListResponse(
@@ -178,7 +205,7 @@ async def get_me(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        service = UserQueryService(uow.users)
+        service = UserQueryService(uow.users, uow.user_status_periods)
         me = await service.get_me(current_user)
 
     if current_user.role_id != settings.contractor_role_id:
@@ -190,6 +217,8 @@ async def get_me(
             full_name=me.full_name,
             phone=me.phone,
             mail=me.mail,
+            unavailable_period=me.unavailable_period,
+            unavailable_periods=me.unavailable_periods,
         )
 
     return MeResponse(
@@ -208,14 +237,14 @@ async def update_my_credentials(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts)
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
         await self_service.update_my_credentials(
             current_user,
             current_password=payload.current_password,
             new_password=payload.new_password,
         )
 
-        query_service = UserQueryService(uow.users)
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
         me = await query_service.get_me(current_user)
 
     if current_user.role_id != settings.contractor_role_id:
@@ -227,6 +256,8 @@ async def update_my_credentials(
             full_name=me.full_name,
             phone=me.phone,
             mail=me.mail,
+            unavailable_period=me.unavailable_period,
+            unavailable_periods=me.unavailable_periods,
         )
 
     return MeResponse(
@@ -245,7 +276,7 @@ async def update_my_profile(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts)
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
         await self_service.update_my_profile(
             current_user,
             full_name=payload.full_name,
@@ -253,7 +284,7 @@ async def update_my_profile(
             mail=payload.mail,
         )
 
-        query_service = UserQueryService(uow.users)
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
         me = await query_service.get_me(current_user)
 
     if current_user.role_id != settings.contractor_role_id:
@@ -265,6 +296,8 @@ async def update_my_profile(
             full_name=me.full_name,
             phone=me.phone,
             mail=me.mail,
+            unavailable_period=me.unavailable_period,
+            unavailable_periods=me.unavailable_periods,
         )
 
     return MeResponse(
@@ -283,7 +316,7 @@ async def update_my_company_contacts(
     uow: UnitOfWork = Depends(get_uow),
 ) -> MeResponse:
     async with uow:
-        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts)
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
         await self_service.update_my_company_contacts(
             current_user,
             company_name=payload.company_name,
@@ -294,7 +327,7 @@ async def update_my_company_contacts(
             note=payload.note,
         )
 
-        query_service = UserQueryService(uow.users)
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
         me = await query_service.get_me(current_user)
 
     return MeResponse(
@@ -307,6 +340,45 @@ async def update_my_company_contacts(
 
 
 
+@router.post("/users/me/unavailability-period", response_model=SetMyUnavailabilityPeriodResponse)
+async def set_my_unavailability_period(
+    payload: SetMyUnavailabilityPeriodRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> SetMyUnavailabilityPeriodResponse:
+    async with uow:
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        await self_service.set_my_unavailability_period(
+            current_user,
+            status=payload.status,
+            started_at=payload.started_at,
+            ended_at=payload.ended_at,
+        )
+
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
+        me = await query_service.get_me(current_user)
+
+    if current_user.role_id != settings.contractor_role_id:
+        me = me.__class__(
+            user_id=me.user_id,
+            role_id=me.role_id,
+            status=me.status,
+            tg_user_id=me.tg_user_id,
+            full_name=me.full_name,
+            phone=me.phone,
+            mail=me.mail,
+            unavailable_period=me.unavailable_period,
+            unavailable_periods=me.unavailable_periods,
+        )
+
+    return SetMyUnavailabilityPeriodResponse(
+        data=_me_data(me),
+        _links=LinkSet(
+            self=Link(href="/api/v1/users/me/unavailability-period", method="POST"),
+            available_actions=_my_profile_actions(current_user),
+        ),
+    )
+
 @router.get("/users/request-economists", response_model=RequestEconomistListResponse)
 @router.get("/users/request-economists/", response_model=RequestEconomistListResponse, include_in_schema=False)
 async def list_request_economists(
@@ -314,7 +386,7 @@ async def list_request_economists(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEconomistListResponse:
     async with uow:
-        service = UserQueryService(uow.users)
+        service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_request_economists(current_user=current_user)
 
     actions = [

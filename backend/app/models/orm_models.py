@@ -270,3 +270,20 @@ class FeedBack(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class UserStatusPeriod(Base):
+    __tablename__ = "user_status_periods"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable')",
+            name="user_status_periods_status_check",
+        ),
+        CheckConstraint("ended_at >= started_at", name="user_status_periods_period_chk"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)
+    ended_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)

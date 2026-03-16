@@ -22,6 +22,18 @@ type ProfilePayload = {
   mail_company?: string | null;
   address?: string | null;
   note?: string | null;
+  unavailable_period?: {
+    id: number;
+    status: string;
+    started_at: string;
+    ended_at: string;
+  } | null;
+  unavailable_periods?: Array<{
+    id: number;
+    status: string;
+    started_at: string;
+    ended_at: string;
+  }>;
   users?: {
     id?: string;
     user_id?: string;
@@ -71,6 +83,18 @@ export type CurrentUserProfile = {
     address: string | null;
     note: string | null;
   };
+  unavailablePeriod: {
+    id: number;
+    status: string;
+    startedAt: string;
+    endedAt: string;
+  } | null;
+  unavailablePeriods: Array<{
+    id: number;
+    status: string;
+    startedAt: string;
+    endedAt: string;
+  }>;
   availableActions: UserActionLink[];
 };
 
@@ -83,6 +107,12 @@ type UpdateProfilePayload = {
   full_name?: string;
   phone?: string;
   mail?: string;
+};
+
+type SetUnavailabilityPeriodPayload = {
+  status: string;
+  started_at: string;
+  ended_at: string;
 };
 
 type UpdateCompanyContactsPayload = {
@@ -116,6 +146,20 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
       address: data.address ?? companyContacts?.address ?? null,
       note: data.note ?? companyContacts?.note ?? null
     },
+    unavailablePeriod: data.unavailable_period
+      ? {
+          id: data.unavailable_period.id,
+          status: data.unavailable_period.status,
+          startedAt: data.unavailable_period.started_at,
+          endedAt: data.unavailable_period.ended_at
+        }
+      : null,
+    unavailablePeriods: (data.unavailable_periods ?? []).map((period) => ({
+      id: period.id,
+      status: period.status,
+      startedAt: period.started_at,
+      endedAt: period.ended_at
+    })),
     availableActions: links?.available_actions ?? links?.available_action ?? links?.availableActions ?? []
   };
 };
@@ -155,6 +199,16 @@ export const updateMyCompanyContacts = async (payload: UpdateCompanyContactsPayl
     '/api/v1/users/me/company-contacts',
     { method: 'PATCH', body: JSON.stringify(payload) },
     'Ошибка обновления данных компании'
+  );
+
+  return mapCurrentUserProfile(response);
+};
+
+export const setMyUnavailabilityPeriod = async (payload: SetUnavailabilityPeriodPayload): Promise<CurrentUserProfile> => {
+  const response = await fetchJson<CurrentUserResponse>(
+    '/api/v1/users/me/unavailability-period',
+    { method: 'POST', body: JSON.stringify(payload) },
+    'Ошибка обновления нерабочего статуса'
   );
 
   return mapCurrentUserProfile(response);

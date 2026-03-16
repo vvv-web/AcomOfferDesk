@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import {
   getCurrentUserProfile,
+  setMyUnavailabilityPeriod,
   updateMyCompanyContacts,
   updateMyCredentials,
   updateMyProfile
@@ -77,9 +78,21 @@ const companySchema = z.object({
   note: z.string().trim()
 });
 
+const unavailabilitySchema = z
+  .object({
+    status: z.enum(['sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable']),
+    started_at: z.string().min(1, 'Выберите дату начала'),
+    ended_at: z.string().min(1, 'Выберите дату окончания')
+  })
+  .refine((values) => new Date(values.ended_at).getTime() >= new Date(values.started_at).getTime(), {
+    message: 'Дата окончания должна быть не раньше даты начала',
+    path: ['ended_at']
+  });
+
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 type ProfileFormValues = z.infer<typeof profileSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
+type UnavailabilityFormValues = z.infer<typeof unavailabilitySchema>;
 
 const ProfileIcon = () => (
   <SvgIcon fontSize="small">
@@ -104,12 +117,34 @@ const normalizeOptional = (value: string) => {
 
 const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderValue(value) ? '' : value ?? '');
 
+const formatPeriodDate = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleDateString('ru-RU');
+};
+
+
+const UNAVAILABILITY_REASON_OPTIONS = [
+  { value: 'sick', label: 'Больничный' },
+  { value: 'vacation', label: 'Отпуск' },
+  { value: 'fired', label: 'Уволен' },
+  { value: 'maternity', label: 'Декрет' },
+  { value: 'business_trip', label: 'Командировка' },
+  { value: 'unavailable', label: 'Недоступен' }
+] as const;
+
 export const ProfileButton = () => {
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [openPassword, setOpenPassword] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
+  const [openUnavailability, setOpenUnavailability] = useState(false);
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +180,16 @@ export const ProfileButton = () => {
     defaultValues: { inn: '', company_name: '', company_phone: '', company_mail: '', address: '', note: '' }
   });
 
+  const {
+    register: registerUnavailability,
+    handleSubmit: handleUnavailabilitySubmit,
+    formState: { errors: unavailabilityErrors, isSubmitting: isSubmittingUnavailability },
+    reset: resetUnavailability
+  } = useForm<UnavailabilityFormValues>({
+    resolver: zodResolver(unavailabilitySchema),
+    defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
+  });
+
   useEffect(() => {
     if (!profile) {
       return;
@@ -164,7 +209,13 @@ export const ProfileButton = () => {
       address: sanitizeDefaultValue(profile.company.address),
       note: sanitizeDefaultValue(profile.company.note)
     });
-  }, [profile, resetCompany, resetProfile]);
+
+    resetUnavailability({
+      status: 'unavailable',
+      started_at: profile.unavailablePeriod?.startedAt ? profile.unavailablePeriod.startedAt.slice(0, 10) : '',
+      ended_at: profile.unavailablePeriod?.endedAt ? profile.unavailablePeriod.endedAt.slice(0, 10) : ''
+    });
+  }, [profile, resetCompany, resetProfile, resetUnavailability]);
 
   const loadProfile = async () => {
     setIsLoading(true);
@@ -193,6 +244,7 @@ export const ProfileButton = () => {
   const canEditCredentials = hasAvailableAction(availableActions, '/api/v1/users/me/credentials', 'PATCH');
   const canEditProfile = hasAvailableAction(availableActions, '/api/v1/users/me/profile', 'PATCH');
   const canEditCompany = hasAvailableAction(availableActions, '/api/v1/users/me/company-contacts', 'PATCH');
+  const canSetUnavailability = hasAvailableAction(availableActions, '/api/v1/users/me/unavailability-period', 'POST');
 
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);
@@ -253,6 +305,21 @@ export const ProfileButton = () => {
     }
   };
 
+  const onSubmitUnavailability = async (values: UnavailabilityFormValues) => {
+    setError(null);
+    setInfo(null);
+    try {
+      const nextProfile = await setMyUnavailabilityPeriod({
+        status: values.status,
+        started_at: new Date(values.started_at).toISOString(),
+        ended_at: new Date(values.ended_at).toISOString()
+      });
+      setProfile(nextProfile);
+      setOpenUnavailability(false);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить нерабочий статус');
+    }
+  };
   return (
     <>
       <Button variant="outlined" onClick={() => void openDialog()} startIcon={<ProfileIcon />} sx={{ minWidth: 124 }}>
@@ -312,6 +379,51 @@ export const ProfileButton = () => {
                   </Button>
                 ) : null}
               </Stack>
+
+              {canSetUnavailability ? (
+                <Stack spacing={1.5}>
+                  <Typography variant="h5" fontWeight={700}>
+                    Нерабочий статус
+                  </Typography>
+                  <Box
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      p: 1.5,
+                      backgroundColor: 'rgba(255,255,255,0.24)'
+                    }}
+                  >
+                    <DataRow label="Причина" value={profile?.unavailablePeriod?.status ?? 'Не установлен'} />
+                    <DataRow label="Начало" value={formatPeriodDate(profile?.unavailablePeriod?.startedAt)} />
+                    <DataRow label="Окончание" value={formatPeriodDate(profile?.unavailablePeriod?.endedAt)} />
+                  </Box>
+                  {profile?.unavailablePeriods.length ? (
+                    <Stack spacing={1} sx={{ mt: 1.5 }}>
+                      <Typography fontWeight={600}>Все периоды</Typography>
+                      {profile.unavailablePeriods.map((period) => (
+                        <Box
+                          key={period.id}
+                          sx={{
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            p: 1,
+                            backgroundColor: 'rgba(255,255,255,0.18)'
+                          }}
+                        >
+                          <DataRow label="Причина" value={period.status} />
+                          <DataRow label="Начало" value={formatPeriodDate(period.startedAt)} />
+                          <DataRow label="Окончание" value={formatPeriodDate(period.endedAt)} />
+                        </Box>
+                      ))}
+                    </Stack>
+                  ) : null}
+                  <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenUnavailability(true)}>
+                    Установить период
+                  </Button>
+                </Stack>
+              ) : null}
 
               {showCompanyInfo ? (
                 <Stack spacing={1.5}>
@@ -473,6 +585,52 @@ export const ProfileButton = () => {
           </Stack>
         </DialogContent>
       </Dialog>
+      <Dialog open={openUnavailability} onClose={() => setOpenUnavailability(false)} fullWidth maxWidth="xs">
+        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+          <Stack spacing={2} component="form" onSubmit={handleUnavailabilitySubmit((values) => void onSubmitUnavailability(values))}>
+            <Typography variant="h5" fontWeight={700}>
+              Установить нерабочий статус
+            </Typography>
+            <TextField
+              label="Причина"
+              select
+              SelectProps={{ native: true }}
+              {...registerUnavailability('status')}
+              error={Boolean(unavailabilityErrors.status)}
+              helperText={unavailabilityErrors.status?.message}
+              sx={roundedFieldSx}
+            >
+              {UNAVAILABILITY_REASON_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </TextField>
+            <TextField
+              label="Дата начала"
+              type="date"
+              InputLabelProps={{ shrink: true }}
+              {...registerUnavailability('started_at')}
+              error={Boolean(unavailabilityErrors.started_at)}
+              helperText={unavailabilityErrors.started_at?.message}
+              sx={roundedFieldSx}
+            />
+            <TextField
+              label="Дата окончания"
+              type="date"
+              InputLabelProps={{ shrink: true }}
+              {...registerUnavailability('ended_at')}
+              error={Boolean(unavailabilityErrors.ended_at)}
+              helperText={unavailabilityErrors.ended_at?.message}
+              sx={roundedFieldSx}
+            />
+            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingUnavailability}>
+              Сохранить период
+            </Button>
+          </Stack>
+        </DialogContent>
+      </Dialog>
+
     </>
   );
 };
