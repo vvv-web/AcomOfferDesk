@@ -12,7 +12,7 @@ import {
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { createFeedback } from '@shared/api/createFeedback';
+import { createFeedback } from '@shared/api/feedback/createFeedback';
 
 const schema = z.object({
   text: z.string().trim().min(1, 'Введите текст обратной связи').max(3000, 'Максимум 3000 символов')

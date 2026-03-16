@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { AuthLink, LoginWebUserPayload } from '@shared/api/loginWebUser';
-import { loginWebUser } from '@shared/api/loginWebUser';
+import type { AuthLink, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
+import { loginWebUser } from '@shared/api/auth/loginWebUser';
 import { setAuthToken, setUnauthorizedHandler } from '@shared/api/client';
 
 type AuthSession = {
