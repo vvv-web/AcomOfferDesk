@@ -26,6 +26,16 @@ class UserRepository:
     async def add(self, user: User) -> None:
         self._session.add(user)
 
+    async def list_subordinates_with_profiles(self, *, manager_user_id: str) -> list[tuple[User, Profile | None]]:
+        stmt = (
+            select(User, Profile)
+            .outerjoin(Profile, Profile.id == User.id)
+            .where(User.id_parent == manager_user_id)
+            .order_by(User.id)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
     async def list_users_with_profiles(self, role_id: int | None = None) -> list[tuple[User, Profile | None]]:
         stmt = (
             select(User, Profile)

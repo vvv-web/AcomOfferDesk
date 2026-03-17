@@ -180,6 +180,7 @@ class ContractorRegistrationService:
 class UserListItem:
     user_id: str
     role_id: int
+    id_parent: str | None
     status: str
     full_name: str | None
     phone: str | None
@@ -244,6 +245,17 @@ class MeResult:
     unavailable_period: UnavailabilityPeriodData | None = None
     unavailable_periods: list[UnavailabilityPeriodData] = field(default_factory=list)
 
+@dataclass(frozen=True)
+class SubordinateProfileResult:
+    user_id: str
+    role_id: int
+    status: str
+    full_name: str | None
+    phone: str | None
+    mail: str | None
+    unavailable_period: UnavailabilityPeriodData | None = None
+    unavailable_periods: list[UnavailabilityPeriodData] = field(default_factory=list)
+
 class UserQueryService:
     def __init__(self, users: UserRepository, user_status_periods: UserStatusPeriodRepository):
         self._users = users
@@ -252,17 +264,38 @@ class UserQueryService:
     async def list_users(self, current_user: CurrentUser, role_id: int | None = None) -> list[UserListItem]:
         UserPolicy.can_list_users(current_user)
 
-        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+        if current_user.role_id in {
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+            settings.economist_role_id,
+        }:
             if role_id is not None and role_id != settings.economist_role_id:
-                raise Forbidden("Lead economist and project manager can view only economist users")
+                raise Forbidden("Project manager, lead economist and economist can view only economist users")
             role_id = settings.economist_role_id
 
+        if current_user.role_id == settings.economist_role_id:
+            rows = await self._users.list_subordinates_with_profiles(manager_user_id=current_user.user_id)
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile in rows
+                if user.id_role == settings.economist_role_id
+            ]
+        
         if role_id == settings.contractor_role_id:
             rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
             return [
                 UserListItem(
                     user_id=user.id,
                     role_id=user.id_role,
+                    id_parent=user.id_parent,
                     status=user.status,
                     full_name=profile.full_name if profile else None,
                     phone=profile.phone if profile else None,
@@ -284,6 +317,7 @@ class UserQueryService:
             UserListItem(
                 user_id=user.id,
                 role_id=user.id_role,
+                id_parent=user.id_parent,
                 status=user.status,
                 full_name=profile.full_name if profile else None,
                 phone=profile.phone if profile else None,
@@ -322,6 +356,56 @@ class UserQueryService:
             for user, profile, role in rows
         ]
     
+    def _period_to_data(self, period: UserStatusPeriod) -> UnavailabilityPeriodData:
+        return UnavailabilityPeriodData(
+            id=period.id,
+            status=period.status,
+            started_at=period.started_at,
+            ended_at=period.ended_at,
+        )
+
+    async def get_subordinate_profile(
+        self,
+        *,
+        current_user: CurrentUser,
+        subordinate_user_id: str,
+    ) -> SubordinateProfileResult:
+        UserPolicy.can_manage_subordinate_unavailability(current_user)
+
+        subordinate = await self._users.get_by_id(subordinate_user_id)
+        if subordinate is None:
+            raise NotFound("User not found")
+
+        if subordinate.id_parent != current_user.user_id:
+            raise Forbidden("You can manage unavailability period only for direct subordinates")
+
+        if subordinate.id_role not in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            raise Conflict("Unavailability period can be managed only for lead economist and economist users")
+
+        rows = await self._users.list_subordinates_with_profiles(manager_user_id=current_user.user_id)
+        profile = None
+        for user, user_profile in rows:
+            if user.id == subordinate_user_id:
+                profile = user_profile
+                break
+
+        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=subordinate_user_id)
+        unavailable_periods = await self._user_status_periods.list_for_user(user_id=subordinate_user_id)
+
+        return SubordinateProfileResult(
+            user_id=subordinate.id,
+            role_id=subordinate.id_role,
+            status=subordinate.status,
+            full_name=profile.full_name if profile else None,
+            phone=profile.phone if profile else None,
+            mail=profile.mail if profile else None,
+            unavailable_period=self._period_to_data(unavailable_period) if unavailable_period is not None else None,
+            unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
+        )
+    
     async def get_me(self, current_user: CurrentUser) -> MeResult:
         UserPolicy.can_manage_own_profile(current_user)
 
@@ -347,25 +431,8 @@ class UserQueryService:
             company_mail=company_contact.mail if company_contact else None,
             address=company_contact.address if company_contact else None,
             note=company_contact.note if company_contact else None,
-            unavailable_period=(
-                UnavailabilityPeriodData(
-                    id=unavailable_period.id,
-                    status=unavailable_period.status,
-                    started_at=unavailable_period.started_at,
-                    ended_at=unavailable_period.ended_at,
-                )
-                if unavailable_period is not None
-                else None
-            ),
-            unavailable_periods=[
-                UnavailabilityPeriodData(
-                    id=period.id,
-                    status=period.status,
-                    started_at=period.started_at,
-                    ended_at=period.ended_at,
-                )
-                for period in unavailable_periods
-            ],
+            unavailable_period=self._period_to_data(unavailable_period) if unavailable_period is not None else None,
+            unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
         )
 
 @dataclass(frozen=True)
@@ -557,6 +624,48 @@ class UserSelfService:
             company_contacts.address = address
         if note is not None:
             company_contacts.note = note
+
+    async def set_subordinate_unavailability_period(
+        self,
+        *,
+        current_user: CurrentUser,
+        subordinate_user_id: str,
+        status: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> None:
+        UserPolicy.can_manage_subordinate_unavailability(current_user)
+
+        if status not in self.VALID_UNAVAILABILITY_STATUSES:
+            raise Conflict("Unsupported user_status_periods.status value")
+
+        normalized_started_at = _normalize_db_timestamp(started_at)
+        normalized_ended_at = _normalize_db_timestamp(ended_at)
+
+        if normalized_ended_at < normalized_started_at:
+            raise Conflict("Period end date must be greater than or equal to start date")
+
+        subordinate = await self._users.get_by_id(subordinate_user_id)
+        if subordinate is None:
+            raise NotFound("User not found")
+
+        if subordinate.id_parent != current_user.user_id:
+            raise Forbidden("You can manage unavailability period only for direct subordinates")
+
+        if subordinate.id_role not in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            raise Conflict("Unavailability period can be managed only for lead economist and economist users")
+
+        await self._user_status_periods.add(
+            UserStatusPeriod(
+                id_user=subordinate_user_id,
+                status=status,
+                started_at=normalized_started_at,
+                ended_at=normalized_ended_at,
+            )
+        )
 
     async def set_my_unavailability_period(
         self,

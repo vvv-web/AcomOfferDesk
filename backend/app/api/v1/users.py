@@ -21,6 +21,10 @@ from app.schemas.users import (
     RequestEconomistListResponse,
     SetMyUnavailabilityPeriodRequest,
     SetMyUnavailabilityPeriodResponse,
+    SetSubordinateUnavailabilityPeriodRequest,
+    SetSubordinateUnavailabilityPeriodResponse,
+    SubordinateProfileData,
+    SubordinateProfileResponse,
     UpdateMyCompanyContactsRequest,
     UpdateMyCredentialsRequest,
     UpdateMyProfileRequest,
@@ -101,6 +105,19 @@ def _me_data(item) -> MeData:
         period["status"] = _ru_unavailability_status(period["status"])
     return MeData(**data)
 
+def _subordinate_profile_data(item) -> SubordinateProfileData:
+    data = asdict(item)
+    data["status"] = _ru_user_status(data["status"])
+    unavailable_period = data.get("unavailable_period")
+    if unavailable_period is not None:
+        unavailable_period["status"] = _ru_unavailability_status(unavailable_period["status"])
+
+    unavailable_periods = data.get("unavailable_periods") or []
+    for period in unavailable_periods:
+        period["status"] = _ru_unavailability_status(period["status"])
+
+    return SubordinateProfileData(**data)
+
 def _status_management_links(current_user: CurrentUser) -> list[Link] | None:
     try:
         UserPolicy.can_update_user_status(current_user)
@@ -154,6 +171,18 @@ def _my_profile_actions(current_user: CurrentUser) -> list[Link]:
     try:
         UserPolicy.can_manage_own_unavailability(current_user)
         actions.append(Link(href="/api/v1/users/me/unavailability-period", method="POST"))
+    except Forbidden:
+        pass
+    return actions
+
+
+def _subordinate_profile_actions(current_user: CurrentUser, *, user_id: str) -> list[Link]:
+    actions = [
+        Link(href=f"/api/v1/users/{user_id}/profile", method="GET"),
+    ]
+    try:
+        UserPolicy.can_manage_subordinate_unavailability(current_user)
+        actions.append(Link(href=f"/api/v1/users/{user_id}/unavailability-period", method="POST"))
     except Forbidden:
         pass
     return actions
@@ -376,6 +405,59 @@ async def set_my_unavailability_period(
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/unavailability-period", method="POST"),
             available_actions=_my_profile_actions(current_user),
+        ),
+    )
+
+@router.get("/users/{user_id}/profile", response_model=SubordinateProfileResponse)
+async def get_subordinate_profile(
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> SubordinateProfileResponse:
+    async with uow:
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
+        profile = await query_service.get_subordinate_profile(
+            current_user=current_user,
+            subordinate_user_id=user_id,
+        )
+
+    return SubordinateProfileResponse(
+        data=_subordinate_profile_data(profile),
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/users/{user_id}/profile", method="GET"),
+            available_actions=_subordinate_profile_actions(current_user, user_id=user_id),
+        ),
+    )
+
+
+@router.post("/users/{user_id}/unavailability-period", response_model=SetSubordinateUnavailabilityPeriodResponse)
+async def set_subordinate_unavailability_period(
+    payload: SetSubordinateUnavailabilityPeriodRequest,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> SetSubordinateUnavailabilityPeriodResponse:
+    async with uow:
+        self_service = UserSelfService(uow.users, uow.profiles, uow.company_contacts, uow.user_status_periods)
+        await self_service.set_subordinate_unavailability_period(
+            current_user=current_user,
+            subordinate_user_id=user_id,
+            status=payload.status,
+            started_at=payload.started_at,
+            ended_at=payload.ended_at,
+        )
+
+        query_service = UserQueryService(uow.users, uow.user_status_periods)
+        profile = await query_service.get_subordinate_profile(
+            current_user=current_user,
+            subordinate_user_id=user_id,
+        )
+
+    return SetSubordinateUnavailabilityPeriodResponse(
+        data=_subordinate_profile_data(profile),
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/users/{user_id}/unavailability-period", method="POST"),
+            available_actions=_subordinate_profile_actions(current_user, user_id=user_id),
         ),
     )
 

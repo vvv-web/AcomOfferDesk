@@ -8,6 +8,7 @@ from app.schemas.links import LinkSet
 class UserListItemSchema(BaseModel):
     user_id: str
     role_id: int
+    id_parent: str | None = None
     status: str
     full_name: str | None = None
     phone: str | None = None
@@ -133,6 +134,37 @@ class MeResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: MeData
+    links: LinkSet = Field(alias="_links")
+
+
+class SubordinateProfileData(BaseModel):
+    user_id: str
+    role_id: int
+    status: str
+    full_name: str | None = None
+    phone: str | None = None
+    mail: str | None = None
+    unavailable_period: UserUnavailabilityPeriodSchema | None = None
+    unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
+
+
+class SubordinateProfileResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: SubordinateProfileData
+    links: LinkSet = Field(alias="_links")
+
+
+class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
+class SetSubordinateUnavailabilityPeriodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: SubordinateProfileData
     links: LinkSet = Field(alias="_links")
 
 

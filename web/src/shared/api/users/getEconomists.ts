@@ -43,6 +43,7 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
     items: response.data.items.map((item) => ({
       user_id: item.user_id,
       role_id: ROLE.ECONOMIST,
+      id_parent: null,
       status: item.status,
       full_name: item.full_name ?? null,
       phone: item.phone ?? null,

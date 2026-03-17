@@ -20,7 +20,6 @@ export const App = () => {
     <AppRoutes
       defaultPath={defaultPath}
       hasSession={Boolean(session)}
-      roleId={session?.roleId}
       location={location}
       backgroundLocation={state?.backgroundLocation}
     />

@@ -139,7 +139,8 @@ export const AdminPage = () => {
   const { session } = useAuth();
   const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
   const isProjectManager = session?.roleId === ROLE.PROJECT_MANAGER;
-  const isLeadLike = isLeadEconomist || isProjectManager;
+  const isEconomist = session?.roleId === ROLE.ECONOMIST;
+  const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
   const isAdmin = session?.roleId === ROLE.ADMIN;
   const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);

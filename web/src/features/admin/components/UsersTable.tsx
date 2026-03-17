@@ -18,6 +18,14 @@ import type { UserListItem } from '@shared/api/users/getUsers';
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { DataTable } from '@shared/components/DataTable';
+import {
+  getSubordinateProfile,
+  setSubordinateUnavailabilityPeriod,
+  type SubordinateProfile
+} from '@shared/api/users/getSubordinateProfile';
+import { hasAvailableAction } from '@shared/auth/availableActions';
+import { UnavailabilityStatusSection } from '@shared/components/UnavailabilityStatusSection';
+import { UnavailabilityPeriodEditor } from '@shared/components/UnavailabilityPeriodEditor';
 
 const contractorColumns = [
   { key: 'login', label: 'Логин', minWidth: 170, fraction: 1.1 },
@@ -42,6 +50,19 @@ const statusSchema = z.object({
 });
 
 type StatusFormValues = z.infer<typeof statusSchema>;
+
+const subordinateUnavailabilitySchema = z
+  .object({
+    status: z.enum(['sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable']),
+    started_at: z.string().min(1, 'Выберите дату начала'),
+    ended_at: z.string().min(1, 'Выберите дату окончания')
+  })
+  .refine((values) => new Date(values.ended_at).getTime() >= new Date(values.started_at).getTime(), {
+    message: 'Дата окончания должна быть не раньше даты начала',
+    path: ['ended_at']
+  });
+
+type SubordinateUnavailabilityFormValues = z.infer<typeof subordinateUnavailabilitySchema>;
 
 type UsersTableProps = {
   users: UserListItem[];
@@ -235,6 +256,7 @@ const resolveTgStatusForUpdate = (
 
 const inlineStatusOptions: Array<StatusFormValues['user_status']> = ['review', 'active', 'inactive', 'blacklist'];
 
+
 const statusMemoText = `Связь статусов users и tg_users:
 
 1) users: review  → tg_users: review
@@ -266,6 +288,8 @@ export const UsersTable = ({
   const [inlineStatusError, setInlineStatusError] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
+  const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
+  const [subordinateError, setSubordinateError] = useState<string | null>(null);
 
   const {
     register,
@@ -286,6 +310,29 @@ export const UsersTable = ({
       });
     }
   }, [reset, selectedUser]);
+
+  const {
+    register: registerSubordinateUnavailability,
+    handleSubmit: handleSubordinateUnavailabilitySubmit,
+    watch: watchSubordinateUnavailability,
+    setValue: setSubordinateUnavailabilityValue,
+    formState: { errors: subordinateUnavailabilityErrors, isSubmitting: isSubmittingSubordinateUnavailability },
+    reset: resetSubordinateUnavailability
+  } = useForm<SubordinateUnavailabilityFormValues>({
+    resolver: zodResolver(subordinateUnavailabilitySchema),
+    defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
+  });
+
+  useEffect(() => {
+    if (!subordinateProfile) {
+      return;
+    }
+    resetSubordinateUnavailability({
+      status: 'unavailable',
+      started_at: subordinateProfile.unavailablePeriod?.startedAt?.slice(0, 10) ?? '',
+      ended_at: subordinateProfile.unavailablePeriod?.endedAt?.slice(0, 10) ?? ''
+    });
+  }, [subordinateProfile, resetSubordinateUnavailability]);
 
   const rows: UserRow[] = useMemo(
     () =>
@@ -365,6 +412,13 @@ export const UsersTable = ({
               const clickedUser = users.find((item) => item.user_id === row.id);
               if (clickedUser) {
                 setSelectedUser(clickedUser);
+                setSubordinateProfile(null);
+                setSubordinateError(null);
+                void getSubordinateProfile(clickedUser.user_id)
+                  .then((profile) => setSubordinateProfile(profile))
+                  .catch((error) => {
+                    setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
+                  });
               }
             }}
             renderRow={(row) => [
@@ -481,6 +535,48 @@ export const UsersTable = ({
                     </SourceSection>
                   </Stack>
                 </Box>
+
+                {subordinateProfile ? (
+                  <Stack spacing={1.2}>
+                    <UnavailabilityStatusSection
+                      title="Нерабочий статус подчиненного"
+                      currentPeriod={subordinateProfile.unavailablePeriod}
+                      periods={subordinateProfile.unavailablePeriods}
+                    />
+                    {hasAvailableAction({ availableActions: subordinateProfile.availableActions }, `/api/v1/users/${subordinateProfile.userId}/unavailability-period`, 'POST') ? (
+                      <Stack spacing={1.2} component="form" onSubmit={handleSubordinateUnavailabilitySubmit(async (values) => {
+                        if (!selectedUser) {
+                          return;
+                        }
+                        const nextProfile = await setSubordinateUnavailabilityPeriod(selectedUser.user_id, {
+                          status: values.status,
+                          started_at: new Date(values.started_at).toISOString(),
+                          ended_at: new Date(values.ended_at).toISOString()
+                        });
+                        setSubordinateProfile(nextProfile);
+                      })}>
+                        <UnavailabilityPeriodEditor
+                          statusField={registerSubordinateUnavailability('status')}
+                          startedAtField={registerSubordinateUnavailability('started_at')}
+                          endedAtField={registerSubordinateUnavailability('ended_at')}
+                          startedAtValue={watchSubordinateUnavailability('started_at') ?? ''}
+                          endedAtValue={watchSubordinateUnavailability('ended_at') ?? ''}
+                          onStartedAtChange={(value: string) => setSubordinateUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })}
+                          onEndedAtChange={(value: string) => setSubordinateUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })}
+                          statusError={subordinateUnavailabilityErrors.status?.message}
+                          startedAtError={subordinateUnavailabilityErrors.started_at?.message}
+                          endedAtError={subordinateUnavailabilityErrors.ended_at?.message}
+                        />
+                        <Button type="submit" variant="outlined" disabled={isSubmittingSubordinateUnavailability}>
+                          Сохранить период
+                        </Button>
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                ) : subordinateError ? (
+                  <Alert severity="info">{subordinateError}</Alert>
+                ) : null}
+
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
                   <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 999, textTransform: 'none' }}>
@@ -606,7 +702,7 @@ export const UsersTable = ({
                         <InfoRow label="Телефон компании" value={selectedUser.company_phone} />
                         <InfoRow label="E-mail компании" value={selectedUser.company_mail} />
                         <InfoRow label="Адрес" value={selectedUser.address} />
-                      </Box>                      
+                      </Box>
                       <InfoRow label="Примечание" value={selectedUser.note} />
                     </Stack>
                   </SourceSection>

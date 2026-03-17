@@ -10,6 +10,7 @@ type UsersRow = {
   user_id?: string;
   id_role?: number;
   role_id?: number;
+  id_parent?: string | null;
   status?: string;
   tg_user_id?: number | null;
   full_name?: string | null;
@@ -54,6 +55,7 @@ type UsersRow = {
 export type UserListItem = {
   user_id: string;
   role_id: number;
+  id_parent: string | null;
   status: string;
   full_name: string | null;
   phone: string | null;
@@ -97,6 +99,7 @@ const normalizeUserItem = (item: UsersRow): UserListItem => {
   return {
     user_id: userId,
     role_id: roleId,
+    id_parent: item.id_parent ?? null,
     status: item.status ?? users?.status ?? 'review',
     full_name: item.full_name ?? profile?.full_name ?? null,
     phone: item.phone ?? profile?.phone ?? null,

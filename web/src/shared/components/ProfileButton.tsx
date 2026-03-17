@@ -26,6 +26,8 @@ import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
 import { requestEmailVerification } from '@shared/api/auth/emailVerification';
+import { UnavailabilityStatusSection } from '@shared/components/UnavailabilityStatusSection';
+import { UnavailabilityPeriodEditor } from '@shared/components/UnavailabilityPeriodEditor';
 
 
 const fallbackText = 'Не указано';
@@ -117,27 +119,6 @@ const normalizeOptional = (value: string) => {
 
 const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderValue(value) ? '' : value ?? '');
 
-const formatPeriodDate = (value: string | null | undefined) => {
-  if (!value) {
-    return null;
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleDateString('ru-RU');
-};
-
-
-const UNAVAILABILITY_REASON_OPTIONS = [
-  { value: 'sick', label: 'Больничный' },
-  { value: 'vacation', label: 'Отпуск' },
-  { value: 'fired', label: 'Уволен' },
-  { value: 'maternity', label: 'Декрет' },
-  { value: 'business_trip', label: 'Командировка' },
-  { value: 'unavailable', label: 'Недоступен' }
-] as const;
-
 export const ProfileButton = () => {
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
@@ -183,6 +164,8 @@ export const ProfileButton = () => {
   const {
     register: registerUnavailability,
     handleSubmit: handleUnavailabilitySubmit,
+    watch: watchUnavailability,
+    setValue: setUnavailabilityValue,
     formState: { errors: unavailabilityErrors, isSubmitting: isSubmittingUnavailability },
     reset: resetUnavailability
   } = useForm<UnavailabilityFormValues>({
@@ -382,43 +365,10 @@ export const ProfileButton = () => {
 
               {canSetUnavailability ? (
                 <Stack spacing={1.5}>
-                  <Typography variant="h5" fontWeight={700}>
-                    Нерабочий статус
-                  </Typography>
-                  <Box
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      p: 1.5,
-                      backgroundColor: 'rgba(255,255,255,0.24)'
-                    }}
-                  >
-                    <DataRow label="Причина" value={profile?.unavailablePeriod?.status ?? 'Не установлен'} />
-                    <DataRow label="Начало" value={formatPeriodDate(profile?.unavailablePeriod?.startedAt)} />
-                    <DataRow label="Окончание" value={formatPeriodDate(profile?.unavailablePeriod?.endedAt)} />
-                  </Box>
-                  {profile?.unavailablePeriods.length ? (
-                    <Stack spacing={1} sx={{ mt: 1.5 }}>
-                      <Typography fontWeight={600}>Все периоды</Typography>
-                      {profile.unavailablePeriods.map((period) => (
-                        <Box
-                          key={period.id}
-                          sx={{
-                            border: '1px solid',
-                            borderColor: 'divider',
-                            borderRadius: 2,
-                            p: 1,
-                            backgroundColor: 'rgba(255,255,255,0.18)'
-                          }}
-                        >
-                          <DataRow label="Причина" value={period.status} />
-                          <DataRow label="Начало" value={formatPeriodDate(period.startedAt)} />
-                          <DataRow label="Окончание" value={formatPeriodDate(period.endedAt)} />
-                        </Box>
-                      ))}
-                    </Stack>
-                  ) : null}
+                  <UnavailabilityStatusSection
+                    currentPeriod={profile?.unavailablePeriod ?? null}
+                    periods={profile?.unavailablePeriods ?? []}
+                  />
                   <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenUnavailability(true)}>
                     Установить период
                   </Button>
@@ -591,38 +541,17 @@ export const ProfileButton = () => {
             <Typography variant="h5" fontWeight={700}>
               Установить нерабочий статус
             </Typography>
-            <TextField
-              label="Причина"
-              select
-              SelectProps={{ native: true }}
-              {...registerUnavailability('status')}
-              error={Boolean(unavailabilityErrors.status)}
-              helperText={unavailabilityErrors.status?.message}
-              sx={roundedFieldSx}
-            >
-              {UNAVAILABILITY_REASON_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </TextField>
-            <TextField
-              label="Дата начала"
-              type="date"
-              InputLabelProps={{ shrink: true }}
-              {...registerUnavailability('started_at')}
-              error={Boolean(unavailabilityErrors.started_at)}
-              helperText={unavailabilityErrors.started_at?.message}
-              sx={roundedFieldSx}
-            />
-            <TextField
-              label="Дата окончания"
-              type="date"
-              InputLabelProps={{ shrink: true }}
-              {...registerUnavailability('ended_at')}
-              error={Boolean(unavailabilityErrors.ended_at)}
-              helperText={unavailabilityErrors.ended_at?.message}
-              sx={roundedFieldSx}
+            <UnavailabilityPeriodEditor
+              statusField={registerUnavailability('status')}
+              startedAtField={registerUnavailability('started_at')}
+              endedAtField={registerUnavailability('ended_at')}
+              startedAtValue={watchUnavailability('started_at') ?? ''}
+              endedAtValue={watchUnavailability('ended_at') ?? ''}
+              onStartedAtChange={(value: string) => setUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })}
+              onEndedAtChange={(value: string) => setUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })}
+              statusError={unavailabilityErrors.status?.message}
+              startedAtError={unavailabilityErrors.started_at?.message}
+              endedAtError={unavailabilityErrors.ended_at?.message}
             />
             <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingUnavailability}>
               Сохранить период

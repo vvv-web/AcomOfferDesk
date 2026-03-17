@@ -42,7 +42,9 @@ export const AppLayout = () => {
   const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
   const isContractor = roleId === ROLE.CONTRACTOR;
   const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
-  const isLeadLike = isLeadEconomist;
+  const isProjectManager = roleId === ROLE.PROJECT_MANAGER;
+  const isEconomist = roleId === ROLE.ECONOMIST;
+  const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
   const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
   const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
   const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
@@ -50,7 +52,7 @@ export const AppLayout = () => {
   const canRegisterUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
   const isLeadRequestsTab = isLeadLike && location.pathname.startsWith('/requests');
   const isLeadEconomistsTab = isLeadLike && location.pathname.startsWith('/admin');
-  const canUseLeadTabs = isLeadLike && canOpenUsersPage && (isLeadRequestsTab || isLeadEconomistsTab);
+  const canUseLeadTabs = isLeadLike && (isLeadRequestsTab || isLeadEconomistsTab) && (canOpenUsersPage || isEconomist);
 
   const isAdmin = roleId === ROLE.ADMIN;
   const isProjectManagerDashboard = roleId === ROLE.PROJECT_MANAGER && location.pathname === '/pm-dashboard';
@@ -141,7 +143,7 @@ export const AppLayout = () => {
                 sx={{ px: 3, boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
                 onClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
               >
-                Создать заявку
+                {isLeadLike ? 'Добавить пользователя' : 'Создать заявку'}
               </Button>
             </Stack>
           ) : null}
@@ -261,7 +263,7 @@ export const AppLayout = () => {
                 navigate('/requests/create', { state: { backgroundLocation: location } });
               }}
             >
-              {isLeadLike ? 'Добавить пользователя' : 'Создать заявку'}
+              Создать заявку
             </Button>
           ) : (
             <Box />

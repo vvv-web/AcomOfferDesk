@@ -40,7 +40,15 @@ class UserPolicy:
         
     @staticmethod
     def can_list_users(current_user: CurrentUser) -> None:
-        UserPolicy.can_manage_economist_users(current_user)
+        allowed_roles = {
+            settings.superadmin_role_id,
+            settings.admin_role_id,
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+            settings.economist_role_id,
+        }
+        if current_user.role_id not in allowed_roles:
+            raise Forbidden("Insufficient permissions to view users")
         
     @staticmethod
     def can_update_user_status(current_user: CurrentUser) -> None:
@@ -78,6 +86,16 @@ class UserPolicy:
         if current_user.role_id not in allowed_roles:
             raise Forbidden("Only project manager, lead economist and economist can manage unavailable period")
 
+    @staticmethod
+    def can_manage_subordinate_unavailability(current_user: CurrentUser) -> None:
+        allowed_roles = {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }
+        if current_user.role_id not in allowed_roles:
+            raise Forbidden("Only project manager, lead economist and economist can manage subordinate unavailable period")
+        
     @staticmethod
     def can_manage_own_company_contacts(current_user: CurrentUser) -> None:
         if current_user.role_id != settings.contractor_role_id:

@@ -21,12 +21,11 @@ import { ROLE } from '@shared/constants/roles';
 type AppRoutesProps = {
   defaultPath: string;
   hasSession: boolean;
-  roleId?: number;
   location: Location;
   backgroundLocation?: Location;
 };
 
-export const AppRoutes = ({ defaultPath, hasSession, roleId, location, backgroundLocation }: AppRoutesProps) => {
+export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocation }: AppRoutesProps) => {
   return (
     <>
       <Routes location={backgroundLocation ?? location}>
@@ -45,13 +44,17 @@ export const AppRoutes = ({ defaultPath, hasSession, roleId, location, backgroun
             <Route
               path="/admin"
               element={
-                roleId === ROLE.PROJECT_MANAGER ? (
-                  <Navigate to="/pm-dashboard" replace />
-                ) : (
-                  <RoleRoute allowedRoles={[ROLE.SUPERADMIN, ROLE.ADMIN, ROLE.LEAD_ECONOMIST]}>
-                    <AdminPage />
-                  </RoleRoute>
-                )
+                <RoleRoute
+                  allowedRoles={[
+                    ROLE.SUPERADMIN,
+                    ROLE.ADMIN,
+                    ROLE.LEAD_ECONOMIST,
+                    ROLE.PROJECT_MANAGER,
+                    ROLE.ECONOMIST,
+                  ]}
+                >
+                  <AdminPage />
+                </RoleRoute>
               }
             />
             <Route
