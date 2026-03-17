@@ -6,6 +6,7 @@ import { Box, Button, Chip, Divider, IconButton, Paper, Stack, SvgIcon, TextFiel
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { OfferWorkspaceMessage } from '@shared/api/offers/offerWorkspaceActions';
+import { getFileKey, mergeUniqueFiles } from '@shared/lib/files';
 
 const AUTO_SCROLL_THRESHOLD_PX = 64;
 
@@ -15,14 +16,6 @@ const chatSchema = z.object({
 });
 
 type ChatFormValues = z.infer<typeof chatSchema>;
-
-const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
-
-const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
-  const fileMap = new Map<string, File>();
-  [...currentFiles, ...addedFiles].forEach((file) => fileMap.set(getFileKey(file), file));
-  return Array.from(fileMap.values());
-};
 
 const formatTime = (value: string | null) => {
   if (!value) return '--:--';
