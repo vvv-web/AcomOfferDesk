@@ -1,6 +1,6 @@
 import { fetchJson } from '../client';
 import { mapRequestEntityToSummary } from '../mappers';
-import type { FileEntity, RequestEntity } from '@shared/types/domain';
+import type { FileEntity, RequestEntity } from '@entities/request';
 
 export type RequestFile = FileEntity;
 

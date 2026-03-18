@@ -1,7 +1,7 @@
 import { fetchJson } from '../client';
 import type { AuthLink } from '../auth/loginWebUser';
 import { resolveAvailableActions } from '../mappers';
-import type { FileEntity, RequestEntity } from '@shared/types/domain';
+import type { FileEntity, RequestEntity } from '@entities/request';
 
 export type RequestDetailsFile = FileEntity;
 

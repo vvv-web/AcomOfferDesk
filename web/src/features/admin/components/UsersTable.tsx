@@ -14,7 +14,8 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import type { UserListItem } from '@shared/api/users/getUsers';
+import type { UserListItem } from '@entities/user';
+import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { DataTable } from '@shared/components/DataTable';
@@ -24,8 +25,6 @@ import {
   type SubordinateProfile
 } from '@shared/api/users/getSubordinateProfile';
 import { hasAvailableAction } from '@shared/auth/availableActions';
-import { UnavailabilityManagementSection } from '@shared/components/UnavailabilityManagementSection';
-import { UnavailabilityPeriodEditor } from '@shared/components/UnavailabilityPeriodEditor';
 
 const contractorColumns = [
   { key: 'login', label: 'Логин', minWidth: 170, fraction: 1.1 },
@@ -82,34 +81,6 @@ type UserRow = {
   id_role: number;
   role: string;
   status: StatusFormValues['user_status'];
-};
-
-const hasPeriodOverlapByDate = (
-  leftStartIso: string,
-  leftEndIso: string,
-  rightStartIso: string,
-  rightEndIso: string
-) => {
-  const leftStart = new Date(leftStartIso);
-  const leftEnd = new Date(leftEndIso);
-  const rightStart = new Date(rightStartIso);
-  const rightEnd = new Date(rightEndIso);
-
-  if (
-    Number.isNaN(leftStart.getTime()) ||
-    Number.isNaN(leftEnd.getTime()) ||
-    Number.isNaN(rightStart.getTime()) ||
-    Number.isNaN(rightEnd.getTime())
-  ) {
-    return false;
-  }
-
-  const leftStartDate = new Date(leftStart.getFullYear(), leftStart.getMonth(), leftStart.getDate());
-  const leftEndDate = new Date(leftEnd.getFullYear(), leftEnd.getMonth(), leftEnd.getDate());
-  const rightStartDate = new Date(rightStart.getFullYear(), rightStart.getMonth(), rightStart.getDate());
-  const rightEndDate = new Date(rightEnd.getFullYear(), rightEnd.getMonth(), rightEnd.getDate());
-
-  return leftStartDate <= rightEndDate && leftEndDate >= rightStartDate;
 };
 
 const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = {

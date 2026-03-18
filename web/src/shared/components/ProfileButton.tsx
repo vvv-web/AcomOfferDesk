@@ -15,6 +15,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { UnavailabilityManagementSection, UnavailabilityPeriodEditor } from '@entities/unavailability';
 import {
   getCurrentUserProfile,
   setMyUnavailabilityPeriod,
@@ -26,8 +27,6 @@ import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
 import { requestEmailVerification } from '@shared/api/auth/emailVerification';
-import { UnavailabilityManagementSection } from '@shared/components/UnavailabilityManagementSection';
-import { UnavailabilityPeriodEditor } from '@shared/components/UnavailabilityPeriodEditor';
 
 
 const fallbackText = 'Не указано';

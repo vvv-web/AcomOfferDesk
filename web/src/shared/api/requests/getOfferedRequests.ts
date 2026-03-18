@@ -1,6 +1,6 @@
 import { fetchJson } from '../client';
 import type { ContractorRequestOffer, GetRequestsResponse } from './getRequests';
-import type { FileEntity } from '@shared/types/domain';
+import type { FileEntity } from '@entities/request';
 
 type ApiContractorRequestOffer = {
   id?: number;

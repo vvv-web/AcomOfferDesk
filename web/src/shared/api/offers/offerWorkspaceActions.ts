@@ -1,7 +1,8 @@
 import { fetchEmpty, fetchJson } from '../client';
 import type { AuthLink } from '../auth/loginWebUser';
 import { resolveAvailableActions } from '../mappers';
-import type { FileEntity, OfferMessageEntity } from '@shared/types/domain';
+import type { OfferMessageEntity } from '@entities/offer';
+import type { FileEntity } from '@entities/request';
 
 export type OfferMessageAttachment = Pick<FileEntity, 'id' | 'name' | 'download_url'>;
 

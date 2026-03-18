@@ -1,6 +1,6 @@
 import { fetchJson } from '../client';
-
-type ActionLink = { href: string; method: string };
+import type { UserActionLink } from '@entities/user';
+import type { UnavailabilityPeriodView } from '@entities/unavailability';
 
 type SubordinatePayload = {
   user_id: string;
@@ -24,9 +24,9 @@ type SubordinatePayload = {
 };
 
 type LinkContainer = {
-  available_actions?: ActionLink[];
-  availableActions?: ActionLink[];
-  available_action?: ActionLink[];
+  available_actions?: UserActionLink[];
+  availableActions?: UserActionLink[];
+  available_action?: UserActionLink[];
 };
 
 type SubordinateResponse = {
@@ -42,19 +42,9 @@ export type SubordinateProfile = {
   fullName: string | null;
   phone: string | null;
   mail: string | null;
-  unavailablePeriod: {
-    id: number;
-    status: string;
-    startedAt: string;
-    endedAt: string;
-  } | null;
-  unavailablePeriods: Array<{
-    id: number;
-    status: string;
-    startedAt: string;
-    endedAt: string;
-  }>;
-  availableActions: ActionLink[];
+  unavailablePeriod: UnavailabilityPeriodView | null;
+  unavailablePeriods: UnavailabilityPeriodView[];
+  availableActions: UserActionLink[];
 };
 
 type SetSubordinateUnavailabilityPayload = {

@@ -1,9 +1,7 @@
 import { fetchJson } from '../client';
+import type { UserActionLink, UserListItem } from '@entities/user';
 
-type UserActionLink = {
-  href: string;
-  method: string;
-};
+export type { UserActionLink, UserListItem } from '@entities/user';
 
 type UsersRow = {
   id?: string;
@@ -49,25 +47,6 @@ type UsersRow = {
     id?: number;
     status?: string | null;
   };
-};
-
-
-export type UserListItem = {
-  user_id: string;
-  role_id: number;
-  id_parent: string | null;
-  status: string;
-  full_name: string | null;
-  phone: string | null;
-  mail: string | null;
-  tg_user_id: number | null;
-  tg_status: string | null;
-  company_name: string | null;
-  inn: string | null;
-  company_phone: string | null;
-  company_mail: string | null;
-  address: string | null;
-  note: string | null;
 };
 
 type UserListResponse = {

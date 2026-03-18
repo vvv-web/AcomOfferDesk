@@ -1,5 +1,5 @@
 import type { AuthLink } from './auth/loginWebUser';
-import type { RequestEntity } from '@shared/types/domain';
+import type { RequestEntity } from '@entities/request';
 import type { RequestWithOfferStats } from './requests/getRequests';
 
 type LinksContainer = {

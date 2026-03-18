@@ -272,6 +272,15 @@ export const OfferWorkspaceChatPanel = ({
                       && AUTO_EMAIL_OFFER_CREATED_TEXTS.some((text) => normalizedText.startsWith(text));
                     const isSystemVisualMessage = isSystemMessage || isAutoOfferCreatedMessage;
                     const displayText = isEmailOriginMessage ? parsedEmailText.body : item.text;
+                    const normalizedDisplayText = displayText.trim();
+                    const shouldHideEmptyAutoMessage =
+                      isAutoOfferCreatedMessage &&
+                      normalizedDisplayText.length === 0 &&
+                      item.attachments.length === 0;
+
+                    if (shouldHideEmptyAutoMessage) {
+                      return null;
+                    }
 
                     const prev = idx > 0 ? sortedMessages[idx - 1] : null;
 
@@ -413,7 +422,7 @@ export const OfferWorkspaceChatPanel = ({
                                 whiteSpace: 'pre-wrap',
                                 fontStyle: isSystemVisualMessage ? 'italic' : 'normal',
                                 textAlign: isSystemVisualMessage ? 'center' : 'left',
-                                display: isEmailOriginMessage && !displayText ? 'none' : 'block'
+                                display: isEmailOriginMessage && !normalizedDisplayText ? 'none' : 'block'
                               }}
                             >
                               {displayText}

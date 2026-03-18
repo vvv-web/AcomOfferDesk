@@ -1,6 +1,6 @@
 import { fetchJson } from '../client';
 import type { GetRequestsResponse } from './getRequests';
-import type { FileEntity } from '@shared/types/domain';
+import type { FileEntity } from '@entities/request';
 
 type ApiResponse = {
   data: {
