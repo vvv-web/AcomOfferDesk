@@ -61,6 +61,7 @@ async def get_responsibility_dashboard(
                     created_at=item.created_at,
                     updated_at=item.updated_at,
                     owner_user_id=item.owner_user_id,
+                    owner_full_name=item.owner_full_name,
                 )
                 for item in dashboard.unassigned_requests
             ],
@@ -74,6 +75,7 @@ async def get_responsibility_dashboard(
                     created_at=item.created_at,
                     updated_at=item.updated_at,
                     owner_user_id=item.owner_user_id,
+                    owner_full_name=item.owner_full_name,
                 )
                 for item in dashboard.assigned_requests
             ],

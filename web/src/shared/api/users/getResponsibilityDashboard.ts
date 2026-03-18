@@ -31,6 +31,7 @@ export type ResponsibilityDashboardRequest  = {
   created_at: string;
   updated_at: string;
   owner_user_id: string;
+  owner_full_name: string | null;
 };
 
 export type ResponsibilityUpcomingUnavailability = {

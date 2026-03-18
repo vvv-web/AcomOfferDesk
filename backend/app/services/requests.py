@@ -268,6 +268,14 @@ class RequestService:
             owner = await self._users.get_by_id(data.owner_user_id)
             if owner is None:
                 raise NotFound("Owner user not found")
+
+            if current_user.role_id == settings.lead_economist_role_id:
+                current_owner = await self._users.get_by_id(request.id_user)
+                if current_owner is None:
+                    raise NotFound("Owner user not found")
+                can_delegate = request.id_user == current_user.user_id or current_owner.id_role == settings.operator_role_id
+                if not can_delegate:
+                    raise Forbidden("Lead economist can change owner only for own or unassigned requests")
             
             if current_user.role_id in {
                 settings.project_manager_role_id,

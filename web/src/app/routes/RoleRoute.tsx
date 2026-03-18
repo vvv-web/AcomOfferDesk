@@ -8,7 +8,7 @@ type RoleRouteProps = {
 };
 
 const getDefaultPath = (roleId?: number | null) => {
-  if (roleId === ROLE.PROJECT_MANAGER) {
+  if (roleId === ROLE.PROJECT_MANAGER || roleId === ROLE.LEAD_ECONOMIST) {
     return '/pm-dashboard';
   }
 

@@ -1,10 +1,10 @@
-import { Box, Button,  Stack, Tab, Tabs, Typography } from '@mui/material';
+import { Box, Button, Stack, Tab, Tabs, Typography } from '@mui/material';
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { FeedbackButton } from '@shared/components/FeedbackButton';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
-import { FeedbackButton } from '@shared/components/FeedbackButton';
 import { ROLE } from '@shared/constants/roles';
 
 const navLinkStyles = {
@@ -25,7 +25,6 @@ const superadminItems: NavItem[] = [
   { label: 'Роли', disabled: true }
 ];
 
-
 export const AppLayout = () => {
   const { session, logout } = useAuth();
   const location = useLocation();
@@ -36,27 +35,37 @@ export const AppLayout = () => {
   const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
   const roleId = session?.roleId ?? null;
   const isSuperadmin = roleId === ROLE.SUPERADMIN;
-  const isRequestsListPage = location.pathname === '/requests';
-  const isRequestDetailsPage = /^\/requests\/\d+$/.test(location.pathname);
-  const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(location.pathname);
-  const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
+  const isAdmin = roleId === ROLE.ADMIN;
   const isContractor = roleId === ROLE.CONTRACTOR;
   const isLeadEconomist = roleId === ROLE.LEAD_ECONOMIST;
   const isProjectManager = roleId === ROLE.PROJECT_MANAGER;
   const isEconomist = roleId === ROLE.ECONOMIST;
   const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
+
+  const isRequestsListPage = location.pathname === '/requests';
+  const isRequestDetailsPage = /^\/requests\/\d+$/.test(location.pathname);
+  const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(location.pathname);
+  const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && location.pathname === '/pm-dashboard';
+  const isResponsibilityRequestsPage = (isProjectManager || isLeadEconomist) && location.pathname.startsWith('/requests');
+  const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && location.pathname.startsWith('/admin');
+  const isAdminUsersPage = isAdmin && location.pathname.startsWith('/admin');
+
+  const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
   const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
   const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
-  const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
   const canOpenUsersPage = hasAvailableAction(session, '/api/v1/users', 'GET');
   const canRegisterUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
+
+  const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
   const isLeadRequestsTab = isLeadLike && location.pathname.startsWith('/requests');
   const isLeadEconomistsTab = isLeadLike && location.pathname.startsWith('/admin');
-  const canUseLeadTabs = isLeadLike && (isLeadRequestsTab || isLeadEconomistsTab) && (canOpenUsersPage || isEconomist);
+  const canUseLeadTabs = isLeadLike && !isProjectManager && !isLeadEconomist
+    && (isLeadRequestsTab || isLeadEconomistsTab)
+    && (canOpenUsersPage || isEconomist);
+  const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
+    && (isResponsibilityDashboard || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
+    && canOpenUsersPage;
 
-  const isAdmin = roleId === ROLE.ADMIN;
-  const isProjectManagerDashboard = roleId === ROLE.PROJECT_MANAGER && location.pathname === '/pm-dashboard';
-  const isAdminUsersPage = isAdmin && location.pathname.startsWith('/admin');
   const adminUsersTabParam = searchParams.get('users_tab');
   const adminUsersTab: 'contractors' | 'economists' | 'admins' =
     adminUsersTabParam === 'economists' || adminUsersTabParam === 'admins' ? adminUsersTabParam : 'contractors';
@@ -71,6 +80,7 @@ export const AppLayout = () => {
             </Button>
           );
         }
+
         return (
           <NavLink key={item.to} to={item.to} style={navLinkStyles}>
             {({ isActive }) => (
@@ -90,6 +100,60 @@ export const AppLayout = () => {
       })}
     </Stack>
   );
+
+  const projectManagerHeader = canUseProjectManagerTabs ? (
+    <Stack spacing={1} sx={{ minWidth: 0 }}>
+      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+        <Tabs
+          value={
+            isResponsibilityDashboard
+              ? 'dashboard'
+              : isResponsibilityEmployeesPage
+                ? 'employees'
+                : 'requests'
+          }
+          onChange={(_, value: 'dashboard' | 'requests' | 'employees') => {
+            navigate(
+              value === 'dashboard'
+                ? '/pm-dashboard'
+                : value === 'employees'
+                  ? '/admin'
+                  : '/requests'
+            );
+          }}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab value="dashboard" label="Дашборд" />
+          <Tab value="requests" label="Заявки" />
+          <Tab value="employees" label="Сотрудники" />
+        </Tabs>
+        {isResponsibilityRequestsPage && canCreateRequest ? (
+          <Button
+            variant="outlined"
+            sx={{ px: 3, borderRadius: 999, textTransform: 'none', whiteSpace: 'nowrap' }}
+            onClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
+          >
+            Создать заявку
+          </Button>
+        ) : null}
+        {isResponsibilityEmployeesPage && canRegisterUser ? (
+          <Button
+            variant="outlined"
+            sx={{ px: 3, borderRadius: 999, textTransform: 'none', whiteSpace: 'nowrap' }}
+            onClick={() => navigate('/admin?create=1')}
+          >
+            Добавить экономиста
+          </Button>
+        ) : null}
+      </Stack>
+      {isResponsibilityDashboard ? (
+        <Typography variant="h5" fontWeight={700} sx={{ color: '#1f3b6d', lineHeight: 1.1 }}>
+          {isProjectManager ? 'Дашборд Руководителя проекта' : 'Дашборд Ведущего экономиста'}
+        </Typography>
+      ) : null}
+    </Stack>
+  ) : null;
 
   if (isSuperadmin) {
     return (
@@ -156,7 +220,6 @@ export const AppLayout = () => {
     );
   }
 
-
   return (
     <Box
       sx={{
@@ -167,12 +230,8 @@ export const AppLayout = () => {
     >
       {isOfferWorkspacePage ? null : (
         <Stack component="header" direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-          {isProjectManagerDashboard ? (
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Typography variant="h5" fontWeight={700} sx={{ color: '#1f3b6d', lineHeight: 1.1 }}>
-                Дашборд Руководителя проекта
-              </Typography>
-            </Stack>
+          {projectManagerHeader ? (
+            projectManagerHeader
           ) : isRequestDetailsPage ? (
             <Button
               variant="outlined"
@@ -259,15 +318,14 @@ export const AppLayout = () => {
             <Button
               variant="contained"
               sx={{ px: 3, boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
-              onClick={() => {
-                navigate('/requests/create', { state: { backgroundLocation: location } });
-              }}
+              onClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
             >
               Создать заявку
             </Button>
           ) : (
             <Box />
           )}
+
           <Stack direction="row" spacing={1.5} alignItems="center">
             <FeedbackButton />
             <RoleGuideButton />

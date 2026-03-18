@@ -25,6 +25,7 @@ import {
   type SubordinateProfile
 } from '@shared/api/users/getSubordinateProfile';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { ROLE } from '@shared/constants/roles';
 
 const contractorColumns = [
   { key: 'login', label: 'Логин', minWidth: 170, fraction: 1.1 },
@@ -346,6 +347,11 @@ export const UsersTable = ({
     [getRoleLabel, users]
   );
 
+  const canEditUserStatus = (userId: string) => {
+    const user = users.find((item) => item.user_id === userId);
+    return canUpdateStatus && user?.role_id === ROLE.ECONOMIST;
+  };
+
   const handleStatusSubmit = async (values: StatusFormValues) => {
     if (!selectedUser) return;
     setSubmitError(null);
@@ -426,32 +432,36 @@ export const UsersTable = ({
               <Typography variant="body2">{row.id}</Typography>,
               <Typography variant="body2">{row.password}</Typography>,
               <Typography variant="body2">{row.id_role}</Typography>,
-              <TextField
-                select
-                size="small"
-                value={row.id_role}
-                disabled={!canUpdateRole || updatingUserId === row.id}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  const nextRoleId = Number(event.target.value);
-                  if (nextRoleId === row.id_role) {
-                    return;
-                  }
-                  void handleInlineRoleChange(row.id, nextRoleId);
-                }}
-                sx={{ minWidth: 140 }}
-              >
-                {allowedRoleOptions.map((roleId) => (
-                  <MenuItem key={roleId} value={roleId}>
-                    {getRoleLabel(roleId)}
-                  </MenuItem>
-                ))}
-              </TextField>,
+              allowedRoleOptions.includes(row.id_role) ? (
+                <TextField
+                  select
+                  size="small"
+                  value={row.id_role}
+                  disabled={!canUpdateRole || updatingUserId === row.id}
+                  onChange={(event) => {
+                    event.stopPropagation();
+                    const nextRoleId = Number(event.target.value);
+                    if (nextRoleId === row.id_role) {
+                      return;
+                    }
+                    void handleInlineRoleChange(row.id, nextRoleId);
+                  }}
+                  sx={{ minWidth: 140 }}
+                >
+                  {allowedRoleOptions.map((roleId) => (
+                    <MenuItem key={roleId} value={roleId}>
+                      {getRoleLabel(roleId)}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              ) : (
+                <Typography variant="body2">{row.role}</Typography>
+              ),
               <TextField
                 select
                 size="small"
                 value={row.status}
-                disabled={!canUpdateStatus || updatingUserId === row.id}
+                disabled={!canEditUserStatus(row.id) || updatingUserId === row.id}
                 onChange={(event) => {
                   event.stopPropagation();
                   const nextStatus = event.target.value as StatusFormValues['user_status'];
@@ -767,7 +777,7 @@ export const UsersTable = ({
                 </Stack>
               </Box>
 
-              {canUpdateStatus ? (
+              {canUpdateStatus && selectedUser.role_id === ROLE.ECONOMIST ? (
                 <Stack
                   spacing={1.2}
                   sx={{

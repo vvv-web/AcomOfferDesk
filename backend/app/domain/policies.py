@@ -162,10 +162,11 @@ class UserPolicy:
     def can_view_responsibility_dashboard(current_user: CurrentUser) -> None:
         allowed_roles = {
             settings.superadmin_role_id,
+            settings.lead_economist_role_id,
             settings.project_manager_role_id,
         }
         if current_user.role_id not in allowed_roles:
-            raise Forbidden("Only superadmin and project manager can view responsibility dashboard")
+            raise Forbidden("Only superadmin, lead economist and project manager can view responsibility dashboard")
 
 
 class RequestPolicy:

@@ -26,7 +26,7 @@ import {
 } from '@shared/api/users/getResponsibilityDashboard';
 import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
-import { formatUnavailabilityDate, getUnavailabilityStatusLabel, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
+import { formatUnavailabilityDate, getUnavailabilityStatusLabel, getUnavailabilityTooltip, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Сбор КП',
@@ -145,6 +145,24 @@ const formatUnavailabilitySummary = (fullName: string, period: UnavailabilityPer
   const suffix = relativeLabel ? `, ${relativeLabel}` : '';
   const prefixPart = prefix ? `${prefix}: ` : '';
   return `${prefixPart}${fullName}, ${getUnavailabilityStatusLabel(period.status)} (${formatUnavailabilityRange(period)}${suffix})`;
+};
+
+const getRequestOwnerWarningTooltip = ({
+  activePeriod,
+  upcomingPeriod,
+}: {
+  activePeriod: UnavailabilityPeriodInfo | null;
+  upcomingPeriod: UnavailabilityPeriodInfo | null;
+}) => {
+  if (activePeriod) {
+    return `Сотрудник сейчас недоступен. ${getUnavailabilityTooltip(activePeriod)}`;
+  }
+
+  if (upcomingPeriod) {
+    return `Скоро будет недоступен. ${getUnavailabilityTooltip(upcomingPeriod)}`;
+  }
+
+  return null;
 };
 
 const flattenEmployees = (nodes: ResponsibilityEmployeeNode[]): ResponsibilityEmployeeNode[] =>
@@ -724,6 +742,19 @@ export const ProjectManagerDashboard = () => {
     }, {});
   }, [allSubordinates]);
 
+  const resolveAssigneeLabel = useCallback((request: ResponsibilityDashboardRequest, userId: string) => {
+    if (!userId) {
+      return 'Выберите ответственного';
+    }
+
+    const employee = allSubordinates.find((item) => item.user_id === userId);
+    if (employee) {
+      return `${employee.full_name || employee.user_id} (${employee.role_name})`;
+    }
+
+    return request.owner_full_name || employeeNameById[userId] || userId;
+  }, [allSubordinates, employeeNameById]);
+
   const activeUnavailabilityByUser = useMemo(
     () =>
       activeUnavailability.reduce<Record<string, UnavailabilityPeriodInfo>>((acc, period) => {
@@ -972,6 +1003,12 @@ export const ProjectManagerDashboard = () => {
               ) : (
                 visibleRequests.map((request) => {
                   const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'assigned' ? request.owner_user_id : '');
+                  const requestOwnerActiveUnavailability = activeUnavailabilityByUser[request.owner_user_id] ?? null;
+                  const requestOwnerUpcomingUnavailability = upcomingUnavailabilityByUser[request.owner_user_id] ?? null;
+                  const requestOwnerWarningTooltip = getRequestOwnerWarningTooltip({
+                    activePeriod: requestOwnerActiveUnavailability,
+                    upcomingPeriod: requestOwnerUpcomingUnavailability,
+                  });
                   return (
                     <Card key={`${requestsTab}-${request.request_id}`} variant="outlined" sx={{ borderRadius: 2 }}>
                       <CardContent>
@@ -997,9 +1034,35 @@ export const ProjectManagerDashboard = () => {
                               Дедлайн: {formatDate(request.deadline_at)}
                             </Typography>
                             {requestsTab === 'assigned' ? (
-                              <Typography variant="caption" color="text.secondary">
-                                Ответственный: {employeeNameById[request.owner_user_id] ?? request.owner_user_id}
-                              </Typography>
+                              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                                <Typography variant="caption" color="text.secondary">
+                                  Ответственный: {request.owner_full_name || employeeNameById[request.owner_user_id] || request.owner_user_id}
+                                </Typography>
+                                {requestOwnerWarningTooltip ? (
+                                  <Tooltip title={requestOwnerWarningTooltip} arrow>
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
+                                        border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
+                                        color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                        lineHeight: 1,
+                                        cursor: 'help'
+                                      }}
+                                    >
+                                      !
+                                    </Box>
+                                  </Tooltip>
+                                ) : null}
+                              </Stack>
                             ) : null}
                           </Stack>
 
@@ -1012,6 +1075,7 @@ export const ProjectManagerDashboard = () => {
                               displayEmpty
                               fullWidth
                               value={selectedOwner}
+                              renderValue={(value) => resolveAssigneeLabel(request, String(value ?? ''))}
                               onChange={(event) => handleAssigneeChange(request.request_id, String(event.target.value))}
                             >
                               <MenuItem value="">Выберите ответственного</MenuItem>

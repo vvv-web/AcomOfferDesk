@@ -40,6 +40,7 @@ class DashboardRequestItem:
     created_at: datetime
     updated_at: datetime
     owner_user_id: str
+    owner_full_name: str | None
 
 
 @dataclass(frozen=True)
@@ -83,10 +84,15 @@ class DashboardService:
             while cursor and cursor not in seen:
                 seen.add(cursor)
                 if cursor == current_user.user_id:
-                    descendant_ids.add(user_id)
+                    if user_id != current_user.user_id:
+                        descendant_ids.add(user_id)
                     break
                 parent = by_id.get(cursor)
                 cursor = parent[0].id_parent if parent else None
+
+        assigned_owner_ids = list(descendant_ids)
+        if current_user.role_id == settings.lead_economist_role_id:
+            assigned_owner_ids = [current_user.user_id, *list(descendant_ids)]
 
         request_counters = await self._requests.count_in_progress_requests_by_owner(
             owner_ids=list(descendant_ids),
@@ -142,11 +148,12 @@ class DashboardService:
                 created_at=request.created_at,
                 updated_at=request.updated_at,
                 owner_user_id=request.id_user,
+                owner_full_name=None,
             )
             for request in unassigned_rows
         ]
 
-        assigned_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=list(descendant_ids))
+        assigned_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=assigned_owner_ids)
         assigned_requests = [
             DashboardRequestItem(
                 request_id=request.id,
@@ -157,6 +164,7 @@ class DashboardService:
                 created_at=request.created_at,
                 updated_at=request.updated_at,
                 owner_user_id=request.id_user,
+                owner_full_name=by_id[request.id_user][1].full_name if request.id_user in by_id and by_id[request.id_user][1] else None,
             )
             for request in assigned_rows
         ]

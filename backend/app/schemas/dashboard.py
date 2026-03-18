@@ -33,6 +33,7 @@ class DashboardRequestItemSchema(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_user_id: str
+    owner_full_name: str | None
 
 
 class UpcomingUnavailabilityItemSchema(BaseModel):

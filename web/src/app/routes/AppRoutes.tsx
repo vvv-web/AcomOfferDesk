@@ -68,7 +68,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
             <Route
               path="/pm-dashboard"
               element={
-                <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER]}>
+                <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST]}>
                   <ProjectManagerDashboardPage />
                 </RoleRoute>
               }

@@ -64,6 +64,8 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
     'Только ведущий экономист и суперадмин могут менять ответственного по заявке',
   'Only lead economist, project manager and superadmin can change request owner':
     'Только ведущий экономист, руководитель проекта и суперадмин могут менять ответственного по заявке',
+  'Lead economist can change owner only for own or unassigned requests':
+    'Ведущий экономист может переназначать только свои заявки или заявки без ответственного',
   'Contractor can view only own profile': 'Контрагент может просматривать только свой профиль',
   'Contractor can access only own offers': 'Контрагент может работать только со своими офферами',
 
