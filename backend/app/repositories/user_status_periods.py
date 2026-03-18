@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, func, select
+from datetime import datetime, timedelta
+
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import UserStatusPeriod
@@ -78,3 +80,75 @@ class UserStatusPeriodRepository:
             if period.id_user not in active_by_user:
                 active_by_user[period.id_user] = period
         return active_by_user
+
+    async def get_overlapping_for_user(
+        self,
+        *,
+        user_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> UserStatusPeriod | None:
+        query: Select[tuple[UserStatusPeriod]] = (
+            select(UserStatusPeriod)
+            .where(
+                UserStatusPeriod.id_user == user_id,
+                and_(
+                    UserStatusPeriod.started_at <= ended_at,
+                    UserStatusPeriod.ended_at >= started_at,
+                ),
+            )
+            .order_by(UserStatusPeriod.started_at.asc(), UserStatusPeriod.id.asc())
+            .limit(1)
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_starting_soon_for_users(
+        self,
+        *,
+        user_ids: list[str],
+        window: timedelta,
+    ) -> list[UserStatusPeriod]:
+        if not user_ids:
+            return []
+
+        query: Select[tuple[UserStatusPeriod]] = (
+            select(UserStatusPeriod)
+            .where(
+                UserStatusPeriod.id_user.in_(user_ids),
+                UserStatusPeriod.started_at > func.now(),
+                UserStatusPeriod.started_at <= func.now() + window,
+            )
+            .order_by(
+                UserStatusPeriod.started_at.asc(),
+                UserStatusPeriod.id_user.asc(),
+                UserStatusPeriod.id.asc(),
+            )
+        )
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    async def list_next_for_users(self, *, user_ids: list[str]) -> list[UserStatusPeriod]:
+        if not user_ids:
+            return []
+
+        query: Select[tuple[UserStatusPeriod]] = (
+            select(UserStatusPeriod)
+            .where(
+                UserStatusPeriod.id_user.in_(user_ids),
+                UserStatusPeriod.started_at > func.now(),
+            )
+            .order_by(
+                UserStatusPeriod.id_user.asc(),
+                UserStatusPeriod.started_at.asc(),
+                UserStatusPeriod.id.asc(),
+            )
+        )
+        result = await self._session.execute(query)
+
+        periods_by_user: dict[str, UserStatusPeriod] = {}
+        for period in result.scalars().all():
+            if period.id_user not in periods_by_user:
+                periods_by_user[period.id_user] = period
+
+        return list(periods_by_user.values())

@@ -33,11 +33,22 @@ export type ResponsibilityDashboardRequest  = {
   owner_user_id: string;
 };
 
+export type ResponsibilityUpcomingUnavailability = {
+  user_id: string;
+  full_name: string | null;
+  role_name: string;
+  status: string;
+  started_at: string;
+  ended_at: string;
+};
+
 type ResponsibilityDashboardResponse = {
   data: {
     tree: ResponsibilityEmployeeNode[];
     unassigned_requests: ResponsibilityDashboardRequest[];
     assigned_requests: ResponsibilityDashboardRequest[];
+    active_unavailability: ResponsibilityUpcomingUnavailability[];
+    upcoming_unavailability: ResponsibilityUpcomingUnavailability[];
   };
   _links?: {
     available_actions?: DashboardActionLink[];
@@ -49,6 +60,8 @@ export type ResponsibilityDashboardResult = {
   tree: ResponsibilityEmployeeNode[];
   unassignedRequests: ResponsibilityDashboardRequest[];
   assignedRequests: ResponsibilityDashboardRequest[];
+  activeUnavailability: ResponsibilityUpcomingUnavailability[];
+  upcomingUnavailability: ResponsibilityUpcomingUnavailability[];
   availableActions: DashboardActionLink[];
 };
 
@@ -63,6 +76,8 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
     tree: response.data.tree,
     unassignedRequests: response.data.unassigned_requests,
     assignedRequests: response.data.assigned_requests,
+    activeUnavailability: response.data.active_unavailability,
+    upcomingUnavailability: response.data.upcoming_unavailability,
     availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
   };
 };

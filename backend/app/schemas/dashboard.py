@@ -35,10 +35,21 @@ class DashboardRequestItemSchema(BaseModel):
     owner_user_id: str
 
 
+class UpcomingUnavailabilityItemSchema(BaseModel):
+    user_id: str
+    full_name: str | None
+    role_name: str
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
 class ResponsibilityDashboardData(BaseModel):
     tree: list[DashboardEconomistNodeSchema]
     unassigned_requests: list[DashboardRequestItemSchema]
     assigned_requests: list[DashboardRequestItemSchema]
+    active_unavailability: list[UpcomingUnavailabilityItemSchema]
+    upcoming_unavailability: list[UpcomingUnavailabilityItemSchema]
 
 
 class ResponsibilityDashboardResponse(BaseModel):

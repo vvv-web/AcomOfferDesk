@@ -262,7 +262,7 @@ async def list_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         items = await service.list_requests(current_user=current_user)
 
     return RequestListResponse(
@@ -313,7 +313,7 @@ async def list_open_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OpenRequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         if current_user.role_id == settings.contractor_role_id:
             items = await service.list_open_requests_for_contractor(current_user=current_user)
         else:
@@ -360,7 +360,7 @@ async def list_offered_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OpenRequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         items = await service.list_offered_requests_for_contractor(current_user=current_user)
 
     return OpenRequestListResponse(
@@ -413,7 +413,7 @@ async def get_request_details(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestDetailsResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         item = await service.get_request_details(current_user=current_user, request_id=request_id)
 
     return RequestDetailsResponse(
@@ -523,6 +523,7 @@ async def create_request(
             uow.files,
             uow.users,
             uow.offers,
+            uow.user_status_periods,
             email_notifications=email_notifications,
         )
         request_id, file_ids = await service.create_request(
@@ -549,7 +550,7 @@ async def update_request(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestMutationResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         await service.update_request(
             current_user=current_user,
             request_id=request_id,
@@ -586,7 +587,7 @@ async def add_request_file(
     await anyio.Path(relative_path).write_bytes(content)
 
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         file_id = await service.attach_file(
             current_user=current_user,
             request_id=request_id,
@@ -610,7 +611,7 @@ async def delete_request_file(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestFileMutationResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         await service.remove_file(
             current_user=current_user,
             request_id=request_id,
@@ -633,7 +634,7 @@ async def mark_deleted_alert_viewed(
     uow: UnitOfWork = Depends(get_uow),
 ) -> DeletedAlertViewedResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         updated_stats = await service.mark_deleted_alert_viewed(
             current_user=current_user,
             request_id=payload.request_id,

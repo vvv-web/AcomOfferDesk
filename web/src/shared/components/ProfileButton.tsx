@@ -26,7 +26,7 @@ import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
 import { requestEmailVerification } from '@shared/api/auth/emailVerification';
-import { UnavailabilityStatusSection } from '@shared/components/UnavailabilityStatusSection';
+import { UnavailabilityManagementSection } from '@shared/components/UnavailabilityManagementSection';
 import { UnavailabilityPeriodEditor } from '@shared/components/UnavailabilityPeriodEditor';
 
 
@@ -195,8 +195,8 @@ export const ProfileButton = () => {
 
     resetUnavailability({
       status: 'unavailable',
-      started_at: profile.unavailablePeriod?.startedAt ? profile.unavailablePeriod.startedAt.slice(0, 10) : '',
-      ended_at: profile.unavailablePeriod?.endedAt ? profile.unavailablePeriod.endedAt.slice(0, 10) : ''
+      started_at: '',
+      ended_at: ''
     });
   }, [profile, resetCompany, resetProfile, resetUnavailability]);
 
@@ -300,7 +300,7 @@ export const ProfileButton = () => {
       setProfile(nextProfile);
       setOpenUnavailability(false);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить нерабочий статус');
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить нерабочий период');
     }
   };
   return (
@@ -365,13 +365,37 @@ export const ProfileButton = () => {
 
               {canSetUnavailability ? (
                 <Stack spacing={1.5}>
-                  <UnavailabilityStatusSection
+                  <UnavailabilityManagementSection
                     currentPeriod={profile?.unavailablePeriod ?? null}
                     periods={profile?.unavailablePeriods ?? []}
+                    canEdit
+                    isDialogOpen={openUnavailability}
+                    onOpenDialog={() => setOpenUnavailability(true)}
+                    onCloseDialog={() => setOpenUnavailability(false)}
+                    onSubmit={handleUnavailabilitySubmit((values) => void onSubmitUnavailability(values))}
+                    isSubmitting={isSubmittingUnavailability}
+                    dialogTitle="Установить нерабочий период"
+                    triggerLabel="Установить нерабочий период"
+                    submitLabel="Сохранить период"
+                    editor={
+                      <UnavailabilityPeriodEditor
+                        statusField={registerUnavailability('status')}
+                        startedAtField={registerUnavailability('started_at')}
+                        endedAtField={registerUnavailability('ended_at')}
+                        startedAtValue={watchUnavailability('started_at') ?? ''}
+                        endedAtValue={watchUnavailability('ended_at') ?? ''}
+                        onStartedAtChange={(value: string) =>
+                          setUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })
+                        }
+                        onEndedAtChange={(value: string) =>
+                          setUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })
+                        }
+                        statusError={unavailabilityErrors.status?.message}
+                        startedAtError={unavailabilityErrors.started_at?.message}
+                        endedAtError={unavailabilityErrors.ended_at?.message}
+                      />
+                    }
                   />
-                  <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenUnavailability(true)}>
-                    Установить период
-                  </Button>
                 </Stack>
               ) : null}
 
@@ -535,31 +559,6 @@ export const ProfileButton = () => {
           </Stack>
         </DialogContent>
       </Dialog>
-      <Dialog open={openUnavailability} onClose={() => setOpenUnavailability(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
-          <Stack spacing={2} component="form" onSubmit={handleUnavailabilitySubmit((values) => void onSubmitUnavailability(values))}>
-            <Typography variant="h5" fontWeight={700}>
-              Установить нерабочий статус
-            </Typography>
-            <UnavailabilityPeriodEditor
-              statusField={registerUnavailability('status')}
-              startedAtField={registerUnavailability('started_at')}
-              endedAtField={registerUnavailability('ended_at')}
-              startedAtValue={watchUnavailability('started_at') ?? ''}
-              endedAtValue={watchUnavailability('ended_at') ?? ''}
-              onStartedAtChange={(value: string) => setUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })}
-              onEndedAtChange={(value: string) => setUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })}
-              statusError={unavailabilityErrors.status?.message}
-              startedAtError={unavailabilityErrors.started_at?.message}
-              endedAtError={unavailabilityErrors.ended_at?.message}
-            />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingUnavailability}>
-              Сохранить период
-            </Button>
-          </Stack>
-        </DialogContent>
-      </Dialog>
-
     </>
   );
 };

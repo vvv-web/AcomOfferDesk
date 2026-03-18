@@ -7,8 +7,9 @@ from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
 from app.schemas.dashboard import (
     DashboardEconomistNodeSchema,
-    DashboardStatusCounterSchema,
     DashboardRequestItemSchema,
+    DashboardStatusCounterSchema,
+    UpcomingUnavailabilityItemSchema,
     ResponsibilityDashboardData,
     ResponsibilityDashboardResponse,
 )
@@ -44,7 +45,7 @@ async def get_responsibility_dashboard(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ResponsibilityDashboardResponse:
     async with uow:
-        service = DashboardService(uow.users, uow.requests)
+        service = DashboardService(uow.users, uow.requests, uow.user_status_periods)
         dashboard = await service.get_responsibility_dashboard(current_user=current_user)
 
     return ResponsibilityDashboardResponse(
@@ -75,6 +76,28 @@ async def get_responsibility_dashboard(
                     owner_user_id=item.owner_user_id,
                 )
                 for item in dashboard.assigned_requests
+            ],
+            active_unavailability=[
+                UpcomingUnavailabilityItemSchema(
+                    user_id=item.user_id,
+                    full_name=item.full_name,
+                    role_name=item.role_name,
+                    status=item.status,
+                    started_at=item.started_at,
+                    ended_at=item.ended_at,
+                )
+                for item in dashboard.active_unavailability
+            ],
+            upcoming_unavailability=[
+                UpcomingUnavailabilityItemSchema(
+                    user_id=item.user_id,
+                    full_name=item.full_name,
+                    role_name=item.role_name,
+                    status=item.status,
+                    started_at=item.started_at,
+                    ended_at=item.ended_at,
+                )
+                for item in dashboard.upcoming_unavailability
             ],
         ),
         _links=LinkSet(

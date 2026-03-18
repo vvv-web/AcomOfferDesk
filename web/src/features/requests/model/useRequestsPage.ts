@@ -8,6 +8,7 @@ import { getRequests, type RequestWithOfferStats } from '@shared/api/requests/ge
 import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
+import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 const POLL_INTERVAL_MS = 10000;
 
@@ -15,7 +16,7 @@ export const useRequestsPage = () => {
   const { session } = useAuth();
   const [searchParams] = useSearchParams();
   const [requests, setRequests] = useState<RequestWithOfferStats[]>([]);
-  const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [chatAlertsMap, setChatAlertsMap] = useState<Record<number, number>>({});
@@ -80,7 +81,14 @@ export const useRequestsPage = () => {
       setOwnerOptions(
         economists.map((item) => ({
           id: item.user_id,
-          label: `${item.full_name?.trim() || item.user_id} (${item.role})`
+          label: `${item.full_name?.trim() || item.user_id} (${item.role})`,
+          unavailablePeriod: item.unavailable_period
+            ? {
+                status: item.unavailable_period.status,
+                startedAt: item.unavailable_period.started_at,
+                endedAt: item.unavailable_period.ended_at,
+              }
+            : null,
         }))
       );
     } catch (error) {
@@ -124,6 +132,14 @@ export const useRequestsPage = () => {
         return;
       }
 
+      const targetOwner = ownerOptions.find((item) => item.id === ownerUserId);
+      if (targetOwner?.unavailablePeriod) {
+        const start = formatUnavailabilityDate(targetOwner.unavailablePeriod.startedAt);
+        const end = formatUnavailabilityDate(targetOwner.unavailablePeriod.endedAt);
+        setErrorMessage(`Нельзя назначить ответственного: сотрудник в нерабочем статусе (${start} — ${end})`);
+        return;
+      }
+
       const previousOwner = request.id_user;
       setRequests((prev) =>
         prev.map((item) =>
@@ -155,7 +171,7 @@ export const useRequestsPage = () => {
         setErrorMessage(error instanceof Error ? error.message : 'Не удалось изменить ответственного');
       }
     },
-    [canEditOwner]
+    [canEditOwner, ownerOptions]
   );
 
   return {

@@ -8,7 +8,11 @@ type RoleRouteProps = {
 };
 
 const getDefaultPath = (roleId?: number | null) => {
-  if (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN || roleId === ROLE.PROJECT_MANAGER) {
+  if (roleId === ROLE.PROJECT_MANAGER) {
+    return '/pm-dashboard';
+  }
+
+  if (roleId === ROLE.SUPERADMIN || roleId === ROLE.ADMIN) {
     return '/admin';
   }
   return '/requests';

@@ -92,6 +92,7 @@ class RequestEconomistItemSchema(BaseModel):
     user_id: str
     full_name: str | None
     role: str
+    unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
 
 
 class RequestEconomistListData(BaseModel):
@@ -116,7 +117,7 @@ class MeData(BaseModel):
     user_id: str
     role_id: int
     status: str
-    unavailable_period: UserUnavailabilityPeriodSchema | None = None
+    unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
     unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
     tg_user_id: int | None = None
     full_name: str | None = None
@@ -144,7 +145,7 @@ class SubordinateProfileData(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
-    unavailable_period: UserUnavailabilityPeriodSchema | None = None
+    unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
     unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
 
 

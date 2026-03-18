@@ -10,6 +10,9 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Contractor not found': 'Контрагент не найден',
   'Owner user not found': 'Ответственный пользователь не найден',
 
+  'User already has unavailability period in this time range': 'На этот период уже установлен нерабочий статус',
+  'Owner user is unavailable': 'Нельзя назначить ответственного: сотрудник в нерабочем статусе',
+
   'Invalid credentials': 'Неверный логин или пароль',
   'Current password is invalid': 'Текущий пароль указан неверно',
   'Missing credentials': 'Отсутствуют учетные данные',
@@ -138,6 +141,17 @@ const translateText = (message: string | null | undefined): string | null => {
   if (!normalized) {
     return null;
   }
+
+  if (normalized.startsWith('Owner user is unavailable in selected period ')) {
+    const period = normalized.replace('Owner user is unavailable in selected period ', '').trim();
+    return `Нельзя назначить ответственного: сотрудник в нерабочем статусе (${period})`;
+  }
+
+  if (normalized.startsWith('User already has unavailability period in this time range ')) {
+    const period = normalized.replace('User already has unavailability period in this time range ', '').trim();
+    return `На этот период уже установлен нерабочий статус (${period})`;
+  }
+
   return ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? normalized;
 };
 

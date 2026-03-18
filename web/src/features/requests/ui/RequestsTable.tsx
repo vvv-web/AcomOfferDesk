@@ -1,7 +1,9 @@
-import { Box, Chip, MenuItem, Select, Stack, SvgIcon, Typography } from '@mui/material';
+import { Box, Chip, Select, Stack, SvgIcon, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
+import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { DataTable } from '@shared/components/DataTable';
+import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 const baseColumns = [
     { key: 'id', label: 'id', minWidth: 60, fraction: 0.45 },
@@ -24,6 +26,7 @@ const contractorOffersColumn = { key: 'contractorOffers', label: 'Мои отк�
 type OwnerOption = {
     id: string;
     label: string;
+    unavailablePeriod?: UnavailabilityPeriodInfo | null;
 };
 
 type RequestsTableProps = {
@@ -213,14 +216,18 @@ export const RequestsTable = ({
                         <Select
                             size="small"
                             value={row.id_user}
+                            renderValue={(selected) => ownerOptions.find((option) => option.id === selected)?.label ?? row.owner_full_name ?? String(selected ?? '')}
                             onClick={(event) => event.stopPropagation()}
                             onChange={(event) => onOwnerChange?.(row, event.target.value)}
                             sx={{ minWidth: 150 }}
                         >
                             {ownerOptions.map((option) => (
-                                <MenuItem key={option.id} value={option.id}>
-                                    {option.label}
-                                </MenuItem>
+                                <UnavailableAwareMenuItem
+                                    key={option.id}
+                                    value={option.id}
+                                    label={option.label}
+                                    unavailablePeriod={option.unavailablePeriod}
+                                />
                             ))}
                         </Select>
                     ) : (

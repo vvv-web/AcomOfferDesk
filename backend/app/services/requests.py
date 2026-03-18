@@ -9,6 +9,7 @@ from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
 from app.repositories.files import FileRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
+from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.email_notifications import EmailNotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
@@ -169,12 +170,14 @@ class RequestService:
         files: FileRepository,
         users: UserRepository,
         offers: OfferRepository,
+        user_status_periods: UserStatusPeriodRepository,
         email_notifications: EmailNotificationService | None = None,
     ):
         self._requests = requests
         self._files = files
         self._users = users
         self._offers = offers
+        self._user_status_periods = user_status_periods
         self._email_notifications = email_notifications
 
     async def create_request(
@@ -278,6 +281,13 @@ class RequestService:
                 )
                 if not is_subordinate:
                     raise Forbidden("Owner must be from current user's subordinates")
+
+            owner_unavailability = await self._user_status_periods.get_active_for_user(user_id=owner.id)
+            if owner_unavailability is not None:
+                raise Conflict(
+                    "Owner user is unavailable in selected period "
+                    f"{owner_unavailability.started_at.isoformat()} - {owner_unavailability.ended_at.isoformat()}"
+                )
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
 
     async def _is_descendant(self, *, ancestor_user_id: str, target_user_id: str) -> bool:

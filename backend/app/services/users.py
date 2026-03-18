@@ -209,6 +209,7 @@ class RequestEconomistListItem:
     user_id: str
     full_name: str | None
     role: str
+    unavailable_period: UnavailabilityPeriodData | None = None
 
 
 @dataclass(frozen=True)
@@ -347,11 +348,15 @@ class UserQueryService:
         rows = await self._users.list_by_role_ids_with_profiles_and_roles(
             role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
         )
+        user_ids = [user.id for user, _, _ in rows]
+        active_unavailability_by_user = await self._user_status_periods.list_active_for_users(user_ids=user_ids)
+
         return [
             RequestEconomistListItem(
                 user_id=user.id,
                 full_name=profile.full_name if profile else None,
                 role=role.role,
+                unavailable_period=self._period_to_data(active_unavailability_by_user[user.id]) if user.id in active_unavailability_by_user else None,
             )
             for user, profile, role in rows
         ]
@@ -547,6 +552,37 @@ class UserSelfService:
         self._company_contacts = company_contacts
         self._user_status_periods = user_status_periods
 
+    async def _ensure_no_period_overlap(
+        self,
+        *,
+        user_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> None:
+        overlapping = await self._user_status_periods.get_overlapping_for_user(
+            user_id=user_id,
+            started_at=started_at,
+            ended_at=ended_at,
+        )
+        if overlapping is not None:
+            raise Conflict(
+                "User already has unavailability period in this time range "
+                f"{overlapping.started_at.isoformat()} - {overlapping.ended_at.isoformat()}"
+            )
+
+        existing_periods = await self._user_status_periods.list_for_user(user_id=user_id)
+        new_start_date = started_at.date()
+        new_end_date = ended_at.date()
+        for period in existing_periods:
+            period_start_date = period.started_at.date()
+            period_end_date = period.ended_at.date()
+            has_date_overlap = period_start_date <= new_end_date and period_end_date >= new_start_date
+            if has_date_overlap:
+                raise Conflict(
+                    "User already has unavailability period in this time range "
+                    f"{period.started_at.isoformat()} - {period.ended_at.isoformat()}"
+                )
+
     async def update_my_credentials(
         self,
         current_user: CurrentUser,
@@ -658,6 +694,12 @@ class UserSelfService:
         }:
             raise Conflict("Unavailability period can be managed only for lead economist and economist users")
 
+        await self._ensure_no_period_overlap(
+            user_id=subordinate_user_id,
+            started_at=normalized_started_at,
+            ended_at=normalized_ended_at,
+        )
+
         await self._user_status_periods.add(
             UserStatusPeriod(
                 id_user=subordinate_user_id,
@@ -689,6 +731,12 @@ class UserSelfService:
         user = await self._users.get_by_id(current_user.user_id)
         if user is None:
             raise NotFound("User not found")
+
+        await self._ensure_no_period_overlap(
+            user_id=current_user.user_id,
+            started_at=normalized_started_at,
+            ended_at=normalized_ended_at,
+        )
 
         await self._user_status_periods.add(
             UserStatusPeriod(

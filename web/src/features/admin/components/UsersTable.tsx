@@ -24,7 +24,7 @@ import {
   type SubordinateProfile
 } from '@shared/api/users/getSubordinateProfile';
 import { hasAvailableAction } from '@shared/auth/availableActions';
-import { UnavailabilityStatusSection } from '@shared/components/UnavailabilityStatusSection';
+import { UnavailabilityManagementSection } from '@shared/components/UnavailabilityManagementSection';
 import { UnavailabilityPeriodEditor } from '@shared/components/UnavailabilityPeriodEditor';
 
 const contractorColumns = [
@@ -82,6 +82,34 @@ type UserRow = {
   id_role: number;
   role: string;
   status: StatusFormValues['user_status'];
+};
+
+const hasPeriodOverlapByDate = (
+  leftStartIso: string,
+  leftEndIso: string,
+  rightStartIso: string,
+  rightEndIso: string
+) => {
+  const leftStart = new Date(leftStartIso);
+  const leftEnd = new Date(leftEndIso);
+  const rightStart = new Date(rightStartIso);
+  const rightEnd = new Date(rightEndIso);
+
+  if (
+    Number.isNaN(leftStart.getTime()) ||
+    Number.isNaN(leftEnd.getTime()) ||
+    Number.isNaN(rightStart.getTime()) ||
+    Number.isNaN(rightEnd.getTime())
+  ) {
+    return false;
+  }
+
+  const leftStartDate = new Date(leftStart.getFullYear(), leftStart.getMonth(), leftStart.getDate());
+  const leftEndDate = new Date(leftEnd.getFullYear(), leftEnd.getMonth(), leftEnd.getDate());
+  const rightStartDate = new Date(rightStart.getFullYear(), rightStart.getMonth(), rightStart.getDate());
+  const rightEndDate = new Date(rightEnd.getFullYear(), rightEnd.getMonth(), rightEnd.getDate());
+
+  return leftStartDate <= rightEndDate && leftEndDate >= rightStartDate;
 };
 
 const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = {
@@ -290,6 +318,7 @@ export const UsersTable = ({
   const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
+  const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
 
   const {
     register,
@@ -329,8 +358,8 @@ export const UsersTable = ({
     }
     resetSubordinateUnavailability({
       status: 'unavailable',
-      started_at: subordinateProfile.unavailablePeriod?.startedAt?.slice(0, 10) ?? '',
-      ended_at: subordinateProfile.unavailablePeriod?.endedAt?.slice(0, 10) ?? ''
+      started_at: '',
+      ended_at: ''
     });
   }, [subordinateProfile, resetSubordinateUnavailability]);
 
@@ -414,6 +443,7 @@ export const UsersTable = ({
                 setSelectedUser(clickedUser);
                 setSubordinateProfile(null);
                 setSubordinateError(null);
+                setOpenSubordinateUnavailability(false);
                 void getSubordinateProfile(clickedUser.user_id)
                   .then((profile) => setSubordinateProfile(profile))
                   .catch((error) => {
@@ -473,7 +503,10 @@ export const UsersTable = ({
 
         <Dialog
           open={Boolean(selectedUser)}
-          onClose={() => setSelectedUser(null)}
+          onClose={() => {
+            setSelectedUser(null);
+            setOpenSubordinateUnavailability(false);
+          }}
           maxWidth="sm"
           fullWidth
           PaperProps={{
@@ -538,40 +571,69 @@ export const UsersTable = ({
 
                 {subordinateProfile ? (
                   <Stack spacing={1.2}>
-                    <UnavailabilityStatusSection
-                      title="Нерабочий статус подчиненного"
+                    {subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
+                    <UnavailabilityManagementSection
                       currentPeriod={subordinateProfile.unavailablePeriod}
                       periods={subordinateProfile.unavailablePeriods}
-                    />
-                    {hasAvailableAction({ availableActions: subordinateProfile.availableActions }, `/api/v1/users/${subordinateProfile.userId}/unavailability-period`, 'POST') ? (
-                      <Stack spacing={1.2} component="form" onSubmit={handleSubordinateUnavailabilitySubmit(async (values) => {
+                      canEdit={hasAvailableAction(
+                        { availableActions: subordinateProfile.availableActions },
+                        `/api/v1/users/${subordinateProfile.userId}/unavailability-period`,
+                        'POST'
+                      )}
+                      isDialogOpen={openSubordinateUnavailability}
+                      onOpenDialog={() => setOpenSubordinateUnavailability(true)}
+                      onCloseDialog={() => setOpenSubordinateUnavailability(false)}
+                      onSubmit={handleSubordinateUnavailabilitySubmit(async (values) => {
                         if (!selectedUser) {
                           return;
                         }
+
+                        const newPeriodStart = new Date(values.started_at).toISOString();
+                        const newPeriodEnd = new Date(values.ended_at).toISOString();
+
+                        const overlapPeriod = subordinateProfile.unavailablePeriods.find((period) =>
+                          hasPeriodOverlapByDate(newPeriodStart, newPeriodEnd, period.startedAt, period.endedAt)
+                        );
+                        if (overlapPeriod) {
+                          const startedAt = new Date(overlapPeriod.startedAt).toLocaleDateString('ru-RU');
+                          const endedAt = new Date(overlapPeriod.endedAt).toLocaleDateString('ru-RU');
+                          setSubordinateError(`Период пересекается с уже существующим периодом (${startedAt} — ${endedAt})`);
+                          return;
+                        }
+
+                        setSubordinateError(null);
                         const nextProfile = await setSubordinateUnavailabilityPeriod(selectedUser.user_id, {
                           status: values.status,
-                          started_at: new Date(values.started_at).toISOString(),
-                          ended_at: new Date(values.ended_at).toISOString()
+                          started_at: newPeriodStart,
+                          ended_at: newPeriodEnd
                         });
                         setSubordinateProfile(nextProfile);
-                      })}>
+                        setOpenSubordinateUnavailability(false);
+                      })}
+                      isSubmitting={isSubmittingSubordinateUnavailability}
+                      dialogTitle="Установить нерабочий период"
+                      triggerLabel="Установить нерабочий период"
+                      submitLabel="Сохранить период"
+                      dialogNotice={subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
+                      editor={
                         <UnavailabilityPeriodEditor
                           statusField={registerSubordinateUnavailability('status')}
                           startedAtField={registerSubordinateUnavailability('started_at')}
                           endedAtField={registerSubordinateUnavailability('ended_at')}
                           startedAtValue={watchSubordinateUnavailability('started_at') ?? ''}
                           endedAtValue={watchSubordinateUnavailability('ended_at') ?? ''}
-                          onStartedAtChange={(value: string) => setSubordinateUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })}
-                          onEndedAtChange={(value: string) => setSubordinateUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })}
+                          onStartedAtChange={(value: string) =>
+                            setSubordinateUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })
+                          }
+                          onEndedAtChange={(value: string) =>
+                            setSubordinateUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })
+                          }
                           statusError={subordinateUnavailabilityErrors.status?.message}
                           startedAtError={subordinateUnavailabilityErrors.started_at?.message}
                           endedAtError={subordinateUnavailabilityErrors.ended_at?.message}
                         />
-                        <Button type="submit" variant="outlined" disabled={isSubmittingSubordinateUnavailability}>
-                          Сохранить период
-                        </Button>
-                      </Stack>
-                    ) : null}
+                      }
+                    />
                   </Stack>
                 ) : subordinateError ? (
                   <Alert severity="info">{subordinateError}</Alert>
@@ -579,7 +641,14 @@ export const UsersTable = ({
 
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
-                  <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 999, textTransform: 'none' }}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setSelectedUser(null);
+                      setOpenSubordinateUnavailability(false);
+                    }}
+                    sx={{ borderRadius: 999, textTransform: 'none' }}
+                  >
                     Закрыть
                   </Button>
                 </Stack>

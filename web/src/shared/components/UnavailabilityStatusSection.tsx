@@ -1,4 +1,5 @@
-import { Box, Stack, SvgIcon, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Box, Stack, SvgIcon, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
 import { UNAVAILABILITY_REASON_OPTIONS } from './UnavailabilityPeriodEditor';
 
 export type UnavailabilityPeriodView = {
@@ -9,7 +10,6 @@ export type UnavailabilityPeriodView = {
 };
 
 type UnavailabilityStatusSectionProps = {
-  title?: string;
   currentPeriod: UnavailabilityPeriodView | null;
   periods: UnavailabilityPeriodView[];
 };
@@ -33,7 +33,7 @@ const formatPeriodDate = (value: string | null | undefined) => {
 
 const getReasonLabel = (value: string | null | undefined) => {
   if (!value) {
-    return 'Не установлен';
+    return 'Не указано';
   }
 
   return reasonLabels.get(value) ?? value;
@@ -41,25 +41,25 @@ const getReasonLabel = (value: string | null | undefined) => {
 
 const getAvailabilityText = (endedAt: string | null | undefined) => {
   if (!endedAt) {
-    return 'Дата окончания статуса не указана.';
+    return 'Дата окончания не указана.';
   }
 
   const end = new Date(endedAt);
   if (Number.isNaN(end.getTime())) {
-    return 'Дата окончания статуса не указана.';
+    return 'Дата окончания не указана.';
   }
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfStatusDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  const endOfPeriodDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
 
   const diff = Math.max(
     0,
-    Math.ceil((endOfStatusDay.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24))
+    Math.ceil((endOfPeriodDay.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24))
   );
 
   if (diff === 0) {
-    return 'Сотрудник будет доступен сегодня.';
+    return 'Сотрудник снова будет доступен сегодня.';
   }
 
   const dayWord =
@@ -69,11 +69,11 @@ const getAvailabilityText = (endedAt: string | null | undefined) => {
         ? 'дня'
         : 'дней';
 
-  return `Сотрудник будет доступен через ${diff} ${dayWord}.`;
+  return `Сотрудник снова будет доступен через ${diff} ${dayWord}.`;
 };
 
 type StatusChipProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   width?: number | string;
 };
 
@@ -101,10 +101,12 @@ const StatusChip = ({ children, width }: StatusChipProps) => (
 );
 
 export const UnavailabilityStatusSection = ({
-  title = 'Нерабочий статус подчиненного',
   currentPeriod,
   periods
 }: UnavailabilityStatusSectionProps) => {
+  const historyPeriods = periods.filter((period) => period.id !== currentPeriod?.id);
+  const hasCurrentPeriod = Boolean(currentPeriod);
+
   const reasonLabel = getReasonLabel(currentPeriod?.status);
   const startedAtLabel = formatPeriodDate(currentPeriod?.startedAt) ?? 'Не указано';
   const endedAtLabel = formatPeriodDate(currentPeriod?.endedAt) ?? 'Не указано';
@@ -112,153 +114,219 @@ export const UnavailabilityStatusSection = ({
 
   return (
     <Stack spacing={1}>
-      <Typography
-        sx={{
-          fontSize: 17,
-          lineHeight: '22px',
-          fontWeight: 400,
-          color: '#44597b'
-        }}
-      >
-        {title}
-      </Typography>
-
-      <Box
-        sx={{
-          border: '1px solid #c7d2e3',
-          borderRadius: '22px',
-          backgroundColor: '#f8f9fb',
-          px: 1.5,
-          py: 1.5
-        }}
-      >
+      {hasCurrentPeriod ? (
         <Stack spacing={1}>
-          <Stack
-            direction="row"
-            spacing={0.75}
+          <Typography
             sx={{
-              alignItems: 'center',
-              flexWrap: 'nowrap'
+              fontSize: 17,
+              lineHeight: '22px',
+              fontWeight: 400,
+              color: '#44597b'
             }}
           >
-            <StatusChip width={152}>
+            Статус: недоступен
+          </Typography>
+
+          <Box
+            sx={{
+              border: '1px solid #c7d2e3',
+              borderRadius: '22px',
+              backgroundColor: '#f8f9fb',
+              px: 1.5,
+              py: 1.5
+            }}
+          >
+            <Stack spacing={1}>
               <Stack
                 direction="row"
-                spacing={0.9}
+                spacing={0.75}
                 sx={{
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  minWidth: 0
+                  flexWrap: 'nowrap'
                 }}
               >
-                <SvgIcon
-                  sx={{
-                    fontSize: 18,
-                    color: '#7a69a8',
-                    flexShrink: 0
-                  }}
-                >
-                  <path d="M11 7h2v6l4.3 2.6-1 1.7L11 14V7Zm1-5a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Z" />
-                </SvgIcon>
+                <StatusChip width={152}>
+                  <Stack
+                    direction="row"
+                    spacing={0.9}
+                    sx={{
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 0
+                    }}
+                  >
+                    <SvgIcon
+                      sx={{
+                        fontSize: 18,
+                        color: '#7a69a8',
+                        flexShrink: 0
+                      }}
+                    >
+                      <path d="M11 7h2v6l4.3 2.6-1 1.7L11 14V7Zm1-5a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Z" />
+                    </SvgIcon>
 
-                <Typography
-                  sx={{
-                    fontSize: 12,
-                    lineHeight: 1,
-                    fontWeight: 500,
-                    color: '#39465d',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {reasonLabel}
-                </Typography>
+                    <Typography
+                      sx={{
+                        fontSize: 12,
+                        lineHeight: 1,
+                        fontWeight: 500,
+                        color: '#39465d',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {reasonLabel}
+                    </Typography>
+                  </Stack>
+                </StatusChip>
+
+                <StatusChip width={136}>
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      lineHeight: 1,
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      color: '#556684'
+                    }}
+                  >
+                    {startedAtLabel}
+                  </Typography>
+                </StatusChip>
+
+                <StatusChip width={136}>
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      lineHeight: 1,
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      color: '#556684'
+                    }}
+                  >
+                    {endedAtLabel}
+                  </Typography>
+                </StatusChip>
               </Stack>
-            </StatusChip>
 
-            <StatusChip width={136}>
               <Typography
                 sx={{
-                  fontSize: 11,
-                  lineHeight: 1,
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                  color: '#556684'
-                }}
-              >
-                {startedAtLabel}
-              </Typography>
-            </StatusChip>
-
-            <StatusChip width={136}>
-              <Typography
-                sx={{
-                  fontSize: 11,
-                  lineHeight: 1,
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                  color: '#556684'
-                }}
-              >
-                {endedAtLabel}
-              </Typography>
-            </StatusChip>
-          </Stack>
-
-          <Typography
-            sx={{
-              pl: 0.5,
-              fontSize: 12,
-              lineHeight: '18px',
-              fontWeight: 400,
-              color: '#6c6f78'
-            }}
-          >
-            {availabilityText}
-          </Typography>
-        </Stack>
-      </Box>
-
-      {periods.length > 0 ? (
-        <Stack spacing={1}>
-          <Typography
-            sx={{
-              fontSize: 14,
-              lineHeight: '20px',
-              fontWeight: 400,
-              color: '#6d82a8'
-            }}
-          >
-            Все периоды
-          </Typography>
-
-          {periods.map((period) => (
-            <Box
-              key={period.id}
-              sx={{
-                minHeight: 40,
-                px: 1.5,
-                border: '1px solid #d5ddea',
-                borderRadius: '999px',
-                backgroundColor: '#f6f7fa',
-                display: 'flex',
-                alignItems: 'center'
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: 14,
-                  lineHeight: '20px',
+                  pl: 0.5,
+                  fontSize: 12,
+                  lineHeight: '18px',
                   fontWeight: 400,
-                  color: '#7a8caa'
+                  color: '#6c6f78'
                 }}
               >
-                {getReasonLabel(period.status)} · {formatPeriodDate(period.startedAt) ?? 'Не указано'} —{' '}
-                {formatPeriodDate(period.endedAt) ?? 'Не указано'}
+                {availabilityText}
               </Typography>
-            </Box>
-          ))}
+            </Stack>
+          </Box>
         </Stack>
       ) : null}
+
+      <Accordion
+        disableGutters
+        elevation={0}
+        sx={{
+          border: '1px solid #d5ddea',
+          borderRadius: '22px',
+          backgroundColor: '#f8f9fb',
+          overflow: 'hidden',
+          '&::before': {
+            display: 'none'
+          }
+        }}
+      >
+        <AccordionSummary
+          expandIcon={
+            <SvgIcon sx={{ color: '#6d82a8' }}>
+              <path d="M7 10l5 5 5-5z" />
+            </SvgIcon>
+          }
+          sx={{
+            px: 1.75,
+            minHeight: 56,
+            '& .MuiAccordionSummary-content': {
+              my: 1
+            }
+          }}
+        >
+          <Stack spacing={0.25}>
+            <Typography
+              sx={{
+                fontSize: 17,
+                lineHeight: '22px',
+                fontWeight: 400,
+                color: '#44597b'
+              }}
+            >
+              История отгулов
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: 12,
+                lineHeight: '18px',
+                color: '#7a8caa'
+              }}
+            >
+              {historyPeriods.length > 0
+                ? `Количество: ${historyPeriods.length}`
+                : 'Отгулов не найдено.'}
+            </Typography>
+          </Stack>
+        </AccordionSummary>
+
+        <AccordionDetails sx={{ px: 1.5, pb: 1.5, pt: 0 }}>
+          {historyPeriods.length > 0 ? (
+            <Stack
+              spacing={1}
+              sx={{
+                maxHeight: 152,
+                overflowY: 'auto',
+                pr: 0.5
+              }}
+            >
+              {historyPeriods.map((period) => (
+                <Box
+                  key={period.id}
+                  sx={{
+                    minHeight: 40,
+                    px: 1.5,
+                    border: '1px solid #d5ddea',
+                    borderRadius: '999px',
+                    backgroundColor: '#f6f7fa',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontSize: 14,
+                      lineHeight: '20px',
+                      fontWeight: 400,
+                      color: '#7a8caa'
+                    }}
+                  >
+                    {getReasonLabel(period.status)} · {formatPeriodDate(period.startedAt) ?? 'Не указано'} —{' '}
+                    {formatPeriodDate(period.endedAt) ?? 'Не указано'}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Typography
+              sx={{
+                px: 0.5,
+                fontSize: 13,
+                lineHeight: '20px',
+                color: '#7a8caa'
+              }}
+            >
+              Отгулов не найдено.
+            </Typography>
+          )}
+        </AccordionDetails>
+      </Accordion>
     </Stack>
   );
 };

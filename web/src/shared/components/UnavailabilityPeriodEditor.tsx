@@ -77,7 +77,8 @@ const fieldSx = {
   },
   '& .MuiInputBase-input': {
     color: '#31415f',
-    fontWeight: 500
+    fontWeight: 500,
+    fontSize: 15
   },
   '& .MuiFormHelperText-root': {
     ml: 0.5
@@ -192,7 +193,7 @@ export const UnavailabilityPeriodEditor = ({
   const isOpen = Boolean(anchorEl);
 
   return (
-    <Stack spacing={1.8}>
+    <Stack spacing={1.5}>
       <input type="hidden" {...startedAtField} />
       <input type="hidden" {...endedAtField} />
 
@@ -218,7 +219,7 @@ export const UnavailabilityPeriodEditor = ({
         ))}
       </TextField>
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.8}>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
         <TextField
           label="Дата начала"
           value={formatDisplay(startedAtValue)}

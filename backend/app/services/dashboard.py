@@ -6,6 +6,7 @@ from datetime import datetime
 from app.core.config import settings
 from app.domain.policies import CurrentUser, UserPolicy
 from app.repositories.requests import RequestRepository
+from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.requests import format_request_status
 
@@ -46,12 +47,25 @@ class ResponsibilityDashboard:
     tree: list[DashboardEconomistNode]
     unassigned_requests: list[DashboardRequestItem]
     assigned_requests: list[DashboardRequestItem]
+    active_unavailability: list["UpcomingUnavailabilityItem"]
+    upcoming_unavailability: list["UpcomingUnavailabilityItem"]
+
+
+@dataclass(frozen=True)
+class UpcomingUnavailabilityItem:
+    user_id: str
+    full_name: str | None
+    role_name: str
+    status: str
+    started_at: datetime
+    ended_at: datetime
 
 
 class DashboardService:
-    def __init__(self, users: UserRepository, requests: RequestRepository):
+    def __init__(self, users: UserRepository, requests: RequestRepository, user_status_periods: UserStatusPeriodRepository):
         self._users = users
         self._requests = requests
+        self._user_status_periods = user_status_periods
 
     async def get_responsibility_dashboard(self, *, current_user: CurrentUser) -> ResponsibilityDashboard:
         UserPolicy.can_view_responsibility_dashboard(current_user)
@@ -147,10 +161,41 @@ class DashboardService:
             for request in assigned_rows
         ]
 
+        active_periods_by_user = await self._user_status_periods.list_active_for_users(user_ids=list(descendant_ids))
+        active_unavailability = [
+            UpcomingUnavailabilityItem(
+                user_id=period.id_user,
+                full_name=by_id[period.id_user][1].full_name if by_id[period.id_user][1] else None,
+                role_name=by_id[period.id_user][2].role,
+                status=period.status,
+                started_at=period.started_at,
+                ended_at=period.ended_at,
+            )
+            for period in active_periods_by_user.values()
+            if period.id_user in by_id
+        ]
+
+        soon_periods = await self._user_status_periods.list_next_for_users(user_ids=list(descendant_ids))
+
+        upcoming_unavailability = [
+            UpcomingUnavailabilityItem(
+                user_id=period.id_user,
+                full_name=by_id[period.id_user][1].full_name if by_id[period.id_user][1] else None,
+                role_name=by_id[period.id_user][2].role,
+                status=period.status,
+                started_at=period.started_at,
+                ended_at=period.ended_at,
+            )
+            for period in soon_periods
+            if period.id_user in by_id
+        ]
+
         return ResponsibilityDashboard(
             tree=tree,
             unassigned_requests=unassigned_requests,
             assigned_requests=assigned_requests,
+            active_unavailability=active_unavailability,
+            upcoming_unavailability=upcoming_unavailability,
         )
 
     def _sort_children(self, nodes: list[DashboardEconomistNode]) -> None:

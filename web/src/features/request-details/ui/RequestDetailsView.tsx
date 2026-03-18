@@ -21,8 +21,10 @@ import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@sha
 import { downloadFile } from '@shared/api/fileDownload';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
+import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { DataTable } from '@shared/components/DataTable';
 import { getFileKey } from '@shared/lib/files';
+import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { useRequestDetails } from '../model/useRequestDetails';
 
 type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
@@ -89,7 +91,7 @@ export const RequestDetailsView = () => {
     const [baselineDeadline, setBaselineDeadline] = useState<string>('');
     const [ownerUserId, setOwnerUserId] = useState<string>('');
     const [baselineOwnerUserId, setBaselineOwnerUserId] = useState<string>('');
-    const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string }>>([]);
+    const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
     const [newFile, setNewFile] = useState<File | null>(null);
@@ -221,7 +223,14 @@ export const RequestDetailsView = () => {
             setOwnerOptions(
                 economists.map((item) => ({
                     id: item.user_id,
-                    label: `${item.full_name?.trim() || item.user_id} (${item.role})`
+                    label: `${item.full_name?.trim() || item.user_id} (${item.role})`,
+                    unavailablePeriod: item.unavailable_period
+                        ? {
+                            status: item.unavailable_period.status,
+                            startedAt: item.unavailable_period.started_at,
+                            endedAt: item.unavailable_period.ended_at
+                        }
+                        : null
                 }))
             );
         } catch {
@@ -278,6 +287,13 @@ export const RequestDetailsView = () => {
 
         if (ownerChanged && ownerUserId && !ownerOptions.some((option) => option.id === ownerUserId)) {
             return 'Назначить ответственным можно только ведущего экономиста или экономиста';
+        }
+
+        const selectedOwner = ownerOptions.find((option) => option.id === ownerUserId);
+        if (ownerChanged && selectedOwner?.unavailablePeriod) {
+            const start = formatUnavailabilityDate(selectedOwner.unavailablePeriod.startedAt);
+            const end = formatUnavailabilityDate(selectedOwner.unavailablePeriod.endedAt);
+            return `Нельзя назначить ответственного: сотрудник в нерабочем статусе (${start} — ${end})`;
         }
 
         return null;
@@ -453,13 +469,17 @@ export const RequestDetailsView = () => {
                 <Select
                     size="small"
                     value={ownerUserId}
+                    renderValue={(selected) => ownerOptions.find((option) => option.id === selected)?.label ?? requestDetails?.owner_full_name ?? String(selected ?? '')}
                     onChange={(event) => setOwnerUserId(event.target.value)}
                     sx={{ minWidth: 200 }}
                 >
                     {ownerOptions.map((option) => (
-                        <MenuItem key={option.id} value={option.id}>
-                            {option.label}
-                        </MenuItem>
+                        <UnavailableAwareMenuItem
+                            key={option.id}
+                            value={option.id}
+                            label={option.label}
+                            unavailablePeriod={option.unavailablePeriod}
+                        />
                     ))}
                 </Select>
             ) : (requestDetails?.owner_full_name ?? requestDetails?.id_user ?? '-')
