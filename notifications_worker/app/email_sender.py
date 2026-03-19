@@ -24,6 +24,17 @@ def _build_reply_to_address(from_address: str, from_name: str, reply_token: str 
     return formataddr((from_name, tagged))
 
 
+def _format_recipient_log(payload: dict) -> str:
+    to_email = str(payload.get("to_email", "")).strip()
+    recipient_context = payload.get("recipient_context")
+    if isinstance(recipient_context, dict):
+        user_login = str(recipient_context.get("user_login") or "").strip()
+        tg_id = recipient_context.get("tg_id")
+        if user_login:
+            return f'"{to_email}" - "зарегистрированный пользователь - login={user_login}, tg_id={tg_id if tg_id is not None else "нет"}"'
+    return f'"{to_email}" - "не зарегистрирован"'
+
+
 async def send_email(payload: dict) -> None:
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
@@ -70,6 +81,6 @@ async def send_email(payload: dict) -> None:
         with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=20, context=context) as smtp:
             smtp.login(username, password)
             smtp.send_message(message, from_addr=from_address, to_addrs=[to_email])
-        logger.info("Email sent to %s", to_email)
+        logger.info("Email sent to %s", _format_recipient_log(payload))
     except smtplib.SMTPException:
-        logger.exception("Failed to send email to %s", to_email)
+        logger.exception("Failed to send email to %s", _format_recipient_log(payload))

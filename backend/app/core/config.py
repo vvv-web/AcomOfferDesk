@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     )
     public_backend_base_url: str | None = Field(default=None, validation_alias="PUBLIC_BACKEND_BASE_URL")
     web_base_url: str | None = Field(default=None, validation_alias="WEB_BASE_URL")
+    tg_bot_public_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TG_BOT_PUBLIC_URL", "TG_BOT_LINK"),
+    )
     email_address: str = Field(..., validation_alias="EMAIL_ADDRESS")
     email_from_name: str = Field(default="AcomOfferDesk", validation_alias="EMAIL_FROM_NAME")
     email_app_password: str = Field(..., validation_alias="EMAIL_APP_PASSWORD")

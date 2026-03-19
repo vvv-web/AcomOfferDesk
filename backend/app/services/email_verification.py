@@ -55,7 +55,11 @@ class EmailVerificationService:
         
         token = await self._token_codec.create_profile_token(user_id=user_id, email=normalized_email)
         verification_link = self._build_frontend_verify_link(token=token)
-        await self._send_verification_email(email=normalized_email, verification_link=verification_link)
+        await self._send_verification_email(
+            email=normalized_email,
+            verification_link=verification_link,
+            recipient_context={"user_login": user_id, "tg_id": None},
+        )
         self._request_locks[lock_key] = now_ts + settings.email_verification_ttl_seconds
         return "sent"
 
@@ -73,7 +77,11 @@ class EmailVerificationService:
             f"?token={quote(tg_token, safe='')}"
             f"&email_verification_token={quote(token, safe='')}"
         )
-        await self._send_verification_email(email=normalized_email, verification_link=verification_link)
+        await self._send_verification_email(
+            email=normalized_email,
+            verification_link=verification_link,
+            recipient_context=None,
+        )
 
     async def confirm_profile_verification(self, *, token: str) -> bool:
         claims = await self._token_codec.parse_token(token)
@@ -86,7 +94,13 @@ class EmailVerificationService:
     async def parse_claims(self, *, token: str) -> EmailVerificationClaims:
         return await self._token_codec.parse_token(token)
 
-    async def _send_verification_email(self, *, email: str, verification_link: str) -> None:
+    async def _send_verification_email(
+        self,
+        *,
+        email: str,
+        verification_link: str,
+        recipient_context: dict | None,
+    ) -> None:
         payload = build_verification_email_payload(
             to_email=email,
             verification_link=verification_link,
@@ -99,6 +113,7 @@ class EmailVerificationService:
                 payload.subject,
                 payload.text_content,
                 payload.html_content,
+                recipient_context=recipient_context,
             )
         except smtplib.SMTPException as exc:
             raise Conflict(f"Не удалось отправить письмо для подтверждения email: {exc}") from exc

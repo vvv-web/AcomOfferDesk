@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import smtplib
+from dataclasses import dataclass
 
 import anyio
 
 from app.core.config import settings
+from app.domain.exceptions import Conflict
 from app.infrastructure.email.email_attachment import EmailAttachment
-from app.infrastructure.email.email_templates.request_notification_email import build_request_notification_email_payload
+from app.infrastructure.email.email_templates.request_notification_email import (
+    build_request_notification_email_payload,
+    build_request_registration_email_payload,
+)
 from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
-from app.repositories.profiles import ProfileRepository
+from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRepository
 from app.repositories.requests import RequestRepository
 
 MAX_EMAIL_ATTACHMENT_SIZE_MB = 20
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationRecipient:
+    email: str
+    user_login: str | None
+    tg_id: int | None
+    is_verified_user: bool
 
 
 class SendRequestNotificationEmailUseCase:
@@ -29,40 +42,67 @@ class SendRequestNotificationEmailUseCase:
         self._email_service = email_service
         self._app_url = app_url.rstrip("/")
 
-    async def execute(self, *, request_id: int, contractor_role_id: int) -> None:
+    async def execute(
+        self,
+        *,
+        request_id: int,
+        contractor_role_id: int,
+        additional_emails: list[str] | None = None,
+    ) -> None:
         request = await self._request_repository.get_by_id(request_id=request_id)
         if request is None:
             return
 
-        recipients = await self._profile_repository.list_active_contractors(
+        active_contractors = await self._profile_repository.list_active_contractor_email_recipients(
             contractor_role_id=contractor_role_id,
+        )
+        recipients = self._build_recipients(
+            active_contractors=active_contractors,
+            additional_emails=additional_emails or [],
         )
         if not recipients:
             return
 
         reply_secret = settings.reply_email_token_secret
-        if not reply_secret:
+        if not reply_secret and any(recipient.is_verified_user for recipient in recipients):
             return
 
-        token_codec = ReplyTokenCodec(secret=reply_secret)
+        token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
         attachments, attachment_warning = await self._build_attachments(request_id=request_id)
         request_url = f"{self._app_url}/requests/{request_id}"
+        tg_bot_url = settings.tg_bot_public_url
 
         for recipient in recipients:
-            reply_token = await token_codec.create_token(
-                request_id=request_id,
-                user_id=recipient.id,
-                ttl_seconds=settings.reply_email_ttl_seconds,
-            )
-            payload = build_request_notification_email_payload(
-                to_email=recipient.mail.strip(),
-                request_id=request_id,
-                description=request.description,
-                deadline_at=request.deadline_at,
-                request_url=request_url,
-                reply_token=reply_token,
-                attachment_warning=attachment_warning,
-            )
+            reply_token: str | None = None
+            if token_codec is not None and recipient.user_login is not None:
+                reply_token = await token_codec.create_token(
+                    request_id=request_id,
+                    user_id=recipient.user_login,
+                    ttl_seconds=settings.reply_email_ttl_seconds,
+                )
+
+            if recipient.is_verified_user:
+                payload = build_request_notification_email_payload(
+                    to_email=recipient.email,
+                    request_id=request_id,
+                    description=request.description,
+                    deadline_at=request.deadline_at,
+                    request_url=request_url,
+                    reply_token=reply_token,
+                    attachment_warning=attachment_warning,
+                )
+            else:
+                if not tg_bot_url:
+                    raise Conflict("TG_BOT_PUBLIC_URL is not configured")
+                payload = build_request_registration_email_payload(
+                    to_email=recipient.email,
+                    request_id=request_id,
+                    description=request.description,
+                    deadline_at=request.deadline_at,
+                    tg_bot_url=tg_bot_url,
+                    attachment_warning=attachment_warning,
+                )
+
             try:
                 await self._email_service.send_email(
                     to_email=payload.to_email,
@@ -71,9 +111,52 @@ class SendRequestNotificationEmailUseCase:
                     html_content=payload.html_content,
                     attachments=attachments,
                     reply_token=payload.reply_token,
+                    recipient_context={
+                        "user_login": recipient.user_login,
+                        "tg_id": recipient.tg_id,
+                    }
+                    if recipient.user_login is not None
+                    else None,
                 )
             except smtplib.SMTPException:
                 continue
+
+    def _build_recipients(
+        self,
+        *,
+        active_contractors: list[ActiveContractorEmailRecipient],
+        additional_emails: list[str],
+    ) -> list[NotificationRecipient]:
+        recipients: list[NotificationRecipient] = []
+        recipients_by_email: dict[str, NotificationRecipient] = {}
+
+        for contractor in active_contractors:
+            normalized_email = contractor.email.strip().lower()
+            recipient = NotificationRecipient(
+                email=normalized_email,
+                user_login=contractor.user_id,
+                tg_id=contractor.tg_id,
+                is_verified_user=True,
+            )
+            recipients_by_email[normalized_email] = recipient
+
+        for email, recipient in recipients_by_email.items():
+            recipients.append(recipient)
+
+        for email in additional_emails:
+            normalized_email = email.strip().lower()
+            if not normalized_email or normalized_email in recipients_by_email:
+                continue
+            recipients.append(
+                NotificationRecipient(
+                    email=normalized_email,
+                    user_login=None,
+                    tg_id=None,
+                    is_verified_user=False,
+                )
+            )
+
+        return recipients
 
     async def _build_attachments(self, *, request_id: int) -> tuple[list[EmailAttachment], str | None]:
         files = await self._request_repository.list_files_by_request_id(request_id=request_id)

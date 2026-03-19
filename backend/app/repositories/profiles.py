@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm_models import Profile, User
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveContractorEmailRecipient:
+    user_id: str
+    email: str
+    tg_id: int | None
 
 
 class ProfileRepository:
@@ -70,6 +79,34 @@ class ProfileRepository:
                 continue
             profiles.append(profile)
         return profiles
+
+    async def list_active_contractor_email_recipients(
+        self,
+        *,
+        contractor_role_id: int,
+    ) -> list[ActiveContractorEmailRecipient]:
+        stmt = (
+            select(User.id, User.tg_user_id, Profile.mail)
+            .join(Profile, Profile.id == User.id)
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .order_by(User.id)
+        )
+        result = await self._session.execute(stmt)
+
+        recipients: list[ActiveContractorEmailRecipient] = []
+        for user_id, tg_id, mail in result.all():
+            normalized_mail = mail.strip()
+            if not normalized_mail or normalized_mail.lower() in {"РЅРµ СѓРєР°Р·Р°РЅРѕ", "none", "null"}:
+                continue
+            recipients.append(
+                ActiveContractorEmailRecipient(
+                    user_id=user_id,
+                    email=normalized_mail,
+                    tg_id=tg_id,
+                )
+            )
+        return recipients
 
     async def get_active_contractor_by_mail(self, *, email: str, contractor_role_id: int) -> Profile | None:
         normalized_email = email.strip().lower()

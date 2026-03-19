@@ -496,6 +496,7 @@ async def get_request_details(
 async def create_request(
     deadline_at: datetime = Form(...),
     description: str | None = Form(default=None),
+    additional_emails: list[str] | None = Form(default=None),
     files: list[UploadFile] = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -531,6 +532,7 @@ async def create_request(
             deadline_at=deadline_at,
             description=description,
             files=file_inputs,
+            additional_emails=additional_emails,
         )
 
     return RequestCreateResponse(

@@ -20,11 +20,15 @@ import { useAuth } from '@app/providers/AuthProvider';
 import { createRequest } from '@shared/api/requests/createRequest';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 
+const additionalEmailSchema = z.string().email('Введите корректный email');
+
 const schema = z.object({
     description: z.string().max(3000, 'Максимум 3000 символов').optional(),
     deadlineAt: z.string().min(1, 'Укажите дату сбора КП'),
-    files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл')
+    files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
+    additionalEmails: z.array(additionalEmailSchema).default([])
 });
+
 type FormValues = z.infer<typeof schema>;
 
 const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
@@ -39,6 +43,7 @@ const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
     return Array.from(fileMap.values());
 };
 
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
 export const CreateRequestPage = () => {
     const { session } = useAuth();
@@ -51,6 +56,7 @@ export const CreateRequestPage = () => {
     }, []);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [additionalEmailInput, setAdditionalEmailInput] = useState('');
 
     const {
         control,
@@ -58,17 +64,21 @@ export const CreateRequestPage = () => {
         handleSubmit,
         watch,
         setValue,
+        setError,
+        clearErrors,
         formState: { errors }
     } = useForm<FormValues>({
         resolver: zodResolver(schema),
         defaultValues: {
             description: '',
             deadlineAt: todayDate,
-            files: []
+            files: [],
+            additionalEmails: []
         }
     });
 
     const files = watch('files');
+    const additionalEmails = watch('additionalEmails');
 
     const handleClose = () => {
         navigate('/requests');
@@ -83,14 +93,62 @@ export const CreateRequestPage = () => {
         });
     };
 
+    const handleRemoveAdditionalEmail = (emailToRemove: string) => {
+        setValue(
+            'additionalEmails',
+            additionalEmails.filter((email) => email !== emailToRemove),
+            {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true
+            }
+        );
+    };
+
+    const addAdditionalEmail = () => {
+        const normalizedEmail = normalizeEmail(additionalEmailInput);
+        if (!normalizedEmail) {
+            clearErrors('additionalEmails');
+            return true;
+        }
+
+        const parsedEmail = additionalEmailSchema.safeParse(normalizedEmail);
+        if (!parsedEmail.success) {
+            setError('additionalEmails', { type: 'manual', message: parsedEmail.error.issues[0]?.message ?? 'Введите корректный email' });
+            return false;
+        }
+
+        if (!additionalEmails.includes(normalizedEmail)) {
+            setValue('additionalEmails', [...additionalEmails, normalizedEmail], {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true
+            });
+        }
+
+        clearErrors('additionalEmails');
+        setAdditionalEmailInput('');
+        return true;
+    };
+
     const onSubmit = async (values: FormValues) => {
+        if (!addAdditionalEmail()) {
+            return;
+        }
+
+        const normalizedPendingEmail = normalizeEmail(additionalEmailInput);
+        const nextAdditionalEmails = normalizedPendingEmail && !values.additionalEmails.includes(normalizedPendingEmail)
+            ? [...values.additionalEmails, normalizedPendingEmail]
+            : values.additionalEmails;
+
         setIsSubmittingRequest(true);
         setErrorMessage(null);
         try {
             await createRequest({
                 description: values.description?.trim() || null,
                 deadline_at: `${values.deadlineAt}T23:59:59`,
-                files: values.files
+                files: values.files,
+                additional_emails: nextAdditionalEmails
             });
             navigate('/requests');
         } catch (error) {
@@ -130,7 +188,6 @@ export const CreateRequestPage = () => {
                         </IconButton>
                     </Stack>
 
-
                     <TextField
                         placeholder="Описание заявки"
                         multiline
@@ -147,6 +204,7 @@ export const CreateRequestPage = () => {
                             }
                         }}
                     />
+
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={3} alignItems="center">
                         <Typography variant="subtitle1" fontWeight={500}>
                             Сбор КП до 23:59
@@ -168,6 +226,76 @@ export const CreateRequestPage = () => {
                         />
                     </Stack>
 
+                    <Stack spacing={1.5} mt={3}>
+                        <Typography variant="subtitle1" fontWeight={500}>
+                            Дополнительные e-mail для рассылки
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            Необязательно. Можно добавить адреса, которых нет в базе верифицированных контрагентов.
+                        </Typography>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
+                            <TextField
+                                fullWidth
+                                placeholder="name@example.com"
+                                value={additionalEmailInput}
+                                error={Boolean(errors.additionalEmails)}
+                                helperText={errors.additionalEmails?.message ?? 'Нажмите Enter или кнопку, чтобы добавить адрес в список'}
+                                onChange={(event) => {
+                                    setAdditionalEmailInput(event.target.value);
+                                    if (errors.additionalEmails) {
+                                        clearErrors('additionalEmails');
+                                    }
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ',') {
+                                        event.preventDefault();
+                                        addAdditionalEmail();
+                                    }
+                                }}
+                                sx={{
+                                    backgroundColor: 'background.paper',
+                                    borderRadius: 2,
+                                    '& .MuiOutlinedInput-root': {
+                                        borderRadius: 2
+                                    }
+                                }}
+                            />
+                            <Button
+                                variant="outlined"
+                                onClick={addAdditionalEmail}
+                                sx={{
+                                    minWidth: { sm: 132 },
+                                    borderRadius: 999,
+                                    textTransform: 'none',
+                                    paddingX: 3
+                                }}
+                            >
+                                Добавить
+                            </Button>
+                        </Stack>
+                        {additionalEmails.length > 0 ? (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                {additionalEmails.map((email) => (
+                                    <Chip
+                                        key={email}
+                                        label={email}
+                                        onDelete={() => handleRemoveAdditionalEmail(email)}
+                                        variant="outlined"
+                                        sx={{
+                                            maxWidth: '100%',
+                                            borderRadius: 999,
+                                            backgroundColor: '#fff',
+                                            '& .MuiChip-label': {
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }
+                                        }}
+                                    />
+                                ))}
+                            </Box>
+                        ) : null}
+                    </Stack>
+
                     <Alert severity="info" sx={{ mt: 2, borderRadius: 3 }}>
                         Карта партнера будет прикреплена к заявке автоматически.
                     </Alert>
@@ -185,7 +313,7 @@ export const CreateRequestPage = () => {
                             }}
                         >
                             <Box component="span" sx={{ marginRight: 1 }}>
-                                🔗
+                                +
                             </Box>
                             Прикрепить файлы
                             <Controller
@@ -197,8 +325,8 @@ export const CreateRequestPage = () => {
                                         hidden
                                         multiple
                                         onChange={(event) => {
-                                            const nextFiles = Array.from(event.target.files ?? []);
-                                            onChange(mergeUniqueFiles(value ?? [], nextFiles));
+                                            const nextFiles = Array.from(event.target.files ?? []) as File[];
+                                            onChange(mergeUniqueFiles((value ?? []) as File[], nextFiles));
                                             event.target.value = '';
                                         }}
                                     />
@@ -227,7 +355,7 @@ export const CreateRequestPage = () => {
                                     ))}
                                 </Box>
                             ) : (
-                                <Typography variant="body2"  color="text.secondary">Файлы не выбраны</Typography>
+                                <Typography variant="body2" color="text.secondary">Файлы не выбраны</Typography>
                             )}
                             {errors.files ? (
                                 <Typography variant="caption" color="error">
@@ -236,7 +364,6 @@ export const CreateRequestPage = () => {
                             ) : null}
                         </Stack>
                     </Stack>
-
 
                     <Button
                         variant="contained"

@@ -29,6 +29,7 @@ class SMTPEmailService:
         html_content: str | None = None,
         attachments: list[EmailAttachment] | None = None,
         reply_token: str | None = None,
+        recipient_context: dict | None = None,
     ) -> None:
         await publish_notification(
             RK_EMAIL,
@@ -46,6 +47,7 @@ class SMTPEmailService:
                     for item in (attachments or [])
                 ],
                 "reply_token": reply_token,
+                "recipient_context": recipient_context,
                 "from_address": self._from_address,
                 "from_name": self._from_name,
             },

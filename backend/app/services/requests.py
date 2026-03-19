@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -31,6 +32,8 @@ OFFER_STATUS_LABELS = {
     "rejected": "отклонён",
     "deleted": "удалён",
 }
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 def format_request_status(status: str | None) -> str:
     if not status:
@@ -187,12 +190,14 @@ class RequestService:
         deadline_at: datetime,
         description: str | None,
         files: list[RequestFileCreateInput],
+        additional_emails: list[str] | None = None,
     ) -> tuple[int, list[int]]:
         UserPolicy.can_create_request(current_user)
         if deadline_at < datetime.utcnow():
             raise Conflict("Deadline cannot be in the past")
         if not files:
             raise Conflict("At least one file is required")
+        normalized_additional_emails = self._normalize_additional_emails(additional_emails)
 
         request = await self._requests.create(
             id_user=current_user.user_id,
@@ -217,9 +222,28 @@ class RequestService:
         if self._email_notifications is not None:
             await self._email_notifications.notify_new_request(
                 request_id=request.id,
+                additional_emails=normalized_additional_emails,
             )
 
         return request.id, file_ids
+
+    def _normalize_additional_emails(self, emails: list[str] | None) -> list[str]:
+        if not emails:
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for email in emails:
+            candidate = email.strip().lower()
+            if not candidate:
+                continue
+            if not EMAIL_PATTERN.fullmatch(candidate):
+                raise Conflict("Invalid additional email")
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            normalized.append(candidate)
+        return normalized
     
     async def update_request(
         self,

@@ -93,6 +93,8 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
 
   'Deadline cannot be in the past': 'Дедлайн не может быть в прошлом',
   'At least one file is required': 'Нужно прикрепить хотя бы один файл',
+  'Invalid additional email': 'Укажите корректный дополнительный e-mail',
+  'TG_BOT_PUBLIC_URL is not configured': 'Не настроена публичная ссылка на Telegram-бота',
   'Offer for this request already exists': 'Оффер по этой заявке уже существует',
   'Cannot edit files for finalized offer': 'Нельзя редактировать файлы у завершенного оффера',
   'Message text cannot be empty': 'Текст сообщения не может быть пустым',
