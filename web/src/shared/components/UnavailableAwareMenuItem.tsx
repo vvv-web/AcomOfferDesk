@@ -1,9 +1,10 @@
 import { MenuItem, Tooltip } from '@mui/material';
+import type { MenuItemProps } from '@mui/material';
 import type { MouseEvent, KeyboardEvent } from 'react';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { getUnavailabilityTooltip } from '@shared/lib/unavailability';
 
-type UnavailableAwareMenuItemProps = {
+type UnavailableAwareMenuItemProps = Omit<MenuItemProps, 'children'> & {
   value: string;
   label: string;
   unavailablePeriod?: UnavailabilityPeriodInfo | null;
@@ -12,7 +13,8 @@ type UnavailableAwareMenuItemProps = {
 export const UnavailableAwareMenuItem = ({
   value,
   label,
-  unavailablePeriod = null
+  unavailablePeriod = null,
+  ...menuItemProps
 }: UnavailableAwareMenuItemProps) => {
   const isDisabled = unavailablePeriod !== null;
   const tooltipText = isDisabled ? getUnavailabilityTooltip(unavailablePeriod) : undefined;
@@ -23,11 +25,16 @@ export const UnavailableAwareMenuItem = ({
   };
 
   if (!isDisabled) {
-    return <MenuItem value={value}>{label}</MenuItem>;
+    return (
+      <MenuItem value={value} {...menuItemProps}>
+        {label}
+      </MenuItem>
+    );
   }
 
   return (
     <MenuItem
+      {...menuItemProps}
       value={value}
       aria-disabled
       disableRipple

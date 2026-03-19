@@ -13,22 +13,21 @@ import {
     Typography
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { createRequest } from '@shared/api/requests/createRequest';
+import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { hasAvailableAction } from '@shared/auth/availableActions';
-
-const additionalEmailSchema = z.string().email('Введите корректный email');
 
 const schema = z.object({
     description: z.string().max(3000, 'Максимум 3000 символов').optional(),
     deadlineAt: z.string().min(1, 'Укажите дату сбора КП'),
     files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
-    additionalEmails: z.array(additionalEmailSchema).default([]),
+    additionalEmails: z.array(z.string().email('Введите корректный email')).default([]),
     hiddenContractorIds: z.array(z.string().min(1)).default([])
 });
 
@@ -45,14 +44,6 @@ const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
 
     return Array.from(fileMap.values());
 };
-
-const normalizeEmail = (value: string) => value.trim().toLowerCase();
-
-const splitAdditionalEmails = (value: string): string[] =>
-    value
-        .split(',')
-        .map(normalizeEmail)
-        .filter(Boolean);
 
 const getContractorOptionLabel = (contractor: RequestContractorItem) => {
     const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
@@ -71,9 +62,9 @@ export const CreateRequestPage = () => {
     }, []);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [additionalEmailInput, setAdditionalEmailInput] = useState('');
     const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
     const [isLoadingContractors, setIsLoadingContractors] = useState(false);
+    const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
 
     const {
         control,
@@ -81,8 +72,6 @@ export const CreateRequestPage = () => {
         handleSubmit,
         watch,
         setValue,
-        setError,
-        clearErrors,
         formState: { errors }
     } = useForm<FormValues>({
         resolver: zodResolver(schema),
@@ -146,56 +135,11 @@ export const CreateRequestPage = () => {
         });
     };
 
-    const handleRemoveAdditionalEmail = (emailToRemove: string) => {
-        setValue(
-            'additionalEmails',
-            additionalEmails.filter((email) => email !== emailToRemove),
-            {
-                shouldDirty: true,
-                shouldTouch: true,
-                shouldValidate: true
-            }
-        );
-    };
-
-    const addAdditionalEmail = (rawValue: string = additionalEmailInput) => {
-        const parsedEmails = splitAdditionalEmails(rawValue);
-        if (parsedEmails.length === 0) {
-            clearErrors('additionalEmails');
-            return true;
-        }
-
-        for (const email of parsedEmails) {
-            const parsedEmail = additionalEmailSchema.safeParse(email);
-            if (!parsedEmail.success) {
-                setError('additionalEmails', {
-                    type: 'manual',
-                    message: `Некорректный email: ${email}`
-                });
-                return false;
-            }
-        }
-
-        setValue('additionalEmails', Array.from(new Set([...additionalEmails, ...parsedEmails])), {
-            shouldDirty: true,
-            shouldTouch: true,
-            shouldValidate: true
-        });
-
-        clearErrors('additionalEmails');
-        setAdditionalEmailInput('');
-        return true;
-    };
-
     const onSubmit = async (values: FormValues) => {
-        if (!addAdditionalEmail()) {
+        const nextAdditionalEmails = additionalEmailsFieldRef.current?.commitPendingInput();
+        if (nextAdditionalEmails === null) {
             return;
         }
-
-        const nextAdditionalEmails = Array.from(new Set([
-            ...values.additionalEmails,
-            ...splitAdditionalEmails(additionalEmailInput)
-        ]));
 
         setIsSubmittingRequest(true);
         setErrorMessage(null);
@@ -204,7 +148,7 @@ export const CreateRequestPage = () => {
                 description: values.description?.trim() || null,
                 deadline_at: `${values.deadlineAt}T23:59:59`,
                 files: values.files,
-                additional_emails: nextAdditionalEmails,
+                additional_emails: nextAdditionalEmails ?? values.additionalEmails,
                 hidden_contractor_ids: values.hiddenContractorIds
             });
             navigate('/requests');
@@ -342,75 +286,18 @@ export const CreateRequestPage = () => {
                         />
                     </Stack>
 
-                    <Stack spacing={1.5} mt={3}>
-                        <Typography variant="subtitle1" fontWeight={500}>
-                            Дополнительные e-mail для рассылки
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Необязательно. Можно добавить адреса, которых нет в базе верифицированных контрагентов.
-                        </Typography>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-                            <TextField
-                                fullWidth
-                                placeholder="name@example.com"
-                                value={additionalEmailInput}
-                                error={Boolean(errors.additionalEmails)}
-                                helperText={errors.additionalEmails?.message ?? 'Можно ввести несколько email через запятую, а затем нажать Enter или кнопку'}
-                                onChange={(event) => {
-                                    setAdditionalEmailInput(event.target.value);
-                                    if (errors.additionalEmails) {
-                                        clearErrors('additionalEmails');
-                                    }
-                                }}
-                                onKeyDown={(event) => {
-                                    if (event.key === 'Enter' || event.key === ',') {
-                                        event.preventDefault();
-                                        addAdditionalEmail();
-                                    }
-                                }}
-                                sx={{
-                                    backgroundColor: 'background.paper',
-                                    borderRadius: 2,
-                                    '& .MuiOutlinedInput-root': {
-                                        borderRadius: 2
-                                    }
-                                }}
-                            />
-                            <Button
-                                variant="outlined"
-                                onClick={() => addAdditionalEmail()}
-                                sx={{
-                                    minWidth: { sm: 132 },
-                                    borderRadius: 999,
-                                    textTransform: 'none',
-                                    paddingX: 3
-                                }}
-                            >
-                                Добавить
-                            </Button>
-                        </Stack>
-                        {additionalEmails.length > 0 ? (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                {additionalEmails.map((email) => (
-                                    <Chip
-                                        key={email}
-                                        label={email}
-                                        onDelete={() => handleRemoveAdditionalEmail(email)}
-                                        variant="outlined"
-                                        sx={{
-                                            maxWidth: '100%',
-                                            borderRadius: 999,
-                                            backgroundColor: '#fff',
-                                            '& .MuiChip-label': {
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis'
-                                            }
-                                        }}
-                                    />
-                                ))}
-                            </Box>
-                        ) : null}
-                    </Stack>
+                    <AdditionalEmailsField
+                        ref={additionalEmailsFieldRef}
+                        emails={additionalEmails}
+                        onChange={(nextEmails) => {
+                            setValue('additionalEmails', nextEmails, {
+                                shouldDirty: true,
+                                shouldTouch: true,
+                                shouldValidate: true
+                            });
+                        }}
+                        helperText={errors.additionalEmails?.message ?? undefined}
+                    />
 
                     <Alert severity="info" sx={{ mt: 2, borderRadius: 3 }}>
                         Карта партнера будет прикреплена к заявке автоматически.

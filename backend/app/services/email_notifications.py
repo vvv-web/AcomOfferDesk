@@ -42,3 +42,26 @@ class EmailNotificationService:
             additional_emails=additional_emails or [],
             hidden_contractor_ids=hidden_contractor_ids or [],
         )
+
+    async def notify_request_to_additional_emails(
+        self,
+        *,
+        request_id: int,
+        additional_emails: list[str],
+    ) -> None:
+        if not settings.web_base_url:
+            return
+
+        use_case = SendRequestNotificationEmailUseCase(
+            request_repository=self._requests,
+            profile_repository=self._profiles,
+            email_service=self._email_service,
+            app_url=settings.web_base_url,
+        )
+        await use_case.execute(
+            request_id=request_id,
+            contractor_role_id=settings.contractor_role_id,
+            additional_emails=additional_emails,
+            hidden_contractor_ids=[],
+            include_verified_contractors=False,
+        )

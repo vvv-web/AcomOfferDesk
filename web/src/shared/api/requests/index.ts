@@ -5,4 +5,5 @@ export * from './getOpenRequests';
 export * from './getRequestDetails';
 export * from './getRequestEconomists';
 export * from './getRequests';
+export * from './sendRequestEmailNotifications';
 export * from './updateRequestDetails';

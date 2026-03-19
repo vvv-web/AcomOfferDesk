@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Alert,
     Box,
     Button,
     Chip,
@@ -15,12 +16,14 @@ import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
 import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
 import type { RequestDetails, RequestDetailsFile, RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
 import { getRequestEconomists } from '@shared/api/requests/getRequestEconomists';
+import { sendRequestEmailNotifications } from '@shared/api/requests/sendRequestEmailNotifications';
 import { markDeletedAlertViewed } from '@shared/api/offers/markDeletedAlertViewed';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
 import { downloadFile } from '@shared/api/fileDownload';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
+import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { DataTable } from '@shared/components/DataTable';
 import { getFileKey } from '@shared/lib/files';
@@ -95,8 +98,11 @@ export const RequestDetailsView = () => {
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
     const [newFile, setNewFile] = useState<File | null>(null);
+    const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
+    const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
 
     const [isSaving, setIsSaving] = useState(false);
+    const [isSendingEmails, setIsSendingEmails] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isClearingDeletedAlert, setIsClearingDeletedAlert] = useState(false);
@@ -141,6 +147,16 @@ export const RequestDetailsView = () => {
             ),
         [requestDetails?.availableActions]
     );
+    const canSendAdditionalEmails = useMemo(
+        () =>
+            status === 'open' &&
+            hasAvailableAction(
+                { availableActions: requestDetails?.availableActions ?? [] },
+                `/api/v1/requests/${requestId}/email-notifications`,
+                'POST'
+            ),
+        [requestDetails?.availableActions, requestId, status]
+    );
 
     const todayDate = useMemo(() => {
         const now = new Date();
@@ -169,6 +185,7 @@ export const RequestDetailsView = () => {
             setOwnerUserId(nextOwner);
             setBaselineOwnerUserId(nextOwner);
             setExistingFiles(nextRequest.files ?? []);
+            setAdditionalEmails([]);
             setDeletedFileIds([]);
             setNewFile(null);
         }
@@ -460,6 +477,45 @@ export const RequestDetailsView = () => {
         setDeletedFileIds((prev) => (prev.includes(fileId) ? prev : [...prev, fileId]));
     };
 
+    const handleSendAdditionalEmails = async () => {
+        if (!requestDetails || !canSendAdditionalEmails) {
+            return;
+        }
+
+        const nextAdditionalEmails = additionalEmailsFieldRef.current?.commitPendingInput();
+        if (nextAdditionalEmails === null) {
+            return;
+        }
+
+        if (!nextAdditionalEmails || nextAdditionalEmails.length === 0) {
+            setErrorMessage('Добавьте хотя бы один e-mail для отправки');
+            setSuccessMessage(null);
+            return;
+        }
+
+        setIsSendingEmails(true);
+        setErrorMessage(null);
+        setSuccessMessage(null);
+
+        try {
+            const response = await sendRequestEmailNotifications({
+                requestId: requestDetails.id,
+                additional_emails: nextAdditionalEmails
+            });
+            setAdditionalEmails(response.data.sent_to);
+            setSuccessMessage(
+                response.data.sent_to.length === 1
+                    ? `Письмо отправлено: ${response.data.sent_to[0]}`
+                    : `Писем отправлено: ${response.data.sent_to.length}`
+            );
+        } catch (error) {
+            setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить письма');
+            setSuccessMessage(null);
+        } finally {
+            setIsSendingEmails(false);
+        }
+    };
+
 
     const detailsRows = [
         {
@@ -607,14 +663,14 @@ export const RequestDetailsView = () => {
                 </Typography>
             )}
             {errorMessage && (
-                <Typography color="error" sx={{ mb: 2 }}>
+                <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 2 }}>
                     {errorMessage}
-                </Typography>
+                </Alert>
             )}
             {successMessage && (
-                <Typography color="success.main" sx={{ mb: 2 }}>
+                <Alert severity="success" onClose={() => setSuccessMessage(null)} sx={{ mb: 2 }}>
                     {successMessage}
-                </Typography>
+                </Alert>
             )}
 
             <Box
@@ -681,6 +737,26 @@ export const RequestDetailsView = () => {
                             </>
                         )}
                     </Stack>
+                    {status === 'open' && (
+                        <Stack spacing={1.5}>
+                            <AdditionalEmailsField
+                                ref={additionalEmailsFieldRef}
+                                emails={additionalEmails}
+                                onChange={setAdditionalEmails}
+                                disabled={!canSendAdditionalEmails || isSendingEmails}
+                                description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
+                                helperText="Введите один или несколько e-mail и нажмите кнопку отправки."
+                            />
+                            <Button
+                                variant="outlined"
+                                sx={{ width: 'fit-content' }}
+                                onClick={() => void handleSendAdditionalEmails()}
+                                disabled={!canSendAdditionalEmails || isSendingEmails}
+                            >
+                                {isSendingEmails ? 'Отправка...' : 'Отправить'}
+                            </Button>
+                        </Stack>
+                    )}
                     {hasDeletedAlert && (
                         <Button
                             variant="contained"

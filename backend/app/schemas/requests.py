@@ -159,6 +159,10 @@ class RequestEditPayload(BaseModel):
     owner_user_id: str | None = None
 
 
+class RequestEmailNotificationPayload(BaseModel):
+    additional_emails: list[str]
+
+
 class RequestFileMutationResponseData(BaseModel):
     request_id: int
     file_id: int
@@ -168,10 +172,22 @@ class RequestMutationResponseData(BaseModel):
     request_id: int
 
 
+class RequestEmailNotificationResponseData(BaseModel):
+    request_id: int
+    sent_to: list[str]
+
+
 class RequestMutationResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: RequestMutationResponseData
+    links: LinkSet = Field(alias="_links")
+
+
+class RequestEmailNotificationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: RequestEmailNotificationResponseData
     links: LinkSet = Field(alias="_links")
 
 

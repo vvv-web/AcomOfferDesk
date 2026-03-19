@@ -29,6 +29,8 @@ from app.schemas.requests import (
     RequestDetailsSchema,
     DeletedAlertViewed,
     DeletedAlertViewedResponse,
+    RequestEmailNotificationPayload,
+    RequestEmailNotificationResponse,
     RequestEditPayload,
     RequestFileMutationResponse,
     RequestFileSchema,
@@ -216,7 +218,7 @@ def _offered_request_actions(current_user: CurrentUser) -> list[Link] | None:
     ]
 
 
-def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner_user_id: str) -> list[Link] | None:
+def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner_user_id: str, status: str) -> list[Link] | None:
     actions = [
         Link(href="/api/v1/requests", method="GET"),
         Link(href=f"/api/v1/requests/{request_id}", method="GET"),
@@ -230,12 +232,19 @@ def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner
         actions.extend(
             [
                 Link(href=f"/api/v1/requests/{request_id}", method="PATCH"),
+                Link(href=f"/api/v1/requests/{request_id}/email-notifications", method="POST"),
                 Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
                 Link(href=f"/api/v1/requests/{request_id}/files/{{file_id}}", method="DELETE"),
             ]
         )
     except Forbidden:
         return actions
+
+    if status != "open":
+        actions = [
+            action for action in actions
+            if not (action.href == f"/api/v1/requests/{request_id}/email-notifications" and action.method == "POST")
+        ]
 
     try:
         RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id)
@@ -487,6 +496,7 @@ async def get_request_details(
                 current_user,
                 request_id=request_id,
                 owner_user_id=item.owner_user_id,
+                status=item.status,
             ),
         ),
     )
@@ -567,6 +577,38 @@ async def update_request(
 
     return RequestMutationResponse(
         data={"request_id": request_id},
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
+            available_actions=_request_actions(current_user),
+        ),
+    )
+
+
+@router.post("/requests/{request_id}/email-notifications", response_model=RequestEmailNotificationResponse)
+async def send_request_email_notifications(
+    payload: RequestEmailNotificationPayload = Body(...),
+    request_id: int = PathParam(..., ge=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestEmailNotificationResponse:
+    async with uow:
+        email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+        service = RequestService(
+            uow.requests,
+            uow.files,
+            uow.users,
+            uow.offers,
+            uow.user_status_periods,
+            email_notifications=email_notifications,
+        )
+        result = await service.send_request_email_notification(
+            current_user=current_user,
+            request_id=request_id,
+            additional_emails=payload.additional_emails,
+        )
+
+    return RequestEmailNotificationResponse(
+        data={"request_id": result.request_id, "sent_to": result.sent_to},
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
             available_actions=_request_actions(current_user),

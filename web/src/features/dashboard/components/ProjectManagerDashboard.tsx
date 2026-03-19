@@ -909,8 +909,16 @@ export const ProjectManagerDashboard = () => {
         <EmployeeWorkloadChart employees={allSubordinates} workloadColors={workloadColors} />
       </Box>
 
-      {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-      {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
+      {errorMessage ? (
+        <Alert severity="error" onClose={() => setErrorMessage(null)}>
+          {errorMessage}
+        </Alert>
+      ) : null}
+      {successMessage ? (
+        <Alert severity="success" onClose={() => setSuccessMessage(null)}>
+          {successMessage}
+        </Alert>
+      ) : null}
       {isWarningVisible ? (
         <Alert severity="warning" onClose={() => setDismissedWarningKey(warningKey)}>
           <Stack spacing={0.5}>

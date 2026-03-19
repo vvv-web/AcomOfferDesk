@@ -166,6 +166,12 @@ class DeletedAlertViewedResult:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class RequestEmailNotificationResult:
+    request_id: int
+    sent_to: list[str]
+
+
 class RequestService:
     def __init__(
         self,
@@ -237,6 +243,39 @@ class RequestService:
             )
 
         return request.id, file_ids
+
+    async def send_request_email_notification(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: int,
+        additional_emails: list[str] | None,
+    ) -> RequestEmailNotificationResult:
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+
+        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
+
+        if request.status != "open":
+            raise Conflict("Only open request can be emailed manually")
+
+        normalized_additional_emails = self._normalize_additional_emails(additional_emails)
+        if not normalized_additional_emails:
+            raise Conflict("At least one additional email is required")
+
+        if self._email_notifications is None:
+            raise Conflict("Email notifications are not configured")
+
+        await self._email_notifications.notify_request_to_additional_emails(
+            request_id=request.id,
+            additional_emails=normalized_additional_emails,
+        )
+
+        return RequestEmailNotificationResult(
+            request_id=request.id,
+            sent_to=normalized_additional_emails,
+        )
 
     def _normalize_additional_emails(self, emails: list[str] | None) -> list[str]:
         if not emails:

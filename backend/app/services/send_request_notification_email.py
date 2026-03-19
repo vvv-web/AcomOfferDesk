@@ -49,6 +49,7 @@ class SendRequestNotificationEmailUseCase:
         contractor_role_id: int,
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
+        include_verified_contractors: bool = True,
     ) -> None:
         request = await self._request_repository.get_by_id(request_id=request_id)
         if request is None:
@@ -61,6 +62,7 @@ class SendRequestNotificationEmailUseCase:
             active_contractors=active_contractors,
             additional_emails=additional_emails or [],
             hidden_contractor_ids=hidden_contractor_ids or [],
+            include_verified_contractors=include_verified_contractors,
         )
         if not recipients:
             return
@@ -129,9 +131,11 @@ class SendRequestNotificationEmailUseCase:
         active_contractors: list[ActiveContractorEmailRecipient],
         additional_emails: list[str],
         hidden_contractor_ids: list[str],
+        include_verified_contractors: bool,
     ) -> list[NotificationRecipient]:
         recipients: list[NotificationRecipient] = []
         recipients_by_email: dict[str, NotificationRecipient] = {}
+        recipient_emails: set[str] = set()
         hidden_contractor_id_set = set(hidden_contractor_ids)
         hidden_emails: set[str] = set()
 
@@ -148,12 +152,20 @@ class SendRequestNotificationEmailUseCase:
             )
             recipients_by_email[normalized_email] = recipient
 
-        for email, recipient in recipients_by_email.items():
-            recipients.append(recipient)
+        if include_verified_contractors:
+            for email, recipient in recipients_by_email.items():
+                recipients.append(recipient)
+                recipient_emails.add(email)
 
         for email in additional_emails:
             normalized_email = email.strip().lower()
-            if not normalized_email or normalized_email in recipients_by_email or normalized_email in hidden_emails:
+            if not normalized_email or normalized_email in hidden_emails:
+                continue
+            matched_verified_recipient = recipients_by_email.get(normalized_email)
+            if matched_verified_recipient is not None:
+                if matched_verified_recipient.email not in recipient_emails:
+                    recipients.append(matched_verified_recipient)
+                    recipient_emails.add(matched_verified_recipient.email)
                 continue
             recipients.append(
                 NotificationRecipient(
@@ -163,6 +175,7 @@ class SendRequestNotificationEmailUseCase:
                     is_verified_user=False,
                 )
             )
+            recipient_emails.add(normalized_email)
 
         return recipients
 
