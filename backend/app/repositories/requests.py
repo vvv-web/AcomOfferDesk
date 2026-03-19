@@ -15,6 +15,7 @@ from app.models.orm_models import (
     Profile,
     Request,
     RequestFile,
+    RequestHiddenContractor,
     RequestOfferStats,
     User,
 )
@@ -89,6 +90,19 @@ class RequestRepository:
     async def attach_file(self, *, request_id: int, file_id: int) -> None:
         self._session.add(RequestFile(id=file_id, id_request=request_id))
 
+    async def hide_from_contractors(self, *, request_id: int, contractor_user_ids: list[str]) -> None:
+        if not contractor_user_ids:
+            return
+        self._session.add_all(
+            [
+                RequestHiddenContractor(
+                    request_id=request_id,
+                    contractor_user_id=contractor_user_id,
+                )
+                for contractor_user_id in contractor_user_ids
+            ]
+        )
+
     async def detach_file(self, *, request_id: int, file_id: int) -> bool:
         stmt = delete(RequestFile).where(RequestFile.id_request == request_id, RequestFile.id == file_id)
         result = await self._session.execute(stmt)
@@ -98,6 +112,57 @@ class RequestRepository:
         stmt = select(Request).where(Request.id == request_id, Request.status == "open")
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_visible_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str) -> Request | None:
+        stmt = (
+            select(Request)
+            .outerjoin(
+                RequestHiddenContractor,
+                (RequestHiddenContractor.request_id == Request.id)
+                & (RequestHiddenContractor.contractor_user_id == contractor_user_id),
+            )
+            .where(Request.id == request_id, RequestHiddenContractor.request_id.is_(None))
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_visible_open_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str) -> Request | None:
+        stmt = (
+            select(Request)
+            .outerjoin(
+                RequestHiddenContractor,
+                (RequestHiddenContractor.request_id == Request.id)
+                & (RequestHiddenContractor.contractor_user_id == contractor_user_id),
+            )
+            .where(
+                Request.id == request_id,
+                Request.status == "open",
+                RequestHiddenContractor.request_id.is_(None),
+            )
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_hidden_contractor_ids(self, *, request_id: int) -> list[str]:
+        stmt = (
+            select(RequestHiddenContractor.contractor_user_id)
+            .where(RequestHiddenContractor.request_id == request_id)
+            .order_by(RequestHiddenContractor.contractor_user_id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+        stmt = (
+            select(RequestHiddenContractor.request_id)
+            .where(
+                RequestHiddenContractor.request_id == request_id,
+                RequestHiddenContractor.contractor_user_id == contractor_user_id,
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def is_file_linked_to_open_request(self, *, file_id: int) -> bool:
         stmt = (
@@ -109,8 +174,46 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def is_file_linked_to_visible_open_request(
+        self,
+        *,
+        contractor_user_id: str,
+        file_id: int,
+    ) -> bool:
+        stmt = (
+            select(RequestFile.id)
+            .join(Request, Request.id == RequestFile.id_request)
+            .outerjoin(
+                RequestHiddenContractor,
+                (RequestHiddenContractor.request_id == Request.id)
+                & (RequestHiddenContractor.contractor_user_id == contractor_user_id),
+            )
+            .where(
+                RequestFile.id == file_id,
+                Request.status == "open",
+                RequestHiddenContractor.request_id.is_(None),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def list_open(self) -> list[Request]:
         stmt = select(Request).where(Request.status == "open").order_by(Request.created_at.desc(), Request.id.desc())
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_open_for_contractor(self, *, contractor_user_id: str) -> list[Request]:
+        stmt = (
+            select(Request)
+            .outerjoin(
+                RequestHiddenContractor,
+                (RequestHiddenContractor.request_id == Request.id)
+                & (RequestHiddenContractor.contractor_user_id == contractor_user_id),
+            )
+            .where(Request.status == "open", RequestHiddenContractor.request_id.is_(None))
+            .order_by(Request.created_at.desc(), Request.id.desc())
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
     
@@ -144,13 +247,22 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
     
-    async def list_open_with_files(self) -> list[tuple[Request, RequestFile | None, File | None, Profile | None]]:
+    async def list_open_with_files_for_contractor(
+        self,
+        *,
+        contractor_user_id: str,
+    ) -> list[tuple[Request, RequestFile | None, File | None, Profile | None]]:
         stmt = (
             select(Request, RequestFile, File, Profile)
             .outerjoin(RequestFile, RequestFile.id_request == Request.id)
             .outerjoin(File, File.id == RequestFile.id)
             .outerjoin(Profile, Profile.id == Request.id_user)
-            .where(Request.status == "open")
+            .outerjoin(
+                RequestHiddenContractor,
+                (RequestHiddenContractor.request_id == Request.id)
+                & (RequestHiddenContractor.contractor_user_id == contractor_user_id),
+            )
+            .where(Request.status == "open", RequestHiddenContractor.request_id.is_(None))
             .order_by(Request.created_at.desc(), Request.id.desc())
         )
         result = await self._session.execute(stmt)
@@ -178,7 +290,16 @@ class RequestRepository:
             .outerjoin(RequestFile, RequestFile.id_request == Request.id)
             .outerjoin(File, File.id == RequestFile.id)
             .outerjoin(Profile, Profile.id == Request.id_user)
-            .where(Offer.id_user == contractor_user_id, User.status == "active")
+            .outerjoin(
+                RequestHiddenContractor,
+                (RequestHiddenContractor.request_id == Request.id)
+                & (RequestHiddenContractor.contractor_user_id == contractor_user_id),
+            )
+            .where(
+                Offer.id_user == contractor_user_id,
+                User.status == "active",
+                RequestHiddenContractor.request_id.is_(None),
+            )
             .order_by(Request.created_at.desc(), Request.id.desc(), Offer.created_at.desc(), Offer.id.desc())
         )
         result = await self._session.execute(stmt)

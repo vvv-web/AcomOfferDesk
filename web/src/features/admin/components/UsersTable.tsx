@@ -349,7 +349,13 @@ export const UsersTable = ({
 
   const canEditUserStatus = (userId: string) => {
     const user = users.find((item) => item.user_id === userId);
-    return canUpdateStatus && user?.role_id === ROLE.ECONOMIST;
+    if (!canUpdateStatus || !user) {
+      return false;
+    }
+    if (isContractorsTab) {
+      return true;
+    }
+    return user.role_id === ROLE.ECONOMIST;
   };
 
   const handleStatusSubmit = async (values: StatusFormValues) => {
@@ -777,7 +783,7 @@ export const UsersTable = ({
                 </Stack>
               </Box>
 
-              {canUpdateStatus && selectedUser.role_id === ROLE.ECONOMIST ? (
+              {canUpdateStatus ? (
                 <Stack
                   spacing={1.2}
                   sx={{

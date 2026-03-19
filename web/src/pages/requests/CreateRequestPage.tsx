@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
     Alert,
+    Autocomplete,
     Box,
     Button,
     Chip,
@@ -12,12 +13,13 @@ import {
     Typography
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { createRequest } from '@shared/api/requests/createRequest';
+import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 
 const additionalEmailSchema = z.string().email('Введите корректный email');
@@ -26,7 +28,8 @@ const schema = z.object({
     description: z.string().max(3000, 'Максимум 3000 символов').optional(),
     deadlineAt: z.string().min(1, 'Укажите дату сбора КП'),
     files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
-    additionalEmails: z.array(additionalEmailSchema).default([])
+    additionalEmails: z.array(additionalEmailSchema).default([]),
+    hiddenContractorIds: z.array(z.string().min(1)).default([])
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -45,6 +48,18 @@ const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
+const splitAdditionalEmails = (value: string): string[] =>
+    value
+        .split(',')
+        .map(normalizeEmail)
+        .filter(Boolean);
+
+const getContractorOptionLabel = (contractor: RequestContractorItem) => {
+    const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
+    const secondaryLabel = contractor.company_mail?.trim() || contractor.mail?.trim() || contractor.user_id;
+    return `${primaryLabel} (${secondaryLabel})`;
+};
+
 export const CreateRequestPage = () => {
     const { session } = useAuth();
     const navigate = useNavigate();
@@ -57,6 +72,8 @@ export const CreateRequestPage = () => {
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [additionalEmailInput, setAdditionalEmailInput] = useState('');
+    const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
+    const [isLoadingContractors, setIsLoadingContractors] = useState(false);
 
     const {
         control,
@@ -73,12 +90,48 @@ export const CreateRequestPage = () => {
             description: '',
             deadlineAt: todayDate,
             files: [],
-            additionalEmails: []
+            additionalEmails: [],
+            hiddenContractorIds: []
         }
     });
 
     const files = watch('files');
     const additionalEmails = watch('additionalEmails');
+    const hiddenContractorIds = watch('hiddenContractorIds');
+    const hiddenContractors = useMemo(
+        () => contractorOptions.filter((contractor) => hiddenContractorIds.includes(contractor.user_id)),
+        [contractorOptions, hiddenContractorIds]
+    );
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadContractors = async () => {
+            setIsLoadingContractors(true);
+            try {
+                const response = await getRequestContractors();
+                if (!isMounted) {
+                    return;
+                }
+                setContractorOptions(response.items);
+            } catch (error) {
+                if (!isMounted) {
+                    return;
+                }
+                setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки контрагентов');
+            } finally {
+                if (isMounted) {
+                    setIsLoadingContractors(false);
+                }
+            }
+        };
+
+        void loadContractors();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const handleClose = () => {
         navigate('/requests');
@@ -105,26 +158,29 @@ export const CreateRequestPage = () => {
         );
     };
 
-    const addAdditionalEmail = () => {
-        const normalizedEmail = normalizeEmail(additionalEmailInput);
-        if (!normalizedEmail) {
+    const addAdditionalEmail = (rawValue: string = additionalEmailInput) => {
+        const parsedEmails = splitAdditionalEmails(rawValue);
+        if (parsedEmails.length === 0) {
             clearErrors('additionalEmails');
             return true;
         }
 
-        const parsedEmail = additionalEmailSchema.safeParse(normalizedEmail);
-        if (!parsedEmail.success) {
-            setError('additionalEmails', { type: 'manual', message: parsedEmail.error.issues[0]?.message ?? 'Введите корректный email' });
-            return false;
+        for (const email of parsedEmails) {
+            const parsedEmail = additionalEmailSchema.safeParse(email);
+            if (!parsedEmail.success) {
+                setError('additionalEmails', {
+                    type: 'manual',
+                    message: `Некорректный email: ${email}`
+                });
+                return false;
+            }
         }
 
-        if (!additionalEmails.includes(normalizedEmail)) {
-            setValue('additionalEmails', [...additionalEmails, normalizedEmail], {
-                shouldDirty: true,
-                shouldTouch: true,
-                shouldValidate: true
-            });
-        }
+        setValue('additionalEmails', Array.from(new Set([...additionalEmails, ...parsedEmails])), {
+            shouldDirty: true,
+            shouldTouch: true,
+            shouldValidate: true
+        });
 
         clearErrors('additionalEmails');
         setAdditionalEmailInput('');
@@ -136,10 +192,10 @@ export const CreateRequestPage = () => {
             return;
         }
 
-        const normalizedPendingEmail = normalizeEmail(additionalEmailInput);
-        const nextAdditionalEmails = normalizedPendingEmail && !values.additionalEmails.includes(normalizedPendingEmail)
-            ? [...values.additionalEmails, normalizedPendingEmail]
-            : values.additionalEmails;
+        const nextAdditionalEmails = Array.from(new Set([
+            ...values.additionalEmails,
+            ...splitAdditionalEmails(additionalEmailInput)
+        ]));
 
         setIsSubmittingRequest(true);
         setErrorMessage(null);
@@ -148,7 +204,8 @@ export const CreateRequestPage = () => {
                 description: values.description?.trim() || null,
                 deadline_at: `${values.deadlineAt}T23:59:59`,
                 files: values.files,
-                additional_emails: nextAdditionalEmails
+                additional_emails: nextAdditionalEmails,
+                hidden_contractor_ids: values.hiddenContractorIds
             });
             navigate('/requests');
         } catch (error) {
@@ -183,7 +240,7 @@ export const CreateRequestPage = () => {
                         </Typography>
                         <IconButton aria-label="Закрыть" onClick={handleClose} sx={{ color: 'text.primary' }}>
                             <Typography component="span" fontSize={28} lineHeight={1}>
-                                ×
+                                x
                             </Typography>
                         </IconButton>
                     </Stack>
@@ -228,6 +285,65 @@ export const CreateRequestPage = () => {
 
                     <Stack spacing={1.5} mt={3}>
                         <Typography variant="subtitle1" fontWeight={500}>
+                            Скрыть от контрагентов
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            Выбранные контрагенты не получат уведомления и не увидят заявку в списке открытых.
+                        </Typography>
+                        <Controller
+                            control={control}
+                            name="hiddenContractorIds"
+                            render={({ field }) => (
+                                <Autocomplete
+                                    multiple
+                                    options={contractorOptions}
+                                    loading={isLoadingContractors}
+                                    value={hiddenContractors}
+                                    onChange={(_, value) => field.onChange(value.map((item) => item.user_id))}
+                                    isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
+                                    getOptionLabel={getContractorOptionLabel}
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            placeholder="Начните вводить компанию, ФИО, email или логин"
+                                        />
+                                    )}
+                                    renderTags={(value, getTagProps) =>
+                                        value.map((option, index) => {
+                                            const { key, ...tagProps } = getTagProps({ index });
+                                            return (
+                                                <Chip
+                                                    key={key}
+                                                    label={option.company_name || option.full_name || option.user_id}
+                                                    {...tagProps}
+                                                    variant="outlined"
+                                                    sx={{
+                                                        maxWidth: '100%',
+                                                        borderRadius: 999,
+                                                        backgroundColor: '#fff',
+                                                        '& .MuiChip-label': {
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis'
+                                                        }
+                                                    }}
+                                                />
+                                            );
+                                        })
+                                    }
+                                    sx={{
+                                        backgroundColor: 'background.paper',
+                                        borderRadius: 2,
+                                        '& .MuiOutlinedInput-root': {
+                                            borderRadius: 2
+                                        }
+                                    }}
+                                />
+                            )}
+                        />
+                    </Stack>
+
+                    <Stack spacing={1.5} mt={3}>
+                        <Typography variant="subtitle1" fontWeight={500}>
                             Дополнительные e-mail для рассылки
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
@@ -239,7 +355,7 @@ export const CreateRequestPage = () => {
                                 placeholder="name@example.com"
                                 value={additionalEmailInput}
                                 error={Boolean(errors.additionalEmails)}
-                                helperText={errors.additionalEmails?.message ?? 'Нажмите Enter или кнопку, чтобы добавить адрес в список'}
+                                helperText={errors.additionalEmails?.message ?? 'Можно ввести несколько email через запятую, а затем нажать Enter или кнопку'}
                                 onChange={(event) => {
                                     setAdditionalEmailInput(event.target.value);
                                     if (errors.additionalEmails) {
@@ -262,7 +378,7 @@ export const CreateRequestPage = () => {
                             />
                             <Button
                                 variant="outlined"
-                                onClick={addAdditionalEmail}
+                                onClick={() => addAdditionalEmail()}
                                 sx={{
                                     minWidth: { sm: 132 },
                                     borderRadius: 999,

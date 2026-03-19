@@ -20,7 +20,13 @@ class EmailNotificationService:
             from_name=settings.email_from_name,
         )
 
-    async def notify_new_request(self, *, request_id: int, additional_emails: list[str] | None = None) -> None:
+    async def notify_new_request(
+        self,
+        *,
+        request_id: int,
+        additional_emails: list[str] | None = None,
+        hidden_contractor_ids: list[str] | None = None,
+    ) -> None:
         if not settings.web_base_url:
             return
 
@@ -34,4 +40,5 @@ class EmailNotificationService:
             request_id=request_id,
             contractor_role_id=settings.contractor_role_id,
             additional_emails=additional_emails or [],
+            hidden_contractor_ids=hidden_contractor_ids or [],
         )

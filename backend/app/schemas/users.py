@@ -106,6 +106,25 @@ class RequestEconomistListResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
+class RequestContractorItemSchema(BaseModel):
+    user_id: str
+    full_name: str | None = None
+    company_name: str | None = None
+    mail: str | None = None
+    company_mail: str | None = None
+
+
+class RequestContractorListData(BaseModel):
+    items: list[RequestContractorItemSchema]
+
+
+class RequestContractorListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: RequestContractorListData
+    links: LinkSet = Field(alias="_links")
+
+
 class UserUnavailabilityPeriodSchema(BaseModel):
     id: int
     status: str

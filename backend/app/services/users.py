@@ -242,6 +242,15 @@ class RequestEconomistListItem:
 
 
 @dataclass(frozen=True)
+class RequestContractorListItem:
+    user_id: str
+    full_name: str | None
+    company_name: str | None
+    mail: str | None
+    company_mail: str | None
+
+
+@dataclass(frozen=True)
 class UserStatusUpdateResult:
     user_id: str
     user_status: str
@@ -474,6 +483,22 @@ class UserQueryService:
                 unavailable_period=self._period_to_data(active_unavailability_by_user[user.id]) if user.id in active_unavailability_by_user else None,
             )
             for user, profile, role in rows
+        ]
+
+    async def list_request_contractors(self, current_user: CurrentUser) -> list[RequestContractorListItem]:
+        UserPolicy.can_create_request(current_user)
+
+        rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
+        return [
+            RequestContractorListItem(
+                user_id=user.id,
+                full_name=profile.full_name if profile else None,
+                company_name=company.company_name if company else None,
+                mail=profile.mail if profile else None,
+                company_mail=company.mail if company else None,
+            )
+            for user, profile, company, _ in rows
+            if user.status == "active"
         ]
     
     def _period_to_data(self, period: UserStatusPeriod) -> UnavailabilityPeriodData:

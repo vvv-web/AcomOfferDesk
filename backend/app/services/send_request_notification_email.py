@@ -48,6 +48,7 @@ class SendRequestNotificationEmailUseCase:
         request_id: int,
         contractor_role_id: int,
         additional_emails: list[str] | None = None,
+        hidden_contractor_ids: list[str] | None = None,
     ) -> None:
         request = await self._request_repository.get_by_id(request_id=request_id)
         if request is None:
@@ -59,6 +60,7 @@ class SendRequestNotificationEmailUseCase:
         recipients = self._build_recipients(
             active_contractors=active_contractors,
             additional_emails=additional_emails or [],
+            hidden_contractor_ids=hidden_contractor_ids or [],
         )
         if not recipients:
             return
@@ -126,12 +128,18 @@ class SendRequestNotificationEmailUseCase:
         *,
         active_contractors: list[ActiveContractorEmailRecipient],
         additional_emails: list[str],
+        hidden_contractor_ids: list[str],
     ) -> list[NotificationRecipient]:
         recipients: list[NotificationRecipient] = []
         recipients_by_email: dict[str, NotificationRecipient] = {}
+        hidden_contractor_id_set = set(hidden_contractor_ids)
+        hidden_emails: set[str] = set()
 
         for contractor in active_contractors:
             normalized_email = contractor.email.strip().lower()
+            if contractor.user_id in hidden_contractor_id_set:
+                hidden_emails.add(normalized_email)
+                continue
             recipient = NotificationRecipient(
                 email=normalized_email,
                 user_login=contractor.user_id,
@@ -145,7 +153,7 @@ class SendRequestNotificationEmailUseCase:
 
         for email in additional_emails:
             normalized_email = email.strip().lower()
-            if not normalized_email or normalized_email in recipients_by_email:
+            if not normalized_email or normalized_email in recipients_by_email or normalized_email in hidden_emails:
                 continue
             recipients.append(
                 NotificationRecipient(

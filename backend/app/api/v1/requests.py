@@ -497,6 +497,7 @@ async def create_request(
     deadline_at: datetime = Form(...),
     description: str | None = Form(default=None),
     additional_emails: list[str] | None = Form(default=None),
+    hidden_contractor_ids: list[str] | None = Form(default=None),
     files: list[UploadFile] = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
@@ -533,6 +534,7 @@ async def create_request(
             description=description,
             files=file_inputs,
             additional_emails=additional_emails,
+            hidden_contractor_ids=hidden_contractor_ids,
         )
 
     return RequestCreateResponse(
@@ -678,7 +680,10 @@ async def download_file(
             raise NotFound("File not found")
 
         if not can_download:
-            linked_to_open_request = await uow.requests.is_file_linked_to_open_request(file_id=file_id)
+            linked_to_open_request = await uow.requests.is_file_linked_to_visible_open_request(
+                contractor_user_id=current_user.user_id,
+                file_id=file_id,
+            )
             linked_to_own_offer = await uow.offers.is_file_linked_to_contractor(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,

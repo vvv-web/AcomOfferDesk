@@ -138,7 +138,17 @@ class OfferService:
             )
         )
 
-    async def _load_offer_and_request(self, *, offer_id: int):
+    async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: int) -> None:
+        if current_user.role_id != settings.contractor_role_id:
+            return
+        is_hidden = await self._requests.is_hidden_for_contractor(
+            request_id=request_id,
+            contractor_user_id=current_user.user_id,
+        )
+        if is_hidden:
+            raise NotFound("Request not found")
+
+    async def _load_offer_and_request(self, *, offer_id: int, current_user: CurrentUser | None = None):
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
@@ -146,12 +156,17 @@ class OfferService:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        if current_user is not None:
+            await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=request.id)
         return offer, request
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
         UserPolicy.can_create_offer(current_user)
 
-        request = await self._requests.get_by_id(request_id=request_id)
+        request = await self._requests.get_visible_by_id_for_contractor(
+            request_id=request_id,
+            contractor_user_id=current_user.user_id,
+        )
         if request is None:
             raise NotFound("Request not found")
 
@@ -189,7 +204,10 @@ class OfferService:
     async def create_empty_offer(self, *, current_user: CurrentUser, request_id: int) -> int:
         UserPolicy.can_create_offer(current_user)
 
-        request = await self._requests.get_open_by_id(request_id=request_id)
+        request = await self._requests.get_visible_open_by_id_for_contractor(
+            request_id=request_id,
+            contractor_user_id=current_user.user_id,
+        )
         if request is None:
             raise NotFound("Open request not found")
 
@@ -204,7 +222,7 @@ class OfferService:
         return offer.id
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         OfferPolicy.can_access_offer_workspace(current_user, offer_owner_user_id=offer.id_user)
 
         profile = await self._profiles.get_by_id(offer.id_user)
@@ -292,6 +310,7 @@ class OfferService:
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
+        await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
         OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
 
         if offer.status in {"accepted", "rejected"}:
@@ -305,6 +324,7 @@ class OfferService:
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
+        await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
         OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
 
         detached = await self._offers.detach_file(offer_id=offer.id, file_id=file_id)
@@ -316,7 +336,7 @@ class OfferService:
             raise NotFound("File not found")
         
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
         if status not in EDITABLE_OFFER_STATUSES:
             raise Conflict("Unsupported offer status")
@@ -344,7 +364,7 @@ class OfferService:
         return offer.status
 
     async def list_messages(self, *, current_user: CurrentUser, offer_id: int) -> list[OfferMessageItem]:
-        offer, _ = await self._load_offer_and_request(offer_id=offer_id)
+        offer, _ = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         OfferPolicy.can_view_chat(current_user, offer_owner_user_id=offer.id_user)
 
         chat = await self._offers.get_chat(offer_id=offer.id)
@@ -390,7 +410,7 @@ class OfferService:
         text: str,
         attachments: list[AttachmentFileInput] | None = None,
     ) -> int:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         OfferPolicy.can_send_chat_message(
             current_user,
             offer_owner_user_id=offer.id_user,
@@ -425,7 +445,7 @@ class OfferService:
         return message.id
     
     async def mark_messages_received(self, *, current_user: CurrentUser, offer_id: int, message_ids: list[int]) -> int:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         OfferPolicy.can_send_chat_message(
             current_user,
             offer_owner_user_id=offer.id_user,
@@ -451,7 +471,7 @@ class OfferService:
         )
 
     async def mark_messages_read(self, *, current_user: CurrentUser, offer_id: int, message_ids: list[int]) -> int:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id)
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         OfferPolicy.can_send_chat_message(
             current_user,
             offer_owner_user_id=offer.id_user,

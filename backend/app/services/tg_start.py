@@ -51,7 +51,7 @@ class TgStartService:
 
         linked_user = await self._users.get_by_tg_user_id(tg_id)
         if linked_user and linked_user.id_role == settings.contractor_role_id and linked_user.status == "active" and tg_user.status == "approved":
-            open_requests = await self._requests.list_open()
+            open_requests = await self._requests.list_open_for_contractor(contractor_user_id=linked_user.id)
             request_items = [
                 TgOpenRequestItem(
                     request_id=request.id,

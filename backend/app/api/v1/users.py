@@ -19,6 +19,9 @@ from app.schemas.users import (
     RequestEconomistItemSchema,
     RequestEconomistListData,
     RequestEconomistListResponse,
+    RequestContractorItemSchema,
+    RequestContractorListData,
+    RequestContractorListResponse,
     SetMyUnavailabilityPeriodRequest,
     SetMyUnavailabilityPeriodResponse,
     SetSubordinateUnavailabilityPeriodRequest,
@@ -491,6 +494,39 @@ async def list_request_economists(
         _links=LinkSet(
             self=Link(href="/api/v1/users/request-economists", method="GET"),
             available_actions=actions,
+        ),
+    )
+
+
+@router.get("/users/request-contractors", response_model=RequestContractorListResponse)
+@router.get("/users/request-contractors/", response_model=RequestContractorListResponse, include_in_schema=False)
+async def list_request_contractors(
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestContractorListResponse:
+    async with uow:
+        service = UserQueryService(uow.users, uow.user_status_periods)
+        users = await service.list_request_contractors(current_user=current_user)
+
+    return RequestContractorListResponse(
+        data=RequestContractorListData(
+            items=[
+                RequestContractorItemSchema(
+                    user_id=item.user_id,
+                    full_name=item.full_name,
+                    company_name=item.company_name,
+                    mail=item.mail,
+                    company_mail=item.company_mail,
+                )
+                for item in users
+            ]
+        ),
+        _links=LinkSet(
+            self=Link(href="/api/v1/users/request-contractors", method="GET"),
+            available_actions=[
+                Link(href="/api/v1/users/request-contractors", method="GET"),
+                Link(href="/api/v1/requests", method="POST"),
+            ],
         ),
     )
 

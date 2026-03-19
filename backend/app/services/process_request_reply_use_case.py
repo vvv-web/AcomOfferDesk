@@ -206,6 +206,19 @@ class ProcessRequestReplyUseCase:
                 )
                 return False, False, False, 0
 
+            if await uow.requests.is_hidden_for_contractor(
+                request_id=claims.request_id,
+                contractor_user_id=contractor_profile.id,
+            ):
+                logger.info(
+                    "Skip email: request is hidden for contractor uid=%s message_id=%s request_id=%s contractor_id=%s",
+                    incoming.uid,
+                    incoming.message_id,
+                    claims.request_id,
+                    contractor_profile.id,
+                )
+                return False, False, False, 0
+
             offer = await uow.offers.get_contractor_offer_for_request(
                 request_id=claims.request_id,
                 contractor_user_id=contractor_profile.id,

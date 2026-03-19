@@ -144,6 +144,28 @@ class Request(Base):
         foreign_keys=[id_offer],
         post_update=True,
     )
+    hidden_contractors: Mapped[list["RequestHiddenContractor"]] = relationship(
+        "RequestHiddenContractor",
+        back_populates="request",
+        cascade="all, delete-orphan",
+    )
+
+
+class RequestHiddenContractor(Base):
+    __tablename__ = "request_hidden_contractors"
+
+    request_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("requests.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    contractor_user_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("users.id"),
+        primary_key=True,
+    )
+
+    request: Mapped["Request"] = relationship("Request", back_populates="hidden_contractors")
 
 
 class Offer(Base):

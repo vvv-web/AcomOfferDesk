@@ -5,6 +5,7 @@ export type CreateRequestPayload = {
   deadline_at: string;
   files: File[];
   additional_emails?: string[];
+  hidden_contractor_ids?: string[];
 };
 
 export type CreateRequestResponse = {
@@ -29,6 +30,10 @@ export const createRequest = async (payload: CreateRequestPayload): Promise<Crea
 
   payload.additional_emails?.forEach((email) => {
     formData.append('additional_emails', email);
+  });
+
+  payload.hidden_contractor_ids?.forEach((contractorId) => {
+    formData.append('hidden_contractor_ids', contractorId);
   });
 
   return fetchJson<CreateRequestResponse>(

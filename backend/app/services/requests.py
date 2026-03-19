@@ -191,6 +191,7 @@ class RequestService:
         description: str | None,
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
+        hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[int, list[int]]:
         UserPolicy.can_create_request(current_user)
         if deadline_at < datetime.utcnow():
@@ -198,6 +199,7 @@ class RequestService:
         if not files:
             raise Conflict("At least one file is required")
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
+        normalized_hidden_contractor_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
 
         request = await self._requests.create(
             id_user=current_user.user_id,
@@ -211,7 +213,15 @@ class RequestService:
             await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
             file_ids.append(db_file.id)
 
-        tg_ids = await self._users.list_active_tg_user_ids()
+        await self._requests.hide_from_contractors(
+            request_id=request.id,
+            contractor_user_ids=normalized_hidden_contractor_ids,
+        )
+
+        tg_ids = await self._users.list_active_approved_contractor_tg_ids(
+            contractor_role_id=settings.contractor_role_id,
+            exclude_user_ids=normalized_hidden_contractor_ids,
+        )
         await notify_new_request(
             tg_ids=tg_ids,
             request_id=request.id,
@@ -223,6 +233,7 @@ class RequestService:
             await self._email_notifications.notify_new_request(
                 request_id=request.id,
                 additional_emails=normalized_additional_emails,
+                hidden_contractor_ids=normalized_hidden_contractor_ids,
             )
 
         return request.id, file_ids
@@ -241,6 +252,25 @@ class RequestService:
                 raise Conflict("Invalid additional email")
             if candidate in seen:
                 continue
+            seen.add(candidate)
+            normalized.append(candidate)
+        return normalized
+
+    async def _normalize_hidden_contractor_ids(self, contractor_ids: list[str] | None) -> list[str]:
+        if not contractor_ids:
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for contractor_id in contractor_ids:
+            candidate = contractor_id.strip()
+            if not candidate or candidate in seen:
+                continue
+            contractor = await self._users.get_by_id(candidate)
+            if contractor is None:
+                raise NotFound("Hidden contractor user not found")
+            if contractor.id_role != settings.contractor_role_id:
+                raise Conflict("Hidden user must be contractor")
             seen.add(candidate)
             normalized.append(candidate)
         return normalized
@@ -449,7 +479,7 @@ class RequestService:
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.can_view_open_requests(current_user)
-        rows = await self._requests.list_open_with_files()
+        rows = await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id)
 
         grouped: dict[int, OpenRequestListItem] = {}
         for request, request_file, db_file, profile in rows:
