@@ -597,13 +597,6 @@ export const RequestDetailsView = () => {
                 flexWrap="wrap"
                 sx={{ mb: 3 }}
             >
-                <Button
-                    variant="outlined"
-                    onClick={() => navigate('/requests')}
-                    sx={{ whiteSpace: 'nowrap' }}
-                >
-                    Ко всем заявкам
-                </Button>
                 <Typography variant="h6" fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
                     Номер заявки: {requestDetails.id}
                 </Typography>

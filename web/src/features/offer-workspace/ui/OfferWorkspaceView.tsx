@@ -158,7 +158,7 @@ export const OfferWorkspaceView = () => {
     { id: 'owner', label: 'Ответственный', value: workspace?.request.owner_full_name ?? '-' },
     { id: 'created', label: 'Создана', value: formatDate(workspace?.request.created_at ?? null) },
     { id: 'closed', label: 'Закрыта', value: formatDate(workspace?.request.closed_at ?? null) },
-    { id: 'offer', label: 'Номер КП', value: selectedOffer?.offer_id ?? '-' },
+    { id: 'offer', label: 'Номер КП', value: workspace?.request.id_offer ?? workspace?.request.chosen_offer_id ?? '-' },
     { id: 'deadline', label: 'Дедлайн', value: formatDate(workspace?.request.deadline_at ?? null) },
     { id: 'updated', label: 'Последнее изменение', value: formatDate(workspace?.request.updated_at ?? null) }
   ];
