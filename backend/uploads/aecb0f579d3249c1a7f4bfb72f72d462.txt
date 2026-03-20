@@ -1,0 +1,427 @@
+
+**ОБЯЗАТЕЛЬНЫЙ КОНТЕКСТ (FRONT)**
+
+* Проект: `order_web` (React + TS + Vite)
+* Деплой: отдельный контейнер Nginx, SPA routing (`try_files ... /index.html`)
+* API доступ только через относительный `/api` (никаких host/port/localhost), Nginx reverse-proxy `/api/* -> backend:8000/api/*` в сети `project_net`
+* Backend: FastAPI, JWT (`access_token`, `role_id`) + HATEOAS (`_links.available_action`)
+* Принцип: фронт = тонкий клиент
+
+  * **не решает права**, только отображает UI
+  * `role_id` → только UX/роутинг/меню
+  * `_links.available_action` → показывать/скрывать кнопки
+* Auth: хранить токен (MVP localStorage), восстанавливать сессию на старте
+* HTTP client: единый клиент, добавляет `Authorization`, перехватывает `401 -> logout + redirect /login`
+* Формы: React Hook Form + zod
+* Код: соблюдать текущую структуру `src/{app,features,pages,shared}` и стиль проекта
+
+---
+
+DATABASE:
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- roles
+CREATE TABLE IF NOT EXISTS roles (
+  id            SMALLINT  PRIMARY KEY,
+  role          TEXT NOT NULL UNIQUE
+);
+
+-- tg_users 
+CREATE TABLE IF NOT EXISTS tg_users (
+  id            BIGINT PRIMARY KEY,
+  status        TEXT NOT NULL DEFAULT 'review' CHECK (status IN ('approved','disapproved','review'))
+);
+
+-- users
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  id_role       SMALLINT NOT NULL REFERENCES roles(id),
+  status        TEXT NOT NULL DEFAULT 'review' CHECK (status IN ('active','inactive','review', 'blacklist'))
+
+  tg_user_id    BIGINT NULL UNIQUE,
+  CONSTRAINT users_tg_user_fk
+    FOREIGN KEY (tg_user_id) REFERENCES tg_users(id) ON DELETE SET NULL
+);
+
+-- profiles
+CREATE TABLE IF NOT EXISTS profiles (
+  id            TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  full_name     TEXT NOT NULL,
+  phone         TEXT NOT NULL,
+  mail          TEXT NOT NULL DEFAULT 'Не указано'
+);
+
+-- company_contacts
+CREATE TABLE IF NOT EXISTS company_contacts (
+  id            TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  company_name  TEXT NOT NULL,
+  inn           TEXT NOT NULL,
+  phone         TEXT NOT NULL,
+  mail          TEXT NOT NULL DEFAULT 'Не указано',
+  address       TEXT NOT NULL DEFAULT 'Не указано',
+  note          TEXT NOT NULL DEFAULT 'Не указано'
+);
+
+
+-- files (пока path = "updates/hashname.txt".)
+CREATE TABLE IF NOT EXISTS files (
+  id            BIGSERIAL PRIMARY KEY,
+  path          TEXT NOT NULL,
+  name          TEXT NOT NULL
+);
+
+-- requests
+CREATE TABLE IF NOT EXISTS requests (
+  id            BIGSERIAL PRIMARY KEY,
+  description   TEXT,
+  status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','review','closed','cancelled')),
+  deadline_at   TIMESTAMP NOT NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT now(),
+  closed_at     TIMESTAMP,
+  id_offer      BIGINT, -- FK добавим после offers
+  id_user       TEXT NOT NULL REFERENCES users(id),
+  updated_at    TIMESTAMP NOT NULL DEFAULT now()  
+);
+
+-- offers
+CREATE TABLE IF NOT EXISTS offers (
+  id            BIGSERIAL PRIMARY KEY,
+  id_request    BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  id_user       TEXT NOT NULL REFERENCES users(id),
+  status        TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','deleted', 'accepted','rejected')),
+  created_at    TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- chosen_offer_id FK
+ALTER TABLE requests
+  ADD CONSTRAINT requests_id_offer_fk
+  FOREIGN KEY (id_offer) REFERENCES offers(id) ON DELETE SET NULL;
+
+-- request_offer_stats: 1 строка на заявку
+CREATE TABLE IF NOT EXISTS request_offer_stats (
+  request_id            BIGINT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
+  count_submitted       INT NOT NULL DEFAULT 0,  -- "непроверенные" (pending)
+  count_deleted_alert   INT NOT NULL DEFAULT 0,  -- уведомления accepted->deleted (не просмотрено)
+  count_accepted_total  INT NOT NULL DEFAULT 0,  -- история
+  count_rejected_total  INT NOT NULL DEFAULT 0,  -- история
+  updated_at            TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- chats: 1 строка на оффер
+CREATE TABLE IF NOT EXISTS chats (
+  id                    BIGINT PRIMARY KEY REFERENCES offers(id) ON DELETE CASCADE,
+  last_message_id       BIGINT,
+  last_message_at       TIMESTAMP
+);
+
+-- messages
+CREATE TABLE IF NOT EXISTS messages (
+  id                    BIGSERIAL PRIMARY KEY,
+  id_chat               BIGINT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  id_user               TEXT   NOT NULL REFERENCES users(id),
+  text                  TEXT   NOT NULL,
+  created_at            TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMP NOT NULL DEFAULT now(),
+  status                TEXT NOT NULL DEFAULT 'send' CHECK (status IN ('send','received','read'))
+);
+
+ALTER TABLE chats
+  ADD CONSTRAINT chats_last_message_fk
+  FOREIGN KEY (last_message_id) REFERENCES messages(id) ON DELETE SET NULL;
+
+-- request_files
+CREATE TABLE IF NOT EXISTS request_files (
+  id    BIGINT PRIMARY KEY REFERENCES files(id) ON DELETE RESTRICT,
+  id_request BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE
+);
+
+-- offer_files
+CREATE TABLE IF NOT EXISTS offer_files (
+  id   BIGINT PRIMARY KEY REFERENCES files(id) ON DELETE RESTRICT,
+  id_offer  BIGINT NOT NULL REFERENCES offers(id) ON DELETE CASCADE
+);
+
+-- message_files
+CREATE TABLE IF NOT EXISTS message_files (
+  id    BIGINT PRIMARY KEY REFERENCES files(id) ON DELETE RESTRICT,
+  id_message BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE
+);
+
+-- создание stats-строки при создании заявки
+CREATE OR REPLACE FUNCTION trg_requests_create_stats()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO request_offer_stats(request_id)
+  VALUES (NEW.id)
+  ON CONFLICT (request_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS requests_create_stats ON requests;
+CREATE TRIGGER requests_create_stats
+AFTER INSERT ON requests
+FOR EACH ROW
+EXECUTE FUNCTION trg_requests_create_stats();
+
+
+-- timestamps on insert + closed_at
+CREATE OR REPLACE FUNCTION trg_requests_timestamps()
+RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.created_at := COALESCE(NEW.created_at, now());
+    NEW.updated_at := COALESCE(NEW.updated_at, now());
+    RETURN NEW;
+  END IF;
+
+  -- обновляем updated_at всегда
+  NEW.updated_at := now();
+
+  -- если заявка закрывается — фиксируем closed_at
+  IF (NEW.status IN ('closed','cancelled')) AND (OLD.status IS DISTINCT FROM NEW.status) THEN
+    NEW.closed_at := COALESCE(NEW.closed_at, now());
+  END IF;
+
+  -- если заявка переоткрывается — очищаем closed_at
+  IF (OLD.status IN ('closed','cancelled'))
+     AND (NEW.status IN ('open','review'))
+     AND (OLD.status IS DISTINCT FROM NEW.status) THEN
+    NEW.closed_at := NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS requests_timestamps ON requests;
+CREATE TRIGGER requests_timestamps
+BEFORE INSERT OR UPDATE ON requests
+FOR EACH ROW
+EXECUTE FUNCTION trg_requests_timestamps();
+
+-- timestamps on update
+CREATE OR REPLACE FUNCTION trg_offers_timestamps()
+RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.created_at := COALESCE(NEW.created_at, now());
+    NEW.updated_at := COALESCE(NEW.updated_at, now());
+    RETURN NEW;
+  END IF;
+
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS offers_timestamps ON offers;
+CREATE TRIGGER offers_timestamps
+BEFORE INSERT OR UPDATE ON offers
+FOR EACH ROW
+EXECUTE FUNCTION trg_offers_timestamps();
+
+-- статистика при создании нового offer
+CREATE OR REPLACE FUNCTION trg_offers_stats_on_insert()
+RETURNS trigger AS $$
+BEGIN
+  -- новый offer обязан быть submitted
+  IF NEW.status <> 'submitted' THEN
+    RAISE EXCEPTION 'New offer must have status submitted';
+  END IF;
+
+  -- на всякий случай гарантируем наличие строки в request_offer_stats
+  INSERT INTO request_offer_stats(request_id)
+  VALUES (NEW.id_request)
+  ON CONFLICT (request_id) DO NOTHING;
+
+  -- увеличиваем счётчик неподтверждённых (submitted)
+  UPDATE request_offer_stats
+  SET count_submitted = count_submitted + 1,
+      updated_at = now()
+  WHERE request_id = NEW.id_request;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS offers_stats_on_insert ON offers;
+CREATE TRIGGER offers_stats_on_insert
+BEFORE INSERT ON offers
+FOR EACH ROW
+EXECUTE FUNCTION trg_offers_stats_on_insert();
+
+-- статистика при смене статуса offer
+CREATE OR REPLACE FUNCTION trg_offers_stats_on_status_update()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+
+    -- submitted -> accepted: count_submitted--, count_accepted_total++
+    IF OLD.status = 'submitted' AND NEW.status = 'accepted' THEN
+      UPDATE request_offer_stats
+      SET count_submitted = GREATEST(count_submitted - 1, 0),
+          count_accepted_total = count_accepted_total + 1,
+          updated_at = now()
+      WHERE request_id = NEW.id_request;
+      RETURN NEW;
+    END IF;
+
+    -- submitted -> rejected: count_submitted--, count_rejected_total++
+    IF OLD.status = 'submitted' AND NEW.status = 'rejected' THEN
+      UPDATE request_offer_stats
+      SET count_submitted = GREATEST(count_submitted - 1, 0),
+          count_rejected_total = count_rejected_total + 1,
+          updated_at = now()
+      WHERE request_id = NEW.id_request;
+      RETURN NEW;
+    END IF;
+
+    -- submitted -> deleted : count_submitted--
+    IF OLD.status = 'submitted' AND NEW.status = 'deleted' THEN
+      UPDATE request_offer_stats
+      SET count_submitted = GREATEST(count_submitted - 1, 0),
+          updated_at = now()
+      WHERE request_id = NEW.id_request;
+      RETURN NEW;
+    END IF;
+
+    -- accepted -> deleted (уведомление): count_deleted_alert++
+    IF OLD.status = 'accepted' AND NEW.status = 'deleted' THEN
+      UPDATE request_offer_stats
+      SET count_deleted_alert = count_deleted_alert + 1,
+          updated_at = now()
+      WHERE request_id = NEW.id_request;
+      RETURN NEW;
+    END IF;
+
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS offers_stats_on_status_update ON offers;
+CREATE TRIGGER offers_stats_on_status_update
+AFTER UPDATE OF status ON offers
+FOR EACH ROW
+EXECUTE FUNCTION trg_offers_stats_on_status_update();
+
+-- если один offer принят, остальные автоматически отклоняются
+CREATE OR REPLACE FUNCTION trg_offers_accept_reject_others()
+RETURNS trigger AS $$
+BEGIN
+  -- срабатываем только при переходе в accepted
+  IF OLD.status IS DISTINCT FROM NEW.status
+     AND NEW.status = 'accepted' THEN
+
+    UPDATE offers
+    SET status = 'rejected'
+    WHERE id_request = NEW.id_request
+      AND id <> NEW.id
+      AND status = 'submitted';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS offers_accept_reject_others ON offers;
+CREATE TRIGGER offers_accept_reject_others
+AFTER UPDATE OF status ON offers
+FOR EACH ROW
+EXECUTE FUNCTION trg_offers_accept_reject_others();
+
+-- создание chat при создании offer
+CREATE OR REPLACE FUNCTION trg_offer_create_chat()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO chats (id, last_message_id, last_message_at)
+  VALUES (NEW.id, NULL, NULL)
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS offer_create_chat ON offers;
+CREATE TRIGGER offer_create_chat
+AFTER INSERT ON offers
+FOR EACH ROW
+EXECUTE FUNCTION trg_offer_create_chat();
+
+-- при создании message фиксируется время created_at
+CREATE OR REPLACE FUNCTION trg_messages_set_created_at()
+RETURNS trigger AS $$
+BEGIN
+  NEW.created_at := COALESCE(NEW.created_at, now());
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS messages_set_created_at ON messages;
+CREATE TRIGGER messages_set_created_at
+BEFORE INSERT ON messages
+FOR EACH ROW
+EXECUTE FUNCTION trg_messages_set_created_at();
+
+-- фиксация времени при изменении текста сообщения
+CREATE OR REPLACE FUNCTION trg_messages_touch_updated_at_on_text()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.text IS DISTINCT FROM OLD.text THEN
+    NEW.updated_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS messages_touch_updated_at_on_text ON messages;
+CREATE TRIGGER messages_touch_updated_at_on_text
+BEFORE UPDATE OF text ON messages
+FOR EACH ROW
+EXECUTE FUNCTION trg_messages_touch_updated_at_on_text();
+
+-- при новом сообщении обновить последнее сообщение в чате
+CREATE OR REPLACE FUNCTION trg_messages_set_last_in_chat()
+RETURNS trigger AS $$
+BEGIN
+  UPDATE chats
+  SET last_message_id = NEW.id,
+      last_message_at = NEW.created_at
+  WHERE id = NEW.id_chat;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS messages_set_last_in_chat ON messages;
+CREATE TRIGGER messages_set_last_in_chat
+AFTER INSERT ON messages
+FOR EACH ROWф
+EXECUTE FUNCTION trg_messages_set_last_in_chat();
+
+
+## Блок “ТЕКУЩАЯ ЗАДАЧА” (отдельно, коротко и по шагам)
+
+**СДЕЛАТЬ:**
+
+1. Я хочу, чтобы на странице контрагента с "Мои заявки" в соответствующих строках отображались статусы офферов в виде "КП № 1 на рассмотрении" и подобное, а в столбце "уведомления" отображались наличие новых сообщений, как это сейчас реализовано в таблице офферов у экономиста. 
+2. Стили: как в макетах и других экранах
+
+Как обращаться к бэку
+
+
+## КЛЮЧЕВОЙ АРХИТЕКТУРНЫЙ ПРИНЦИП
+
+> Frontend **никогда не решает**, что можно делать.
+> Он **отображает то, что разрешил backend**.
+
+* `role_id` → UX
+* `_links.available_action` → реальные кнопки действий
+
+

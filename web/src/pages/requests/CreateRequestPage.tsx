@@ -1,34 +1,43 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
-    Alert,
-    Autocomplete,
-    Box,
-    Button,
-    Chip,
-    Dialog,
-    DialogContent,
-    IconButton,
-    Stack,
-    TextField,
-    Typography
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  Collapse,
+  Dialog,
+  DialogContent,
+  FormControlLabel,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
+  type SwitchProps,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { alpha, type Theme } from '@mui/material/styles';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { createRequest } from '@shared/api/requests/createRequest';
-import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
 import { hasAvailableAction } from '@shared/auth/availableActions';
+import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
+import { DatePickerField } from '@shared/components/DatePickerField';
+
+const ALLOWED_FILE_EXTENSIONS = ['PDF', 'PNG', 'JPG', 'JPEG', 'TXT', 'MD', 'DOC', 'DOCX', 'DOCS', 'XLS', 'XLSX', 'EXL', 'CSV', 'ODS'];
+const MAX_FILE_SIZE_MB = 10;
 
 const schema = z.object({
-    description: z.string().max(3000, 'Максимум 3000 символов').optional(),
-    deadlineAt: z.string().min(1, 'Укажите дату сбора КП'),
-    files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
-    additionalEmails: z.array(z.string().email('Введите корректный email')).default([]),
-    hiddenContractorIds: z.array(z.string().min(1)).default([])
+  description: z.string().max(3000, 'Максимум 3000 символов').optional(),
+  deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
+  files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
+  additionalEmails: z.array(z.string().email('Введите корректный email')).default([]),
+  hiddenContractorIds: z.array(z.string().min(1)).default([]),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -36,368 +45,528 @@ type FormValues = z.infer<typeof schema>;
 const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
 
 const mergeUniqueFiles = (currentFiles: File[], addedFiles: File[]) => {
-    const fileMap = new Map<string, File>();
+  const fileMap = new Map<string, File>();
 
-    [...currentFiles, ...addedFiles].forEach((file) => {
-        fileMap.set(getFileKey(file), file);
-    });
+  [...currentFiles, ...addedFiles].forEach((file) => {
+    fileMap.set(getFileKey(file), file);
+  });
 
-    return Array.from(fileMap.values());
+  return Array.from(fileMap.values());
 };
 
 const getContractorOptionLabel = (contractor: RequestContractorItem) => {
-    const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
-    const secondaryLabel = contractor.company_mail?.trim() || contractor.mail?.trim() || contractor.user_id;
-    return `${primaryLabel} (${secondaryLabel})`;
+  const primaryLabel = contractor.company_name?.trim() || contractor.full_name?.trim() || contractor.user_id;
+  const secondaryLabel = contractor.company_mail?.trim() || contractor.mail?.trim() || contractor.user_id;
+  return `${primaryLabel} (${secondaryLabel})`;
 };
 
+type OptionSectionProps = {
+  title: string;
+  checked: boolean;
+  onChange: (event: ChangeEvent<HTMLInputElement>, checked: boolean) => void;
+  description: string;
+  children: ReactNode;
+};
+
+const StyledSwitch = (props: SwitchProps) => (
+  <Switch
+    {...props}
+    sx={{
+      width: 46,
+      height: 28,
+      p: 0,
+      '& .MuiSwitch-switchBase': {
+        p: '4px',
+        '&.Mui-checked': {
+          transform: 'translateX(18px)',
+          color: '#fff',
+          '& + .MuiSwitch-track': {
+            opacity: 1,
+            backgroundColor: 'primary.main',
+            borderColor: 'primary.main',
+          },
+        },
+      },
+      '& .MuiSwitch-thumb': {
+        width: 20,
+        height: 20,
+        boxShadow: 'none',
+      },
+      '& .MuiSwitch-track': {
+        borderRadius: '999px',
+        opacity: 1,
+        backgroundColor: 'action.selected',
+        border: '1px solid',
+        borderColor: 'divider',
+      },
+    }}
+  />
+);
+
+const OptionSection = ({ title, checked, onChange, description, children }: OptionSectionProps) => (
+  <Stack spacing={1.25}>
+    <FormControlLabel
+      sx={{ m: 0, alignItems: 'center', gap: 1.5 }}
+      control={<StyledSwitch checked={checked} onChange={onChange} />}
+      label={
+        <Typography variant="subtitle1" fontWeight={600} lineHeight={1.2}>
+          {title}
+        </Typography>
+      }
+    />
+
+    <Collapse in={checked} unmountOnExit>
+      <Stack spacing={1.25}>
+        <Typography variant="body1" lineHeight={1.35}>
+          {description}
+        </Typography>
+        {children}
+      </Stack>
+    </Collapse>
+  </Stack>
+);
+
 export const CreateRequestPage = () => {
-    const { session } = useAuth();
-    const navigate = useNavigate();
-    const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
-    const todayDate = useMemo(() => {
-        const now = new Date();
-        const offsetMs = now.getTimezoneOffset() * 60000;
-        return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
-    }, []);
-    const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
-    const [isLoadingContractors, setIsLoadingContractors] = useState(false);
-    const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+  const { session } = useAuth();
+  const navigate = useNavigate();
+  const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+  const todayDate = useMemo(() => {
+    const now = new Date();
+    const offsetMs = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
+  }, []);
 
-    const {
-        control,
-        register,
-        handleSubmit,
-        watch,
-        setValue,
-        formState: { errors }
-    } = useForm<FormValues>({
-        resolver: zodResolver(schema),
-        defaultValues: {
-            description: '',
-            deadlineAt: todayDate,
-            files: [],
-            additionalEmails: [],
-            hiddenContractorIds: []
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [contractorOptions, setContractorOptions] = useState<RequestContractorItem[]>([]);
+  const [isLoadingContractors, setIsLoadingContractors] = useState(false);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [hideFromContractorsEnabled, setHideFromContractorsEnabled] = useState(false);
+  const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      description: '',
+      deadlineAt: todayDate,
+      files: [],
+      additionalEmails: [],
+      hiddenContractorIds: [],
+    },
+  });
+
+  const files = watch('files');
+  const additionalEmails = watch('additionalEmails');
+  const hiddenContractorIds = watch('hiddenContractorIds');
+  const hiddenContractors = useMemo(
+    () => contractorOptions.filter((contractor) => hiddenContractorIds.includes(contractor.user_id)),
+    [contractorOptions, hiddenContractorIds]
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadContractors = async () => {
+      setIsLoadingContractors(true);
+      try {
+        const response = await getRequestContractors();
+        if (isMounted) {
+          setContractorOptions(response.items);
         }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки контрагентов');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingContractors(false);
+        }
+      }
+    };
+
+    void loadContractors();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const updateFiles = (nextFiles: File[]) => {
+    setValue('files', nextFiles, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
     });
+  };
 
-    const files = watch('files');
-    const additionalEmails = watch('additionalEmails');
-    const hiddenContractorIds = watch('hiddenContractorIds');
-    const hiddenContractors = useMemo(
-        () => contractorOptions.filter((contractor) => hiddenContractorIds.includes(contractor.user_id)),
-        [contractorOptions, hiddenContractorIds]
-    );
+  const handleFilesAdded = (addedFiles: File[]) => {
+    updateFiles(mergeUniqueFiles(files, addedFiles));
+  };
 
-    useEffect(() => {
-        let isMounted = true;
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    handleFilesAdded(Array.from(event.dataTransfer.files ?? []));
+  };
 
-        const loadContractors = async () => {
-            setIsLoadingContractors(true);
-            try {
-                const response = await getRequestContractors();
-                if (!isMounted) {
-                    return;
-                }
-                setContractorOptions(response.items);
-            } catch (error) {
-                if (!isMounted) {
-                    return;
-                }
-                setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки контрагентов');
-            } finally {
-                if (isMounted) {
-                    setIsLoadingContractors(false);
-                }
-            }
-        };
+  const handleSubmitForm = async (values: FormValues) => {
+    const nextAdditionalEmails = additionalEmailsEnabled
+      ? additionalEmailsFieldRef.current?.commitPendingInput()
+      : [];
 
-        void loadContractors();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    const handleClose = () => {
-        navigate('/requests');
-    };
-
-    const handleRemoveFile = (fileToRemove: File) => {
-        const nextFiles = files.filter((file) => getFileKey(file) !== getFileKey(fileToRemove));
-        setValue('files', nextFiles, {
-            shouldDirty: true,
-            shouldTouch: true,
-            shouldValidate: true
-        });
-    };
-
-    const onSubmit = async (values: FormValues) => {
-        const nextAdditionalEmails = additionalEmailsFieldRef.current?.commitPendingInput();
-        if (nextAdditionalEmails === null) {
-            return;
-        }
-
-        setIsSubmittingRequest(true);
-        setErrorMessage(null);
-        try {
-            await createRequest({
-                description: values.description?.trim() || null,
-                deadline_at: `${values.deadlineAt}T23:59:59`,
-                files: values.files,
-                additional_emails: nextAdditionalEmails ?? values.additionalEmails,
-                hidden_contractor_ids: values.hiddenContractorIds
-            });
-            navigate('/requests');
-        } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : 'Ошибка создания заявки');
-        } finally {
-            setIsSubmittingRequest(false);
-        }
-    };
-
-    if (!canCreateRequest) {
-        return <Navigate to="/requests" replace />;
+    if (nextAdditionalEmails === null) {
+      return;
     }
 
-    return (
-        <Dialog
-            open
-            onClose={handleClose}
-            fullWidth
-            maxWidth="sm"
-            PaperProps={{
-                sx: {
-                    borderRadius: 4,
-                    p: { xs: 2, sm: 3 }
-                }
-            }}
-        >
-            <DialogContent sx={{ p: 0 }}>
-                <Box component="form" onSubmit={handleSubmit(onSubmit)}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Typography variant="h5" fontWeight={600}>
-                            Новая заявка
-                        </Typography>
-                        <IconButton aria-label="Закрыть" onClick={handleClose} sx={{ color: 'text.primary' }}>
-                            <Typography component="span" fontSize={28} lineHeight={1}>
-                                x
-                            </Typography>
-                        </IconButton>
-                    </Stack>
+    setIsSubmittingRequest(true);
+    setErrorMessage(null);
 
-                    <TextField
-                        placeholder="Описание заявки"
-                        multiline
-                        minRows={5}
-                        fullWidth
-                        error={Boolean(errors.description)}
-                        helperText={errors.description?.message}
-                        {...register('description')}
-                        sx={{
-                            backgroundColor: 'background.paper',
-                            borderRadius: 2,
-                            '& .MuiOutlinedInput-root': {
-                                borderRadius: 2
-                            }
-                        }}
-                    />
+    try {
+      await createRequest({
+        description: values.description?.trim() || null,
+        deadline_at: `${values.deadlineAt}T23:59:59`,
+        files: values.files,
+        additional_emails: additionalEmailsEnabled ? nextAdditionalEmails ?? values.additionalEmails : [],
+        hidden_contractor_ids: hideFromContractorsEnabled ? values.hiddenContractorIds : [],
+      });
+      navigate('/requests');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Ошибка создания заявки');
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  };
 
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={3} alignItems="center">
-                        <Typography variant="subtitle1" fontWeight={500}>
-                            Сбор КП до 23:59
-                        </Typography>
-                        <TextField
-                            type="date"
-                            error={Boolean(errors.deadlineAt)}
-                            helperText={errors.deadlineAt?.message}
-                            inputProps={{ min: todayDate }}
-                            {...register('deadlineAt')}
-                            sx={(theme) => ({
-                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                                borderRadius: 999,
-                                '& .MuiOutlinedInput-root': {
-                                    borderRadius: 999,
-                                    backgroundColor: 'transparent'
-                                }
-                            })}
-                        />
-                    </Stack>
+  if (!canCreateRequest) {
+    return <Navigate to="/requests" replace />;
+  }
 
-                    <Stack spacing={1.5} mt={3}>
-                        <Typography variant="subtitle1" fontWeight={500}>
-                            Скрыть от контрагентов
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Выбранные контрагенты не получат уведомления и не увидят заявку в списке открытых.
-                        </Typography>
-                        <Controller
-                            control={control}
-                            name="hiddenContractorIds"
-                            render={({ field }) => (
-                                <Autocomplete
-                                    multiple
-                                    options={contractorOptions}
-                                    loading={isLoadingContractors}
-                                    value={hiddenContractors}
-                                    onChange={(_, value) => field.onChange(value.map((item) => item.user_id))}
-                                    isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
-                                    getOptionLabel={getContractorOptionLabel}
-                                    renderInput={(params) => (
-                                        <TextField
-                                            {...params}
-                                            placeholder="Начните вводить компанию, ФИО, email или логин"
-                                        />
-                                    )}
-                                    renderTags={(value, getTagProps) =>
-                                        value.map((option, index) => {
-                                            const { key, ...tagProps } = getTagProps({ index });
-                                            return (
-                                                <Chip
-                                                    key={key}
-                                                    label={option.company_name || option.full_name || option.user_id}
-                                                    {...tagProps}
-                                                    variant="outlined"
-                                                    sx={{
-                                                        maxWidth: '100%',
-                                                        borderRadius: 999,
-                                                        backgroundColor: '#fff',
-                                                        '& .MuiChip-label': {
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis'
-                                                        }
-                                                    }}
-                                                />
-                                            );
-                                        })
-                                    }
-                                    sx={{
-                                        backgroundColor: 'background.paper',
-                                        borderRadius: 2,
-                                        '& .MuiOutlinedInput-root': {
-                                            borderRadius: 2
-                                        }
-                                    }}
-                                />
-                            )}
-                        />
-                    </Stack>
+  return (
+    <Dialog
+      open
+      onClose={() => navigate('/requests')}
+      fullWidth
+      maxWidth="sm"
+      PaperProps={{
+        sx: (theme: Theme) => ({
+          borderRadius: 2,
+          px: { xs: 2.5, sm: 3.5 },
+          py: { xs: 3, sm: 3.5 },
+          backgroundColor: theme.palette.background.default,
+          maxHeight: 'min(760px, calc(100vh - 32px))',
+          overflow: 'hidden',
+          boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`,
+        }),
+      }}
+    >
+      <DialogContent
+        sx={{
+          p: 0,
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': {
+            display: 'none',
+          },
+        }}
+      >
+        <Box component="form" onSubmit={handleSubmit(handleSubmitForm)}>
+          <Stack spacing={2}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
+              Новая заявка
+            </Typography>
 
-                    <AdditionalEmailsField
-                        ref={additionalEmailsFieldRef}
-                        emails={additionalEmails}
-                        onChange={(nextEmails) => {
-                            setValue('additionalEmails', nextEmails, {
-                                shouldDirty: true,
-                                shouldTouch: true,
-                                shouldValidate: true
-                            });
-                        }}
-                        helperText={errors.additionalEmails?.message ?? undefined}
-                    />
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Описание
+              </Typography>
+              <TextField
+                placeholder="Кратко опишите содержание заявки"
+                multiline
+                minRows={3}
+                fullWidth
+                error={Boolean(errors.description)}
+                helperText={errors.description?.message}
+                {...register('description')}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1,
+                    backgroundColor: 'background.paper',
+                    alignItems: 'flex-start',
+                  },
+                  '& .MuiOutlinedInput-input::placeholder': {
+                    opacity: 1,
+                  },
+                }}
+              />
+            </Stack>
 
-                    <Alert severity="info" sx={{ mt: 2, borderRadius: 3 }}>
-                        Карта партнера будет прикреплена к заявке автоматически.
-                    </Alert>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={{ xs: 1, sm: 1 }}
+              justifyContent="space-between"
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+            >
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  Дата завершения сбора откликов
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  (до 23:59)
+                </Typography>
+              </Box>
+              <DatePickerField
+                value={watch('deadlineAt')}
+                onChange={(value) => {
+                  setValue('deadlineAt', value, {
+                    shouldDirty: true,
+                    shouldTouch: true,
+                    shouldValidate: true,
+                  });
+                }}
+                error={Boolean(errors.deadlineAt)}
+                helperText={errors.deadlineAt?.message}
+                showDropdownIcon={false}
+                allowClear={false}
+                minWidth={{ xs: '100%', sm: 206 }}
+                sx={{
+                  '& .MuiOutlinedInput-root': { borderRadius: 1 },
+                  '& .MuiFormHelperText-root': { maxWidth: 206 },
+                }}
+              />
+            </Stack>
 
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={2} alignItems="flex-start">
-                        <Button
-                            variant="outlined"
-                            component="label"
-                            sx={{
-                                borderRadius: 999,
-                                textTransform: 'none',
-                                paddingX: 3,
-                                borderColor: 'primary.main',
-                                color: 'primary.main'
-                            }}
-                        >
-                            <Box component="span" sx={{ marginRight: 1 }}>
-                                +
-                            </Box>
-                            Прикрепить файлы
-                            <Controller
-                                control={control}
-                                name="files"
-                                render={({ field: { value, onChange } }) => (
-                                    <input
-                                        type="file"
-                                        hidden
-                                        multiple
-                                        onChange={(event) => {
-                                            const nextFiles = Array.from(event.target.files ?? []) as File[];
-                                            onChange(mergeUniqueFiles((value ?? []) as File[], nextFiles));
-                                            event.target.value = '';
-                                        }}
-                                    />
-                                )}
-                            />
-                        </Button>
-                        <Stack spacing={0.5}>
-                            {files.length > 0 ? (
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                    {files.map((file) => (
-                                        <Chip
-                                            key={getFileKey(file)}
-                                            label={file.name}
-                                            onDelete={() => handleRemoveFile(file)}
-                                            variant="outlined"
-                                            sx={{
-                                                maxWidth: '100%',
-                                                borderRadius: 999,
-                                                backgroundColor: '#fff',
-                                                '& .MuiChip-label': {
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis'
-                                                }
-                                            }}
-                                        />
-                                    ))}
-                                </Box>
-                            ) : (
-                                <Typography variant="body2" color="text.secondary">Файлы не выбраны</Typography>
-                            )}
-                            {errors.files ? (
-                                <Typography variant="caption" color="error">
-                                    {errors.files.message}
-                                </Typography>
-                            ) : null}
-                        </Stack>
-                    </Stack>
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Загрузить документы
+              </Typography>
 
-                    <Button
-                        variant="contained"
-                        fullWidth
-                        type="submit"
-                        disabled={isSubmittingRequest}
-                        sx={(theme) => ({
-                            marginTop: 3,
-                            borderRadius: 999,
-                            textTransform: 'none',
-                            borderColor: theme.palette.primary.main,
-                            color: theme.palette.primary.contrastText,
-                            backgroundColor: theme.palette.primary.main,
-                            paddingY: 1.2,
-                            fontSize: 18,
-                            boxShadow: 'none',
-                            '&:hover': {
-                                backgroundColor: theme.palette.primary.dark,
-                                boxShadow: 'none'
-                            }
-                        })}
-                    >
-                        {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}
-                    </Button>
-                    {errorMessage ? (
-                        <Typography mt={2} color="error" textAlign="center">
-                            {errorMessage}
-                        </Typography>
-                    ) : null}
+                <Stack direction="row" spacing={1} alignItems="center">
+                <Box sx={{ color: 'primary.main', display: 'inline-flex', alignItems: 'center' }}>
+                  <InfoOutlinedIcon fontSize="small" />
                 </Box>
-            </DialogContent>
-        </Dialog>
-    );
+                <Typography variant="body1" lineHeight={1.3}>
+                  Карта партнера будет прикреплена к заявке автоматически.
+                </Typography>
+              </Stack>
+
+              <Box
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDraggingFiles(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  const nextTarget = event.relatedTarget;
+                  if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+                    return;
+                  }
+                  setIsDraggingFiles(false);
+                }}
+                onDrop={handleDrop}
+                sx={(theme: Theme) => ({
+                  border: '1px dashed',
+                  borderColor: isDraggingFiles ? 'primary.main' : alpha(theme.palette.text.primary, 0.14),
+                  borderRadius: 1,
+                  backgroundColor: isDraggingFiles ? alpha(theme.palette.primary.main, 0.05) : theme.palette.background.paper,
+                  px: { xs: 2, sm: 3 },
+                  py: { xs: 2.5, sm: 3 },
+                  textAlign: 'center',
+                  transition: theme.transitions.create(['border-color', 'background-color']),
+                })}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  hidden
+                  multiple
+                  onChange={(event) => {
+                    handleFilesAdded(Array.from(event.target.files ?? []));
+                    event.target.value = '';
+                  }}
+                />
+
+                <Stack spacing={0.75} alignItems="center">
+                  <Box sx={{ color: 'text.disabled' }}>
+                    <CloudUploadOutlinedIcon sx={{ fontSize: 36 }} />
+                  </Box>
+
+                  <Typography variant="subtitle1" fontWeight={700} lineHeight={1.2}>
+                    Выберите файлы или перетащите сюда
+                  </Typography>
+
+                  <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 410, lineHeight: 1.35 }}>
+                    Поддерживаются {ALLOWED_FILE_EXTENSIONS.join(', ')}. Размер одного файла до {MAX_FILE_SIZE_MB} МБ.
+                  </Typography>
+
+                  <Button
+                    variant="outlined"
+                    onClick={() => fileInputRef.current?.click()}
+                    sx={{ minWidth: 148, borderRadius: 1, textTransform: 'none', px: 2.25, py: 0.65, fontWeight: 600 }}
+                  >
+                    Загрузить файл
+                  </Button>
+                </Stack>
+              </Box>
+
+              {files.length > 0 ? (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {files.map((file) => (
+                    <Chip
+                      key={getFileKey(file)}
+                      label={file.name}
+                      onDelete={() => updateFiles(files.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                      variant="outlined"
+                      sx={{
+                        maxWidth: '100%',
+                        borderRadius: 1,
+                        backgroundColor: 'background.paper',
+                        '& .MuiChip-label': {
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        },
+                      }}
+                    />
+                  ))}
+                </Box>
+              ) : null}
+
+              {errors.files ? (
+                <Typography variant="caption" color="error">
+                  {errors.files.message}
+                </Typography>
+              ) : null}
+            </Stack>
+
+            <OptionSection
+              title="Скрыть от контрагентов"
+              checked={hideFromContractorsEnabled}
+              onChange={(_event, checked) => {
+                setHideFromContractorsEnabled(checked);
+                if (!checked) {
+                  setValue('hiddenContractorIds', [], {
+                    shouldDirty: true,
+                    shouldTouch: true,
+                    shouldValidate: true,
+                  });
+                }
+              }}
+              description="Выбранные контрагенты не смогут узнать о создании заявки или получить к ней доступ."
+            >
+              <Controller
+                control={control}
+                name="hiddenContractorIds"
+                render={({ field }) => (
+                  <Autocomplete
+                    multiple
+                    options={contractorOptions}
+                    loading={isLoadingContractors}
+                    value={hiddenContractors}
+                    onChange={(_, value) => field.onChange(value.map((item) => item.user_id))}
+                    isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
+                    getOptionLabel={getContractorOptionLabel}
+                    popupIcon={<ExpandMoreIcon fontSize="small" />}
+                    renderInput={(params) => <TextField {...params} placeholder="Начните вводить компанию, ФИО, email или логин" />}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => {
+                        const { key, ...tagProps } = getTagProps({ index });
+                        return (
+                          <Chip
+                            key={key}
+                            label={option.company_name || option.full_name || option.user_id}
+                            {...tagProps}
+                            variant="outlined"
+                            sx={{
+                              maxWidth: '100%',
+                              borderRadius: 2,
+                              backgroundColor: 'background.paper',
+                              '& .MuiChip-label': {
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              },
+                            }}
+                          />
+                        );
+                      })
+                    }
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2,
+                        backgroundColor: 'background.paper',
+                        minHeight: 48,
+                      },
+                    }}
+                  />
+                )}
+              />
+            </OptionSection>
+
+            <OptionSection
+              title="Дополнительная рассылка на электронную почту"
+              checked={additionalEmailsEnabled}
+              onChange={(_event, checked) => {
+                setAdditionalEmailsEnabled(checked);
+                if (!checked) {
+                  setValue('additionalEmails', [], {
+                    shouldDirty: true,
+                    shouldTouch: true,
+                    shouldValidate: true,
+                  });
+                }
+              }}
+              description="Введите адреса электронной почты по одному или сразу несколько адресов через запятую."
+            >
+              <AdditionalEmailsField
+                ref={additionalEmailsFieldRef}
+                emails={additionalEmails}
+                hideHeader
+                addButtonVariant="icon"
+                placeholder="name@example.com"
+                helperText={errors.additionalEmails?.message ?? 'Можно добавить несколько адресов через запятую.'}
+                onChange={(nextEmails) => {
+                  setValue('additionalEmails', nextEmails, {
+                    shouldDirty: true,
+                    shouldTouch: true,
+                    shouldValidate: true,
+                  });
+                }}
+                textFieldSx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                    backgroundColor: 'background.paper',
+                  },
+                }}
+                containerSx={{ mt: 0 }}
+              />
+            </OptionSection>
+
+            <Button
+              variant="contained"
+              fullWidth
+              type="submit"
+              disabled={isSubmittingRequest}
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 18, fontWeight: 700, boxShadow: 'none' }}
+            >
+              {isSubmittingRequest ? 'Создание...' : 'Создать заявку'}
+            </Button>
+
+            {errorMessage ? (
+              <Typography color="error" textAlign="center">
+                {errorMessage}
+              </Typography>
+            ) : null}
+          </Stack>
+        </Box>
+      </DialogContent>
+    </Dialog>
+  );
 };
