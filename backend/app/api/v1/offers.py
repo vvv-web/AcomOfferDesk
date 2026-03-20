@@ -565,7 +565,7 @@ async def list_offer_messages(
                     user_id=item.user_id,
                     user_full_name=item.user_full_name,
                     text=item.text,
-                    status=item.status,
+                    type=item.type,
                     created_at=item.created_at,
                     updated_at=item.updated_at,
                     attachments=[

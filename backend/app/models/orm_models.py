@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Integer,
+    Numeric,
     SmallInteger,
     Text,
     TIMESTAMP,
@@ -130,6 +131,8 @@ class Request(Base):
     )
 
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"), nullable=False)
+    initial_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    final_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     offers: Mapped[list["Offer"]] = relationship(
@@ -155,11 +158,13 @@ class RequestHiddenContractor(Base):
     __tablename__ = "request_hidden_contractors"
 
     request_id: Mapped[int] = mapped_column(
+        "id_request",
         BigInteger,
         ForeignKey("requests.id", ondelete="CASCADE"),
         primary_key=True,
     )
     contractor_user_id: Mapped[str] = mapped_column(
+        "id_user",
         Text,
         ForeignKey("users.id"),
         primary_key=True,
@@ -184,6 +189,7 @@ class Offer(Base):
     )
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="submitted")
+    offer_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
@@ -223,7 +229,7 @@ class Chat(Base):
         ForeignKey("messages.id", ondelete="SET NULL"),
         nullable=True,
     )
-    last_message_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    last_message_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     offer: Mapped[Offer] = relationship("Offer", back_populates="chat")
     messages: Mapped[list["Message"]] = relationship(
@@ -246,8 +252,8 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('send','received','read')",
-            name="messages_status_check",
+            "type IN ('text', 'system', 'file', 'mixed', 'email')",
+            name="messages_type_check",
         ),
     )
 
@@ -255,15 +261,53 @@ class Message(Base):
     id_chat: Mapped[int] = mapped_column(BigInteger, ForeignKey("chats.id", ondelete="CASCADE"))
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"))
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False, default="text")
+    reply_to_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="send")
 
     chat: Mapped["Chat"] = relationship(
         "Chat",
         back_populates="messages",
         foreign_keys=[id_chat],
     )
+
+
+class ChatParticipant(Base):
+    __tablename__ = "chat_participants"
+
+    id_chat: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("chats.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_user: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    left_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+
+
+class MessageReceipt(Base):
+    __tablename__ = "message_receipts"
+
+    id_message: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("messages.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_user: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    delivered_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    read_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
 
 
 class RequestFile(Base):

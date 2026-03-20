@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 import re
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, func, literal, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orm_models import File, Message, MessageFile
+from app.models.orm_models import ChatParticipant, File, Message, MessageFile, MessageReceipt
 
 
 EMAIL_MESSAGE_ID_MARKER = "[email_message_id:"
@@ -44,11 +45,19 @@ class MessageRepository:
         chat_id: int,
         user_id: str,
         text: str,
-        status: str = "received",
+        message_type: str = "text",
+        reply_to_id: int | None = None,
     ) -> Message:
-        message = Message(id_chat=chat_id, id_user=user_id, text=text, status=status)
+        message = Message(
+            id_chat=chat_id,
+            id_user=user_id,
+            text=text,
+            type=message_type,
+            reply_to_id=reply_to_id,
+        )
         self._session.add(message)
         await self._session.flush()
+        await self._create_receipts_for_new_message(message_id=message.id, chat_id=chat_id, sender_user_id=user_id)
         return message
 
     async def list_by_chat(self, *, chat_id: int) -> list[Message]:
@@ -85,21 +94,100 @@ class MessageRepository:
         from_status: str,
         to_status: str,
     ) -> int:
-        if not message_ids:
+        _ = from_status
+        if message_ids is not None and not message_ids:
             return 0
 
-        stmt = (
-            update(Message)
+        message_ids_stmt = (
+            select(Message.id)
             .where(
                 Message.id_chat == chat_id,
-                Message.id.in_(message_ids),
-                Message.status == from_status,
                 Message.id_user != recipient_user_id,
             )
-            .values(status=to_status)
         )
-        result = await self._session.execute(stmt)
-        return int(result.rowcount or 0)
+
+        if message_ids is not None:
+            message_ids_stmt = message_ids_stmt.where(Message.id.in_(message_ids))
+
+        if to_status == "received":
+            await self._ensure_receipts_for_recipient(
+                recipient_user_id=recipient_user_id,
+                message_ids_stmt=message_ids_stmt,
+            )
+            stmt = (
+                update(MessageReceipt)
+                .where(
+                    MessageReceipt.id_user == recipient_user_id,
+                    MessageReceipt.id_message.in_(message_ids_stmt),
+                    MessageReceipt.delivered_at.is_(None),
+                )
+                .values(delivered_at=func.now())
+            )
+            result = await self._session.execute(stmt)
+            return int(result.rowcount or 0)
+
+        if to_status == "read":
+            await self._ensure_receipts_for_recipient(
+                recipient_user_id=recipient_user_id,
+                message_ids_stmt=message_ids_stmt,
+            )
+            stmt = (
+                update(MessageReceipt)
+                .where(
+                    MessageReceipt.id_user == recipient_user_id,
+                    MessageReceipt.id_message.in_(message_ids_stmt),
+                    MessageReceipt.read_at.is_(None),
+                )
+                .values(
+                    delivered_at=func.coalesce(MessageReceipt.delivered_at, func.now()),
+                    read_at=func.now(),
+                )
+            )
+            result = await self._session.execute(stmt)
+            return int(result.rowcount or 0)
+
+        return 0
+
+    async def _create_receipts_for_new_message(self, *, message_id: int, chat_id: int, sender_user_id: str) -> None:
+        await self._session.execute(
+            pg_insert(MessageReceipt).from_select(
+                ["id_message", "id_user"],
+                select(
+                    Message.id.label("id_message"),
+                    ChatParticipant.id_user.label("id_user"),
+                ).where(
+                    Message.id == message_id,
+                    Message.id_chat == chat_id,
+                ).join(
+                    ChatParticipant,
+                    ChatParticipant.id_chat == Message.id_chat,
+                ).where(
+                    ChatParticipant.id_user != sender_user_id,
+                    ChatParticipant.left_at.is_(None),
+                ),
+            ).on_conflict_do_nothing(
+                index_elements=[MessageReceipt.id_message, MessageReceipt.id_user],
+            )
+        )
+
+    async def _ensure_receipts_for_recipient(
+        self,
+        *,
+        recipient_user_id: str,
+        message_ids_stmt,
+    ) -> None:
+        message_ids_subquery = message_ids_stmt.subquery()
+        await self._session.execute(
+            pg_insert(MessageReceipt).from_select(
+                ["id_message", "id_user"],
+                select(
+                    message_ids_subquery.c.id.label("id_message"),
+                    literal(recipient_user_id).label("id_user"),
+                ),
+            ).on_conflict_do_nothing(
+                index_elements=[MessageReceipt.id_message, MessageReceipt.id_user],
+            )
+        )
     
     async def exists_with_email_message_id(self, *, email_message_id: str) -> bool:
         marker = f"{EMAIL_MESSAGE_ID_MARKER}{email_message_id}]"

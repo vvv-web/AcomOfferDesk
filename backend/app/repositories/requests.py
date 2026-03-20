@@ -10,6 +10,7 @@ from app.models.orm_models import (
     CompanyContact,
     File,
     Message,
+    MessageReceipt,
     Offer,
     OfferFile,
     Profile,
@@ -227,10 +228,15 @@ class RequestRepository:
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
             .join(Offer, Offer.id == Chat.id)
+            .outerjoin(
+                MessageReceipt,
+                (MessageReceipt.id_message == Message.id)
+                & (MessageReceipt.id_user == current_user_id),
+            )
             .where(
                 Offer.id_request == Request.id,
                 Message.id_user != current_user_id,
-                Message.status != "read",
+                MessageReceipt.read_at.is_(None),
             )
             .correlate(Request)
             .scalar_subquery()
@@ -275,10 +281,15 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .outerjoin(
+                MessageReceipt,
+                (MessageReceipt.id_message == Message.id)
+                & (MessageReceipt.id_user == contractor_user_id),
+            )
             .where(
                 Chat.id == Offer.id,
                 Message.id_user != contractor_user_id,
-                Message.status != "read",
+                MessageReceipt.read_at.is_(None),
             )
             .correlate(Offer)
             .scalar_subquery()
@@ -414,10 +425,15 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .outerjoin(
+                MessageReceipt,
+                (MessageReceipt.id_message == Message.id)
+                & (MessageReceipt.id_user == current_user_id),
+            )
             .where(
                 Chat.id == Offer.id,
                 Message.id_user != current_user_id,
-                Message.status != "read",
+                MessageReceipt.read_at.is_(None),
             )
             .correlate(Offer)
             .scalar_subquery()

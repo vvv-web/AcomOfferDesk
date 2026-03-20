@@ -255,7 +255,7 @@ class ProcessRequestReplyUseCase:
                     chat_id=offer.id,
                     user_id=contractor_profile.id,
                     text=AUTO_EMAIL_OFFER_CREATED_TEXT,
-                    status="received",
+                    message_type="system",
                 )
                 logger.info(
                     "Created system auto-offer message: uid=%s message_id=%s chat_id=%s",
@@ -271,7 +271,7 @@ class ProcessRequestReplyUseCase:
                         chat_id=offer.id,
                         user_id=contractor_profile.id,
                         text=build_email_message_text(text=email_text, message_id=incoming.message_id),
-                        status="received",
+                        message_type="email",
                     )
                     logger.info(
                         "Created initial message for new offer: uid=%s message_id=%s chat_id=%s message_id_db=%s",
@@ -329,7 +329,7 @@ class ProcessRequestReplyUseCase:
                 chat_id=offer.id,
                 user_id=contractor_profile.id,
                 text=message_text,
-                status="received",
+                message_type="email",
             )
             logger.info(
                 "Created message in existing offer chat: uid=%s message_id=%s chat_id=%s message_id_db=%s",

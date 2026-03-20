@@ -15,8 +15,8 @@ from app.repositories.users import UserRepository
 from app.services.email_notifications import EmailNotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 
-DEFAULT_PARTNER_CARD_PATH = "uploads/Карта_партнера.pdf"
-DEFAULT_PARTNER_CARD_NAME = "Карта_партнера.pdf"
+DEFAULT_PARTNER_CARD_PATH = "uploads/КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
+DEFAULT_PARTNER_CARD_NAME = "КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
 EDITABLE_REQUEST_STATUSES = {"open", "review", "closed", "cancelled"}
 
 REQUEST_STATUS_LABELS = {

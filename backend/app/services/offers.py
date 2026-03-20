@@ -16,8 +16,8 @@ from app.repositories.users import UserRepository
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
-DEFAULT_PARTNER_CARD_PATH = "uploads/Карта_партнера.pdf"
-DEFAULT_PARTNER_CARD_NAME = "Карта_партнера.pdf"
+DEFAULT_PARTNER_CARD_PATH = "uploads/КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
+DEFAULT_PARTNER_CARD_NAME = "КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
 EDITABLE_OFFER_STATUSES = {"submitted", "accepted", "rejected", "deleted"}
 
 
@@ -102,7 +102,7 @@ class OfferMessageItem:
     user_id: str
     user_full_name: str | None
     text: str
-    status: str
+    type: str
     created_at: datetime
     updated_at: datetime
     attachments: list[RequestFileItem] = field(default_factory=list)
@@ -389,7 +389,7 @@ class OfferService:
                 user_id=item.id_user,
                 user_full_name=full_name_by_user_id.get(item.id_user),
                 text=strip_email_message_marker(item.text),
-                status=item.status,
+                type=item.type,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
                 attachments=files_map.get(item.id, []),
@@ -428,7 +428,6 @@ class OfferService:
             chat_id=chat.id,
             user_id=current_user.user_id,
             text=text.strip(),
-            status="received",
         )
         for attachment in attachments or []:
             db_file = await self._files.create(path=attachment.path, name=attachment.name)

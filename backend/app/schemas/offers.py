@@ -33,7 +33,7 @@ class OfferMessageSchema(BaseModel):
     user_id: str
     user_full_name: str | None
     text: str
-    status: str
+    type: str
     created_at: datetime
     updated_at: datetime
     attachments: list[RequestFileSchema] = Field(default_factory=list)

@@ -236,6 +236,9 @@ const getErrorMessage = async (response: Response, fallback: string) => {
 
 export const apiFetch = async (url: string, init: RequestInit = {}, withAuth = true) => {
   const headers = new Headers(init.headers);
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json');
+  }
   if (withAuth && authToken) {
     headers.set('Authorization', `Bearer ${authToken}`);
   }
@@ -272,7 +275,23 @@ export const fetchJson = async <T>(
     throw new Error(await getErrorMessage(response, fallbackError));
   }
 
-  return response.json() as Promise<T>;
+  const contentType = response.headers.get('Content-Type')?.toLowerCase() ?? '';
+  const isJsonResponse = contentType.includes('application/json') || contentType.includes('+json');
+
+  if (!isJsonResponse) {
+    const raw = await response.text().catch(() => '');
+    const trimmed = raw.trim().toLowerCase();
+    if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
+      throw new Error('Сервер вернул HTML вместо JSON. Проверьте доступность API (/api/*).');
+    }
+    throw new Error(fallbackError);
+  }
+
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error(fallbackError);
+  }
 };
 
 export const fetchEmpty = async (
