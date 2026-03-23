@@ -16,6 +16,7 @@ import { getErrorMessage } from '@shared/lib/errors';
 import { useOfferMessages } from './useOfferMessages';
 
 const workspacePollIntervalMs = 7000;
+const areJsonEqual = <T,>(left: T | null, right: T | null) => JSON.stringify(left) === JSON.stringify(right);
 
 export const useOfferWorkspace = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,7 @@ export const useOfferWorkspace = () => {
   const offerId = Number(id ?? 0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const contractorInfoRef = useRef<OfferContractorInfo | null>(null);
+  const workspaceRef = useRef<OfferWorkspace | null>(null);
   const previousSelectedOfferIdRef = useRef<number | null>(null);
 
   const [workspace, setWorkspace] = useState<OfferWorkspace | null>(null);
@@ -67,21 +69,39 @@ export const useOfferWorkspace = () => {
 
   const refreshWorkspace = useCallback(async (targetOfferId: number) => {
     const nextWorkspace = await getOfferWorkspace(targetOfferId);
-    setWorkspace(nextWorkspace);
-    setSelectedOfferId((prev: number) => (nextWorkspace.offers.some((item) => item.offer_id === prev) ? prev : nextWorkspace.offers[0]?.offer_id ?? targetOfferId));
+    if (!areJsonEqual(workspaceRef.current, nextWorkspace)) {
+      workspaceRef.current = nextWorkspace;
+      setWorkspace(nextWorkspace);
+    }
+    setSelectedOfferId((prev: number) => {
+      const nextSelectedOfferId = nextWorkspace.offers.some((item) => item.offer_id === prev)
+        ? prev
+        : nextWorkspace.offers[0]?.offer_id ?? targetOfferId;
+      return prev === nextSelectedOfferId ? prev : nextSelectedOfferId;
+    });
 
     const nextContractorId = nextWorkspace.offer.contractor_user_id;
     if (!nextContractorId) {
-      setContractorInfo(null);
+      if (contractorInfoRef.current !== null) {
+        contractorInfoRef.current = null;
+        setContractorInfo(null);
+      }
       return nextWorkspace;
     }
     if (contractorInfoRef.current?.user_id === nextContractorId) {
       return nextWorkspace;
     }
     try {
-      setContractorInfo(await getOfferContractorInfo(nextContractorId));
+      const nextContractorInfo = await getOfferContractorInfo(nextContractorId);
+      if (!areJsonEqual(contractorInfoRef.current, nextContractorInfo)) {
+        contractorInfoRef.current = nextContractorInfo;
+        setContractorInfo(nextContractorInfo);
+      }
     } catch {
-      setContractorInfo(null);
+      if (contractorInfoRef.current !== null) {
+        contractorInfoRef.current = null;
+        setContractorInfo(null);
+      }
     }
 
     return nextWorkspace;
@@ -95,6 +115,7 @@ export const useOfferWorkspace = () => {
     setErrorMessage(null);
     try {
       const workspaceResponse = await getOfferWorkspace(offerId);
+      workspaceRef.current = workspaceResponse;
       setWorkspace(workspaceResponse);
       const initialOfferId = workspaceResponse.offers.find((item) => item.offer_id === offerId)?.offer_id ?? workspaceResponse.offers[0]?.offer_id ?? offerId;
       setSelectedOfferId(initialOfferId);
@@ -102,8 +123,11 @@ export const useOfferWorkspace = () => {
 
       if (workspaceResponse.offer.contractor_user_id) {
         try {
-          setContractorInfo(await getOfferContractorInfo(workspaceResponse.offer.contractor_user_id));
+          const nextContractorInfo = await getOfferContractorInfo(workspaceResponse.offer.contractor_user_id);
+          contractorInfoRef.current = nextContractorInfo;
+          setContractorInfo(nextContractorInfo);
         } catch {
+          contractorInfoRef.current = null;
           setContractorInfo(null);
         }
       }
@@ -117,6 +141,10 @@ export const useOfferWorkspace = () => {
   useEffect(() => {
     contractorInfoRef.current = contractorInfo;
   }, [contractorInfo]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -146,16 +174,14 @@ export const useOfferWorkspace = () => {
       return;
     }
 
-    const sync = async () => {
-      const nextWorkspace = await refreshWorkspace(selectedOfferId);
-      if (connectionState !== 'connected') {
-        await loadMessages(selectedOfferId, nextWorkspace.offers, false);
-      }
-    };
+    if (connectionState === 'connected') {
+      return;
+    }
 
-    void sync().catch(() => undefined);
     const interval = window.setInterval(() => {
-      void sync().catch(() => undefined);
+      void refreshWorkspace(selectedOfferId)
+        .then((nextWorkspace) => loadMessages(selectedOfferId, nextWorkspace.offers, false))
+        .catch(() => undefined);
     }, workspacePollIntervalMs);
     return () => window.clearInterval(interval);
   }, [connectionState, loadMessages, refreshWorkspace, selectedOfferId]);
