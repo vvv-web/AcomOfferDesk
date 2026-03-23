@@ -1,5 +1,5 @@
 export { AdminPage } from './admin';
-export { AuthPage, TgRegisterPage, VerifyEmailPage } from './auth';
+export { AuthPage, TgAuthPage, TgRegisterPage, VerifyEmailPage } from './auth';
 export { ProjectManagerDashboardPage } from './dashboard';
 export { FeedbackPage } from './feedback';
 export { OfferWorkspacePage } from './offers';

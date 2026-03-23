@@ -241,7 +241,7 @@ async def redirect_tg_auth(
     token: str = Query(...),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RedirectResponse:
-    tg_id = await _resolve_tg_id_from_auth_token(token)
+    tg_id = await resolve_tg_id_from_auth_token(token)
     async with uow:
         tg_user = await uow.tg_users.get_by_id(tg_id)
         linked_user = await uow.users.get_by_tg_user_id(tg_id)
@@ -253,7 +253,7 @@ async def redirect_tg_auth(
         raise Forbidden("Access denied")
     if not settings.web_base_url:
         raise Forbidden("Invalid token")
-    url = f"{settings.web_base_url.rstrip('/')}/auth/login?token={token}"
+    url = f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={token}"
     return RedirectResponse(url=url, status_code=302)
 
 
@@ -277,7 +277,7 @@ async def _resolve_tg_id_from_registration_token(token: str) -> int:
     return shortcode_payload.tg_id
 
 
-async def _resolve_tg_id_from_auth_token(token: str) -> int:
+async def resolve_tg_id_from_auth_token(token: str) -> int:
     try:
         token_payload = await _validate_tg_token(token, purpose="tg_auth")
         return token_payload.tg_id

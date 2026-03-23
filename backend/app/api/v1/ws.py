@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import time
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jose import JWTError, ExpiredSignatureError
 from pydantic import ValidationError
 
-from app.core.security import decode_access_token
+from app.core.session_tokens import AccessTokenClaims, decode_access_token
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
-from app.domain.policies import CurrentUser
+from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
 from app.realtime.runtime import get_chat_runtime
 from app.repositories.users import UserRepository
@@ -15,28 +17,20 @@ from app.repositories.users import UserRepository
 router = APIRouter()
 
 
-async def _get_current_user_from_websocket(websocket: WebSocket) -> CurrentUser:
+async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[CurrentUser, AccessTokenClaims]:
     token = (websocket.query_params.get("token") or "").strip()
     if not token:
         raise Unauthorized("Missing credentials")
 
-    try:
-        payload = await decode_access_token(token)
-    except ExpiredSignatureError as exc:
-        raise Unauthorized("Token expired") from exc
-    except JWTError as exc:
-        raise Unauthorized("Invalid token") from exc
-
-    user_id = str(payload.get("sub") or "").strip()
-    if not user_id:
-        raise Unauthorized("Invalid token payload")
+    claims = await decode_access_token(token)
 
     async with UnitOfWork() as uow:
         repo = UserRepository(uow.session)
-        user = await repo.get_by_id(user_id)
+        user = await repo.get_by_id(claims.subject)
         if user is None:
             raise Unauthorized("Invalid credentials")
-        return CurrentUser(user_id=user.id, role_id=user.id_role, status=user.status)
+        UserPolicy.can_login(user.status)
+        return CurrentUser(user_id=user.id, role_id=user.id_role, status=user.status), claims
 
 
 async def _get_user_full_name(user_id: str) -> str | None:
@@ -61,13 +55,24 @@ def _error_event(*, request_id: str | None, code: str, message: str) -> Outbound
 @router.websocket("/ws/chat")
 async def chat_websocket(websocket: WebSocket) -> None:
     try:
-        current_user = await _get_current_user_from_websocket(websocket)
+        current_user, claims = await _get_current_user_from_websocket(websocket)
     except Unauthorized:
         await websocket.close(code=4401)
         return
 
     runtime = get_chat_runtime()
     connection_id = await runtime.manager.connect(websocket=websocket, user_id=current_user.user_id)
+    expiry_task: asyncio.Task[None] | None = None
+
+    async def close_on_expiry() -> None:
+        delay = max(0, claims.expires_at - int(time.time()))
+        try:
+            await asyncio.sleep(delay)
+            await websocket.close(code=4401)
+        except Exception:
+            return
+
+    expiry_task = asyncio.create_task(close_on_expiry())
     await runtime.send_to_connection(
         connection_id=connection_id,
         event=OutboundEnvelope(
@@ -289,4 +294,6 @@ async def chat_websocket(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        if expiry_task is not None:
+            expiry_task.cancel()
         await runtime.manager.disconnect(connection_id)

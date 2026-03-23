@@ -91,14 +91,16 @@ async def notify_offer_status_finalized(*, tg_id: int) -> None:
     )
 
 def _build_authorization_link(*, tg_id: int) -> str:
-    if not settings.tg_link_secret or not settings.public_backend_base_url:
+    if not settings.tg_link_secret or not (settings.web_base_url or settings.public_backend_base_url):
         return "Ссылка временно недоступна"
     payload = TgShortcodeCodec.build(
         tg_id=tg_id,
         purpose="tg_auth",
-        ttl_seconds=settings.tg_request_ttl_seconds,
+        ttl_seconds=settings.tg_auth_ttl_seconds,
     )
     code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
+    if settings.web_base_url:
+        return f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={code}"
     return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/auth?token={code}"
 
 
@@ -113,10 +115,10 @@ def _build_web_service_link(*, tg_id: int) -> str:
     payload = TgShortcodeCodec.build(
         tg_id=tg_id,
         purpose="tg_auth",
-        ttl_seconds=settings.tg_request_ttl_seconds,
+        ttl_seconds=settings.tg_auth_ttl_seconds,
     )
     code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-    return f"{settings.web_base_url.rstrip('/')}/auth/login?token={code}"
+    return f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={code}"
 
 async def _notify(
     *,

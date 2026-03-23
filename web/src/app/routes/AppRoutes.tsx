@@ -13,6 +13,7 @@ import {
   ProjectManagerDashboardPage,
   RequestDetailsPage,
   RequestsPage,
+  TgAuthPage,
   TgRegisterPage,
   VerifyEmailPage
 } from '@pages/index';
@@ -31,6 +32,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
       <Routes location={backgroundLocation ?? location}>
         <Route path="/login" element={<AuthPage />} />
         <Route path="/auth/login" element={<AuthPage />} />
+        <Route path="/auth/tg/login" element={<TgAuthPage />} />
         <Route path="/auth/tg/register" element={<TgRegisterPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route element={<ProtectedRoute />}>

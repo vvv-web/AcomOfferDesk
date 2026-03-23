@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { chatSocketClient, type ChatRealtimeEnvelope, type RealtimeConnectionState } from '@shared/ws/chatSocket';
 
@@ -11,8 +11,9 @@ type ChatRealtimeContextValue = {
 const ChatRealtimeContext = createContext<ChatRealtimeContextValue | undefined>(undefined);
 
 export const ChatRealtimeProvider = ({ children }: { children: React.ReactNode }) => {
-  const { session } = useAuth();
+  const { session, status, refresh, logout } = useAuth();
   const [connectionState, setConnectionState] = useState<RealtimeConnectionState>(chatSocketClient.getState());
+  const refreshAttemptInFlightRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = chatSocketClient.onStateChange(setConnectionState);
@@ -20,12 +21,39 @@ export const ChatRealtimeProvider = ({ children }: { children: React.ReactNode }
   }, []);
 
   useEffect(() => {
-    if (session?.token) {
-      chatSocketClient.connect(session.token);
+    const unsubscribe = chatSocketClient.onEvent((event) => {
+      if (event.type !== 'error' || event.data.code !== 'auth_failed') {
+        return;
+      }
+      if (refreshAttemptInFlightRef.current) {
+        return;
+      }
+
+      refreshAttemptInFlightRef.current = true;
+      void refresh('ws_4401')
+        .then((ok: boolean) => {
+          if (!ok) {
+            logout();
+          }
+        })
+        .finally(() => {
+          refreshAttemptInFlightRef.current = false;
+        });
+    });
+
+    return unsubscribe;
+  }, [logout, refresh]);
+
+  useEffect(() => {
+    if (status === 'anonymous' || !session?.token) {
+      chatSocketClient.disconnect();
       return;
     }
-    chatSocketClient.disconnect();
-  }, [session?.token]);
+    if (status === 'refreshing') {
+      return;
+    }
+    chatSocketClient.connect(session.token);
+  }, [session?.token, status]);
 
   const value = useMemo<ChatRealtimeContextValue>(
     () => ({

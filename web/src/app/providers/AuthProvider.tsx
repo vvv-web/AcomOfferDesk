@@ -1,103 +1,211 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { AuthLink, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
-import { loginWebUser } from '@shared/api/auth/loginWebUser';
-import { setAuthToken, setUnauthorizedHandler } from '@shared/api/client';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import type { AuthLink, AuthSessionResponse, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
+import { exchangeTgSession, loginWebUser, logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
+import { setAuthRuntime, setAuthToken } from '@shared/api/client';
 
-type AuthSession = {
+type AuthStatus = 'bootstrapping' | 'authenticated' | 'anonymous' | 'refreshing';
+type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
+
+export type AuthSession = {
   token: string;
-  roleId: number;
+  tokenType: string;
+  tokenExpiresAt: number;
+  userId: string;
   login: string;
+  roleId: number;
+  status: string;
   availableActions: AuthLink[];
 };
 
 type AuthContextValue = {
+  status: AuthStatus;
   session: AuthSession | null;
   isAuthenticated: boolean;
   login: (payload: LoginWebUserPayload) => Promise<AuthSession>;
+  exchangeTelegramToken: (token: string) => Promise<AuthSession>;
+  refresh: (reason: RefreshReason) => Promise<boolean>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const storageKey = 'order-web:session';
+const IDLE_WINDOW_MS = 30 * 60 * 1000;
 
-const parseSession = (raw: string | null): AuthSession | null => {
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as AuthSession;
-    if (!parsed?.token || typeof parsed.roleId !== 'number' || !parsed.login) {
-      return null;
-    }
-    return {
-      ...parsed,
-      availableActions: Array.isArray(parsed.availableActions) ? parsed.availableActions : []
-    };
-  } catch {
-    return null;
-  }
-};
+const mapSession = (response: AuthSessionResponse): AuthSession => ({
+  token: response.data.access_token,
+  tokenType: response.data.token_type,
+  tokenExpiresAt: response.data.access_token_expires_at,
+  userId: response.data.user_id,
+  login: response.data.login,
+  roleId: response.data.role_id,
+  status: response.data.status,
+  availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
+});
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
-  const [session, setSession] = useState<AuthSession | null>(() => parseSession(localStorage.getItem(storageKey)));
+  const location = useLocation();
+  const [status, setStatus] = useState<AuthStatus>('bootstrapping');
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+  const bootstrapStartedRef = useRef(false);
+  const lastActivityAtRef = useRef<number>(Date.now());
+  const sessionRef = useRef<AuthSession | null>(null);
+  const statusRef = useRef<AuthStatus>('bootstrapping');
 
-  const persistSession = useCallback((nextSession: AuthSession | null) => {
-    if (nextSession) {
-      localStorage.setItem(storageKey, JSON.stringify(nextSession));
-      setAuthToken(nextSession.token);
-    } else {
-      localStorage.removeItem(storageKey);
-      setAuthToken(null);
-    }
+  const applySession = useCallback((nextSession: AuthSession | null, nextStatus: AuthStatus) => {
+    sessionRef.current = nextSession;
+    statusRef.current = nextStatus;
+    setSession(nextSession);
+    setStatus(nextStatus);
+    setAuthToken(nextSession?.token ?? null);
   }, []);
 
-  const logout = useCallback(() => {
-    setSession(null);
-    persistSession(null);
-    navigate('/login', { replace: true });
-  }, [navigate, persistSession]);
+  const trackActivity = useCallback(() => {
+    lastActivityAtRef.current = Date.now();
+  }, []);
 
-  const login = useCallback(
-    async (payload: LoginWebUserPayload) => {
-      const response = await loginWebUser(payload);
-      const nextSession: AuthSession = {
-        token: response.data.access_token,
-        roleId: response.data.role_id,
-        login: payload.login,
-        availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
-      };
-      setSession(nextSession);
-      persistSession(nextSession);
-      return nextSession;
-    },
-    [persistSession]
-  );
-
-  useEffect(() => {
-    if (session?.token) {
-      setAuthToken(session.token);
+  const canAttemptSilentRefresh = useCallback((reason: RefreshReason) => {
+    if (reason === 'bootstrap') {
+      return true;
     }
-  }, [session?.token]);
+    if (refreshPromiseRef.current) {
+      return true;
+    }
+    if (statusRef.current !== 'authenticated') {
+      return false;
+    }
+    return Date.now() - lastActivityAtRef.current < IDLE_WINDOW_MS;
+  }, []);
+
+  const performLogout = useCallback(async (params?: { revokeRemote?: boolean; redirectToLogin?: boolean }) => {
+    const revokeRemote = params?.revokeRemote ?? true;
+    const redirectToLogin = params?.redirectToLogin ?? true;
+
+    applySession(null, 'anonymous');
+
+    if (revokeRemote) {
+      try {
+        await logoutWebSession();
+      } catch {
+        // Logout still succeeds locally if backend cookie cleanup fails.
+      }
+    }
+
+    if (redirectToLogin && location.pathname !== '/login' && location.pathname !== '/auth/login') {
+      navigate('/login', { replace: true });
+    }
+  }, [applySession, location.pathname, navigate]);
+
+  const refresh = useCallback(async (reason: RefreshReason): Promise<boolean> => {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+
+    if (!canAttemptSilentRefresh(reason)) {
+      return false;
+    }
+
+    refreshPromiseRef.current = (async () => {
+      const previousStatus = statusRef.current;
+      if (reason !== 'bootstrap' && previousStatus === 'authenticated') {
+        statusRef.current = 'refreshing';
+        setStatus('refreshing');
+      }
+      try {
+        const response = await refreshWebSession();
+        const nextSession = mapSession(response);
+        trackActivity();
+        applySession(nextSession, 'authenticated');
+        return true;
+      } catch {
+        applySession(null, 'anonymous');
+        return false;
+      } finally {
+        refreshPromiseRef.current = null;
+        if (sessionRef.current && statusRef.current === 'refreshing') {
+          setStatus('authenticated');
+          statusRef.current = 'authenticated';
+        } else if (!sessionRef.current && statusRef.current === 'refreshing') {
+          setStatus('anonymous');
+          statusRef.current = 'anonymous';
+        }
+      }
+    })();
+
+    return refreshPromiseRef.current;
+  }, [applySession, canAttemptSilentRefresh, trackActivity]);
+
+  const login = useCallback(async (payload: LoginWebUserPayload) => {
+    trackActivity();
+    const response = await loginWebUser(payload);
+    const nextSession = mapSession(response);
+    applySession(nextSession, 'authenticated');
+    return nextSession;
+  }, [applySession, trackActivity]);
+
+  const exchangeTelegramToken = useCallback(async (token: string) => {
+    trackActivity();
+    const response = await exchangeTgSession({ token });
+    const nextSession = mapSession(response);
+    applySession(nextSession, 'authenticated');
+    return nextSession;
+  }, [applySession, trackActivity]);
+
+  const logout = useCallback(() => {
+    void performLogout({ revokeRemote: true, redirectToLogin: true });
+  }, [performLogout]);
 
   useEffect(() => {
-    setUnauthorizedHandler(logout);
+    const handler = () => trackActivity();
+    const events: Array<keyof WindowEventMap> = ['mousedown', 'mousemove', 'keydown', 'pointerdown', 'touchstart', 'focus'];
+    events.forEach((eventName) => window.addEventListener(eventName, handler, { passive: true }));
     return () => {
-      setUnauthorizedHandler(null);
+      events.forEach((eventName) => window.removeEventListener(eventName, handler));
     };
-  }, [logout]);
+  }, [trackActivity]);
+
+  useEffect(() => {
+    trackActivity();
+  }, [location.key, trackActivity]);
+
+  useEffect(() => {
+    setAuthRuntime({
+      refresh,
+      canAttemptSilentRefresh,
+      forceLogout: () => {
+        void performLogout({ revokeRemote: false, redirectToLogin: true });
+      }
+    });
+    return () => {
+      setAuthRuntime(null);
+    };
+  }, [canAttemptSilentRefresh, performLogout, refresh]);
+
+  useEffect(() => {
+    if (bootstrapStartedRef.current) {
+      return;
+    }
+    bootstrapStartedRef.current = true;
+    void refresh('bootstrap').then((restored: boolean) => {
+      if (!restored) {
+        applySession(null, 'anonymous');
+      }
+    });
+  }, [applySession, refresh]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
+      status,
       session,
-      isAuthenticated: Boolean(session?.token),
+      isAuthenticated: (status === 'authenticated' || status === 'refreshing') && Boolean(session?.token),
       login,
+      exchangeTelegramToken,
+      refresh,
       logout
     }),
-    [login, logout, session]
+    [exchangeTelegramToken, login, logout, refresh, session, status]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

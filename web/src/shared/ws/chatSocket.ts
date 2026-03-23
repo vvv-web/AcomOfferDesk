@@ -17,7 +17,7 @@ export type ChatRealtimeEnvelope =
   | { type: 'connection.ready'; event_id: string; ts: string; request_id?: string | null; data: { connection_id: string; user_id: string; transport: string } }
   | { type: 'chat.sync'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number; last_message_id: number | null; last_read_message_id: number | null; last_read_at: string | null; is_muted: boolean; is_archived: boolean; resync_required: boolean } }
   | { type: 'chat.unsubscribed'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number } }
-  | { type: 'message.created'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number; message: any } }
+  | { type: 'message.created'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number; message: unknown } }
   | { type: 'message.delivered'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number; user_id: string; message_ids: number[] } }
   | { type: 'message.read'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number; user_id: string; user_full_name?: string | null; message_ids: number[]; last_read_message_id: number | null } }
   | { type: 'typing.start'; event_id: string; ts: string; request_id?: string | null; data: { chat_id: number; user_id: string } }
@@ -45,6 +45,7 @@ const buildSocketUrl = (token: string) => {
 };
 
 const createRequestId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const createEventId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 class ChatSocketClient {
   private socket: WebSocket | null = null;
@@ -179,15 +180,30 @@ class ChatSocketClient {
             void this.sendRequest('chat.subscribe', { chat_id: chatId }).catch(() => undefined);
           }
         }
-        this.eventListeners.forEach((listener) => listener(payload));
+        this.emitEvent(payload);
       } catch {
         // Ignore malformed websocket messages.
       }
     });
 
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', (event) => {
       this.socket = null;
       this.rejectPendingRequests('Соединение с чатом потеряно');
+
+      if (event.code === 4401) {
+        this.setState('idle');
+        this.emitEvent({
+          type: 'error',
+          event_id: createEventId(),
+          ts: new Date().toISOString(),
+          data: {
+            code: 'auth_failed',
+            message: 'Auth failed'
+          }
+        });
+        return;
+      }
+
       if (this.manualDisconnect || !this.token) {
         this.setState('idle');
         return;
@@ -274,6 +290,10 @@ class ChatSocketClient {
   private setState(nextState: RealtimeConnectionState) {
     this.connectionState = nextState;
     this.stateListeners.forEach((listener) => listener(nextState));
+  }
+
+  private emitEvent(event: ChatRealtimeEnvelope) {
+    this.eventListeners.forEach((listener) => listener(event));
   }
 }
 

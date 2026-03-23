@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.links import LinkSet
 
+
 class LoginRequest(BaseModel):
     login: str = Field(..., min_length=3, max_length=128)
     password: str = Field(..., min_length=1, max_length=72)
@@ -14,16 +15,28 @@ class LoginRequest(BaseModel):
         return value
 
 
-class LoginData(BaseModel):
+class AuthSessionData(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    access_token_expires_at: int
+    user_id: str
+    login: str
     role_id: int
+    status: str
 
 
-class LoginResponse(BaseModel):
+class AuthSessionResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    data: LoginData
+    data: AuthSessionData
     links: LinkSet = Field(alias="_links")
+
+
+class TgExchangeRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+
+
+LoginData = AuthSessionData
+LoginResponse = AuthSessionResponse
 
 
 class RegisterUserRequest(BaseModel):

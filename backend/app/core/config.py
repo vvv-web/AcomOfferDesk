@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
+    access_token_ttl_seconds: int = Field(default=300, validation_alias="ACCESS_TOKEN_TTL_SECONDS")
+    refresh_token_idle_ttl_seconds: int = Field(default=1800, validation_alias="REFRESH_TOKEN_IDLE_TTL_SECONDS")
+    refresh_token_max_ttl_seconds: int = Field(default=43200, validation_alias="REFRESH_TOKEN_MAX_TTL_SECONDS")
+    refresh_cookie_name: str = Field(default="acom_refresh_token", validation_alias="REFRESH_COOKIE_NAME")
+    refresh_cookie_secure: bool = Field(default=False, validation_alias="REFRESH_COOKIE_SECURE")
+    refresh_cookie_samesite: str = Field(default="lax", validation_alias="REFRESH_COOKIE_SAMESITE")
+    refresh_cookie_domain: str | None = Field(default=None, validation_alias="REFRESH_COOKIE_DOMAIN")
+    refresh_token_secret: str | None = Field(default=None, validation_alias="REFRESH_TOKEN_SECRET")
     superadmin_role_id: int = 1
     admin_role_id: int = 2
     contractor_role_id: int = 3
@@ -81,6 +89,7 @@ class Settings(BaseSettings):
         validation_alias="REQUEST_MAILBOX_POLL_INTERVAL_SECONDS",
     )
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
+    tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
     allowed_creation_role_ids: list[int] = Field(default_factory=lambda: [2, 3, 4, 5, 6, 7])
     cors_allow_origins: list[str] = Field(
@@ -108,6 +117,11 @@ class Settings(BaseSettings):
         self.lead_economist_role_id = 5
         self.economist_role_id = 6
         self.operator_role_id = 7
+        self.refresh_cookie_samesite = self.refresh_cookie_samesite.lower().strip() or "lax"
+        if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
+            self.refresh_cookie_samesite = "lax"
+        if not self.refresh_token_secret:
+            self.refresh_token_secret = self.jwt_secret
         return self
 
     @property
@@ -116,6 +130,10 @@ class Settings(BaseSettings):
         if self.web_base_url and self.web_base_url not in origins:
             origins.append(self.web_base_url)
         return origins
+
+    @property
+    def resolved_refresh_token_secret(self) -> str:
+        return self.refresh_token_secret or self.jwt_secret
 
 
 settings = Settings()

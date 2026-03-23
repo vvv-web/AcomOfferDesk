@@ -1,117 +1,36 @@
-type UnauthorizedHandler = () => void;
+type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
+type AuthRuntime = {
+  refresh: (reason: RefreshReason) => Promise<boolean>;
+  canAttemptSilentRefresh: (reason: Exclude<RefreshReason, 'bootstrap'>) => boolean;
+  forceLogout: () => void;
+};
 
 let authToken: string | null = null;
-let unauthorizedHandler: UnauthorizedHandler | null = null;
+let authRuntime: AuthRuntime | null = null;
 
 const ERROR_TRANSLATIONS: Record<string, string> = {
   'User is not active': 'Пользователь неактивен',
   'User not found': 'Пользователь не найден',
-  'TG user not found': 'Telegram-пользователь не найден',
-  'Contractor not found': 'Контрагент не найден',
-  'Owner user not found': 'Ответственный пользователь не найден',
-
-  'User already has unavailability period in this time range': 'На этот период уже установлен нерабочий статус',
-  'Owner user is unavailable': 'Нельзя назначить ответственного: сотрудник в нерабочем статусе',
-
   'Invalid credentials': 'Неверный логин или пароль',
-  'Current password is invalid': 'Текущий пароль указан неверно',
   'Missing credentials': 'Отсутствуют учетные данные',
   'Token expired': 'Срок действия токена истек',
   'Invalid token': 'Некорректный токен',
   'Invalid token payload': 'Некорректные данные токена',
   'Link expired': 'Срок действия ссылки истек',
-
   'Access denied': 'Доступ запрещен',
-  'Insufficient permissions to access own profile': 'Недостаточно прав для доступа к своему профилю',
-  'Insufficient permissions for request management': 'Недостаточно прав для управления заявками',
-  'Insufficient permissions for open requests': 'Недостаточно прав для просмотра открытых заявок',
-  'Insufficient permissions to view chat': 'Недостаточно прав для просмотра чата',
-  'Insufficient permissions to send chat message': 'Недостаточно прав для отправки сообщения в чат',
-  'Insufficient permissions for file download': 'Недостаточно прав для скачивания файла',
-  'Only admin, superadmin and lead economist can manage economist users':
-    'Только администратор, суперадмин и ведущий экономист могут управлять экономистами',
-  'Only admin, superadmin, lead economist and project manager can manage economist users':
-    'Только администратор, суперадмин, ведущий экономист и руководитель проекта могут управлять экономистами',
-  'Only contractor can manage company contacts': 'Только контрагент может управлять данными компании',
-  'Only contractor can create offers': 'Только контрагент может создавать офферы',
-  'Only contractor can view offered requests': 'Только контрагент может просматривать свои заявки',
-  'Lead economist and project manager can view only economist users':
-    'Ведущий экономист и руководитель проекта могут просматривать только экономистов',
-  'Lead economist can create only economist users': 'Ведущий экономист может создавать только экономистов',
-
-  'Lead economist and project manager can update status only for economist users':
-    'Ведущий экономист и руководитель проекта могут менять статус только у экономистов',
-  'Lead economist and project manager can create only economist users':
-    'Ведущий экономист и руководитель проекта могут создавать только экономистов',
-  'Lead economist can view only economist users': 'Ведущий экономист может просматривать только экономистов',
-  'Lead economist can update status only for economist users':
-    'Ведущий экономист может менять статус только у экономистов',
-  "Owner must be from current user's subordinates": "Ответственного можно назначать только из собственных подчиненных",
-  'Admin can create only economist and operator users': 'Администратор может создавать только экономистов и операторов',
-  'Superadmin cannot create superadmin users': 'Суперадмин не может создавать суперадминов',
-  'Only admin and superadmin can update user roles': 'Только администратор и суперадмин могут изменять роли пользователей',
-  'Only admin and economist roles are allowed for update': 'Изменение возможно только на роли администратора и экономиста',
-  'Economist user must have a lead economist manager': 'Для экономиста необходимо указать руководителя с ролью ведущего экономиста',
-  'Economist user must have an economist or lead economist manager': 'Для экономиста необходимо указать руководителя с ролью экономиста или ведущего экономиста',
-  'Economist user can have only lead economist manager': 'Руководителем экономиста может быть только ведущий экономист',
-  'Economist user can have only economist or lead economist manager': 'Руководителем экономиста может быть только экономист или ведущий экономист',
-  'Lead economist user must have a project manager': 'Для ведущего экономиста необходимо указать руководителя проекта',
-  'Lead economist user can have only project manager': 'Руководителем ведущего экономиста может быть только руководитель проекта',
-  'Parent user not found': 'Руководитель не найден',
-  'Superadmin role cannot be changed': 'Роль суперадмина нельзя изменить',
-  'Economist can edit only own requests': 'Экономист может редактировать только свои заявки',
-  'Only lead economist and superadmin can change request owner':
-    'Только ведущий экономист и суперадмин могут менять ответственного по заявке',
-  'Only lead economist, project manager and superadmin can change request owner':
-    'Только ведущий экономист, руководитель проекта и суперадмин могут менять ответственного по заявке',
-  'Lead economist can change owner only for own or unassigned requests':
-    'Ведущий экономист может переназначать только свои заявки или заявки без ответственного',
-  'Contractor can view only own profile': 'Контрагент может просматривать только свой профиль',
-  'Contractor can access only own offers': 'Контрагент может работать только со своими офферами',
-
   'Request not found': 'Заявка не найдена',
-  'Open request not found': 'Открытая заявка не найдена',
-  'Request offer stats not found': 'Статистика офферов по заявке не найдена',
   'Offer not found': 'Оффер не найден',
   'Chat not found': 'Чат не найден',
   'File not found': 'Файл не найден',
-  'File content not found': 'Содержимое файла не найдено',
-  'File is not attached to request': 'Файл не прикреплен к заявке',
-  'File is not attached to offer': 'Файл не прикреплен к офферу',
-
-  'Role is not allowed for creation': 'Создание пользователя с этой ролью запрещено',
-  'User already exists': 'Пользователь уже существует',
-  'TG user already linked': 'Этот Telegram уже привязан к другому пользователю',
-  'User has no linked Telegram account': 'У пользователя нет привязанного Telegram-аккаунта',
-  'Economist requires full_name and phone': 'Для экономиста обязательны ФИО и телефон',
-  'Company contacts not found': 'Контакты компании не найдены',
-
-  'Unsupported users.status value': 'Неподдерживаемое значение статуса пользователя',
-  'Unsupported tg_users.status value': 'Неподдерживаемое значение статуса Telegram',
-  'Unsupported request status': 'Неподдерживаемый статус заявки',
-  'Unsupported offer status': 'Неподдерживаемый статус оффера',
-
-  'Deadline cannot be in the past': 'Дедлайн не может быть в прошлом',
-  'At least one file is required': 'Нужно прикрепить хотя бы один файл',
-  'Invalid additional email': 'Укажите корректный дополнительный e-mail',
-  'TG_BOT_PUBLIC_URL is not configured': 'Не настроена публичная ссылка на Telegram-бота',
-  'Offer for this request already exists': 'Оффер по этой заявке уже существует',
-  'Cannot edit files for finalized offer': 'Нельзя редактировать файлы у завершенного оффера',
   'Message text cannot be empty': 'Текст сообщения не может быть пустым',
   'Too many attachments': 'Слишком много вложений',
   'Attachments total size exceeded': 'Превышен общий размер вложений',
-
-  'File name is required': 'Необходимо указать имя файла',
+  'File too large': 'Файл слишком большой',
   'Unsafe file name': 'Недопустимое имя файла',
   'Forbidden file type': 'Тип файла запрещен',
   'Unsupported file extension': 'Неподдерживаемое расширение файла',
   'File cannot be empty': 'Файл не может быть пустым',
-  'File too large': 'Файл слишком большой',
   'File content does not match extension': 'Содержимое файла не соответствует расширению',
-
-  'TG links are not configured': 'Telegram-ссылки не настроены',
-  'Public backend URL is not configured': 'Публичный URL backend не настроен',
-
   Forbidden: 'Доступ запрещен'
 };
 
@@ -136,7 +55,11 @@ const VALIDATION_TRANSLATIONS: Record<string, string> = {
   'Input should be a valid integer': 'Значение должно быть целым числом',
   'Input should be greater than or equal to 1': 'Значение должно быть больше или равно 1',
   'String should have at least 1 character': 'Минимум 1 символ',
+  'String should have at least 3 characters': 'Минимум 3 символа',
+  'String should have at least 6 characters': 'Минимум 6 символов',
   'String should have at least 8 characters': 'Минимум 8 символов',
+  'String should have at most 72 characters': 'Максимум 72 символа',
+  'String should have at most 128 characters': 'Максимум 128 символов',
   'String should have at most 255 characters': 'Максимум 255 символов'
 };
 
@@ -145,17 +68,6 @@ const translateText = (message: string | null | undefined): string | null => {
   if (!normalized) {
     return null;
   }
-
-  if (normalized.startsWith('Owner user is unavailable in selected period ')) {
-    const period = normalized.replace('Owner user is unavailable in selected period ', '').trim();
-    return `Нельзя назначить ответственного: сотрудник в нерабочем статусе (${period})`;
-  }
-
-  if (normalized.startsWith('User already has unavailability period in this time range ')) {
-    const period = normalized.replace('User already has unavailability period in this time range ', '').trim();
-    return `На этот период уже установлен нерабочий статус (${period})`;
-  }
-
   return ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? normalized;
 };
 
@@ -163,13 +75,12 @@ const humanizeLoc = (loc: unknown): string => {
   if (!Array.isArray(loc)) {
     return 'Поле';
   }
+
   const parts = loc
     .filter((item) => typeof item === 'string' && item !== 'body' && item !== 'query' && item !== 'path')
     .map((item) => String(item));
-  if (!parts.length) {
-    return 'Поле';
-  }
-  return parts.join('.');
+
+  return parts.length ? parts.join('.') : 'Поле';
 };
 
 const extractDetailMessage = (detail: unknown): string | null => {
@@ -204,17 +115,12 @@ const extractDetailMessage = (detail: unknown): string | null => {
   return null;
 };
 
-const translateErrorMessage = (message: string | null | undefined, fallback: string): string => {
-  return translateText(message) ?? fallback;
-};
-
-
 export const setAuthToken = (token: string | null) => {
   authToken = token;
 };
 
-export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null) => {
-  unauthorizedHandler = handler;
+export const setAuthRuntime = (runtime: AuthRuntime | null) => {
+  authRuntime = runtime;
 };
 
 const getErrorMessage = async (response: Response, fallback: string) => {
@@ -231,10 +137,30 @@ const getErrorMessage = async (response: Response, fallback: string) => {
     return statusFallback;
   }
 
-  return translateErrorMessage(null, fallback);
+  return fallback;
 };
 
-export const apiFetch = async (url: string, init: RequestInit = {}, withAuth = true) => {
+const skipAutoRefresh = (url: string) => (
+  url.startsWith('/api/v1/auth/login')
+  || url.startsWith('/api/v1/auth/refresh')
+  || url.startsWith('/api/v1/auth/logout')
+  || url.startsWith('/api/v1/auth/tg/exchange')
+);
+
+const performFetch = async (url: string, init: RequestInit, headers: Headers): Promise<Response> => {
+  return await fetch(url, {
+    ...init,
+    credentials: init.credentials ?? 'include',
+    headers
+  });
+};
+
+export const apiFetch = async (
+  url: string,
+  init: RequestInit = {},
+  withAuth = true,
+  allowRetry = true
+): Promise<Response> => {
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
@@ -248,16 +174,24 @@ export const apiFetch = async (url: string, init: RequestInit = {}, withAuth = t
 
   let response: Response;
   try {
-    response = await fetch(url, {
-      ...init,
-      headers
-    });
+    response = await performFetch(url, init, headers);
   } catch {
     throw new Error('Сервер временно недоступен. Попробуйте позже');
   }
 
-  if (response.status === 401 && unauthorizedHandler) {
-    unauthorizedHandler();
+  if (
+    response.status === 401
+    && allowRetry
+    && withAuth
+    && !skipAutoRefresh(url)
+    && authRuntime
+    && authRuntime.canAttemptSilentRefresh('http_401')
+  ) {
+    const refreshed = await authRuntime.refresh('http_401');
+    if (refreshed) {
+      return await apiFetch(url, init, withAuth, false);
+    }
+    authRuntime.forceLogout();
   }
 
   return response;
