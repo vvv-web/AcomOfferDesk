@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,3 +31,10 @@ class FileRepository:
         stmt = select(File).where(File.id == file_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_by_ids(self, *, file_ids: Sequence[int]) -> list[File]:
+        if not file_ids:
+            return []
+        stmt = select(File).where(File.id.in_(file_ids)).order_by(File.id.asc())
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())

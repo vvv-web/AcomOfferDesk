@@ -28,14 +28,22 @@ class ContractorInfoResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
+class OfferMessageReadBySchema(BaseModel):
+    user_id: str
+    user_full_name: str | None
+    read_at: datetime
+
+
 class OfferMessageSchema(BaseModel):
     id: int
     user_id: str
     user_full_name: str | None
     text: str
     type: str
+    status: str
     created_at: datetime
     updated_at: datetime
+    read_by: list[OfferMessageReadBySchema] = Field(default_factory=list)
     attachments: list[RequestFileSchema] = Field(default_factory=list)
 
 
@@ -166,6 +174,7 @@ class OfferMessageCreateResponse(BaseModel):
 
 class OfferMessageStatusUpdatePayload(BaseModel):
     message_ids: list[int] = Field(default_factory=list)
+    up_to_message_id: int | None = None
 
 
 class OfferMessageStatusUpdateResponseData(BaseModel):
@@ -177,6 +186,22 @@ class OfferMessageStatusUpdateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: OfferMessageStatusUpdateResponseData
+    links: LinkSet = Field(alias="_links")
+
+
+class OfferMessageFileUploadResponseData(BaseModel):
+    offer_id: int
+    file_id: int
+    name: str
+    path: str
+    upload_token: str
+    download_url: str
+
+
+class OfferMessageFileUploadResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: OfferMessageFileUploadResponseData
     links: LinkSet = Field(alias="_links")
 
 

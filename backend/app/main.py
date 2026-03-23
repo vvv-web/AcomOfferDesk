@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1 import router as v1_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
+from app.realtime.runtime import ChatRealtimeRuntime, set_chat_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ async def lifespan(_: FastAPI):
     stop_event = asyncio.Event()
     leader_lock = _PollingLeaderLock(Path('/tmp/acom_offerdesk_reply_polling.lock'))
     is_leader = leader_lock.try_acquire()
+    realtime_runtime = ChatRealtimeRuntime()
+    set_chat_runtime(realtime_runtime)
+    await realtime_runtime.start()
 
     task: asyncio.Task[None] | None = None
     if is_leader:
@@ -86,6 +90,7 @@ async def lifespan(_: FastAPI):
         stop_event.set()
         if task is not None:
             await task
+        await realtime_runtime.stop()
         if is_leader:
             leader_lock.release()
 

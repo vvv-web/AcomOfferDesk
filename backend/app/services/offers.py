@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.core.config import settings
-from app.domain.exceptions import Conflict, NotFound
+from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPolicy
+from app.repositories.chats import ChatRepository, ChatState
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.files import FileRepository
-from app.repositories.messages import MessageRepository, strip_email_message_marker
+from app.repositories.messages import MessageReceiptRow, MessageRepository, strip_email_message_marker
 from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
@@ -16,13 +18,28 @@ from app.repositories.users import UserRepository
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
+DEFAULT_PARTNER_CARD_PATH = "uploads/РљРђР РўРђ_РџРђР РўРќР•Р Рђ_01_04_2023_РђРљРўРЈРђР›Р¬РќРђРЇ_1_4_2.pdf"
+DEFAULT_PARTNER_CARD_NAME = "РљРђР РўРђ_РџРђР РўРќР•Р Рђ_01_04_2023_РђРљРўРЈРђР›Р¬РќРђРЇ_1_4_2.pdf"
+EDITABLE_OFFER_STATUSES = {"submitted", "accepted", "rejected", "deleted"}
+
 DEFAULT_PARTNER_CARD_PATH = "uploads/КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
 DEFAULT_PARTNER_CARD_NAME = "КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
-EDITABLE_OFFER_STATUSES = {"submitted", "accepted", "rejected", "deleted"}
 
 
 @dataclass(frozen=True)
 class AttachmentFileInput:
+    path: str
+    name: str
+
+
+@dataclass(frozen=True)
+class ExistingAttachmentFileInput:
+    file_id: int
+
+
+@dataclass(frozen=True)
+class UploadedMessageAttachment:
+    file_id: int
     path: str
     name: str
 
@@ -103,9 +120,38 @@ class OfferMessageItem:
     user_full_name: str | None
     text: str
     type: str
+    status: str
     created_at: datetime
     updated_at: datetime
+    read_by: list["OfferMessageReader"] = field(default_factory=list)
     attachments: list[RequestFileItem] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class OfferMessageReader:
+    user_id: str
+    user_full_name: str | None
+    read_at: datetime
+
+
+@dataclass(frozen=True)
+class OfferMessageMutationResult:
+    offer_id: int
+    chat_id: int
+    request_id: int
+    message_id: int
+
+
+@dataclass(frozen=True)
+class OfferMessageAckResult:
+    offer_id: int
+    chat_id: int
+    updated_message_ids: list[int]
+    last_read_message_id: int | None = None
+
+    @property
+    def updated_count(self) -> int:
+        return len(self.updated_message_ids)
 
 
 class OfferService:
@@ -113,6 +159,7 @@ class OfferService:
         self,
         requests: RequestRepository,
         offers: OfferRepository,
+        chats: ChatRepository,
         files: FileRepository,
         messages: MessageRepository,
         profiles: ProfileRepository,
@@ -121,6 +168,7 @@ class OfferService:
     ):
         self._requests = requests
         self._offers = offers
+        self._chats = chats
         self._files = files
         self._messages = messages
         self._profiles = profiles
@@ -159,6 +207,33 @@ class OfferService:
         if current_user is not None:
             await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=request.id)
         return offer, request
+
+    async def _require_chat_context(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_id: int,
+        require_send: bool = False,
+    ):
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        if require_send:
+            OfferPolicy.can_send_chat_message(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        else:
+            OfferPolicy.can_view_chat(current_user, offer_owner_user_id=offer.id_user)
+
+        chat = await self._offers.get_chat(offer_id=offer.id)
+        if chat is None:
+            raise NotFound("Chat not found")
+
+        chat_state = await self._chats.get_chat_state_for_user(chat_id=chat.id, user_id=current_user.user_id)
+        if chat_state is None:
+            raise Forbidden("Insufficient permissions to view chat")
+
+        return offer, request, chat, chat_state
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
         UserPolicy.can_create_offer(current_user)
@@ -284,7 +359,7 @@ class OfferService:
                 note=company.note if company else None,
             ),
         )
-    
+
     async def get_contractor_info(self, *, current_user: CurrentUser, contractor_user_id: str) -> ContractorInfo:
         OfferPolicy.can_view_contractor_info(current_user, contractor_user_id=contractor_user_id)
 
@@ -334,7 +409,7 @@ class OfferService:
         deleted = await self._files.delete_by_id(file_id=file_id)
         if not deleted:
             raise NotFound("File not found")
-        
+
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
@@ -364,12 +439,7 @@ class OfferService:
         return offer.status
 
     async def list_messages(self, *, current_user: CurrentUser, offer_id: int) -> list[OfferMessageItem]:
-        offer, _ = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        OfferPolicy.can_view_chat(current_user, offer_owner_user_id=offer.id_user)
-
-        chat = await self._offers.get_chat(offer_id=offer.id)
-        if chat is None:
-            raise NotFound("Chat not found")
+        _, _, chat, _ = await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=False)
 
         messages = await self._messages.list_by_chat(chat_id=chat.id)
         message_ids = [item.id for item in messages]
@@ -382,6 +452,20 @@ class OfferService:
         message_user_ids = list({item.id_user for item in messages})
         profiles = await self._profiles.get_by_ids(message_user_ids)
         full_name_by_user_id = {profile.id: profile.full_name for profile in profiles}
+        active_participant_user_ids = await self._chats.list_active_participant_user_ids(chat_id=chat.id)
+        receipts = await self._messages.list_receipts_by_message_ids(
+            message_ids=message_ids,
+            recipient_user_ids=active_participant_user_ids,
+        )
+        receipts_by_message_id: dict[int, dict[str, MessageReceiptRow]] = {}
+        for receipt in receipts:
+            receipts_by_message_id.setdefault(receipt.message_id, {})[receipt.user_id] = receipt
+
+        receipt_user_ids = list({receipt.user_id for receipt in receipts})
+        if receipt_user_ids:
+            receipt_profiles = await self._profiles.get_by_ids(receipt_user_ids)
+            for profile in receipt_profiles:
+                full_name_by_user_id.setdefault(profile.id, profile.full_name)
 
         return [
             OfferMessageItem(
@@ -390,18 +474,38 @@ class OfferService:
                 user_full_name=full_name_by_user_id.get(item.id_user),
                 text=strip_email_message_marker(item.text),
                 type=item.type,
+                status=self._resolve_message_status(
+                    message_user_id=item.id_user,
+                    current_user_id=current_user.user_id,
+                    active_participant_user_ids=active_participant_user_ids,
+                    receipts_by_user=receipts_by_message_id.get(item.id, {}),
+                ),
                 created_at=item.created_at,
                 updated_at=item.updated_at,
+                read_by=self._build_read_by(
+                    message_user_id=item.id_user,
+                    current_user_id=current_user.user_id,
+                    active_participant_user_ids=active_participant_user_ids,
+                    receipts_by_user=receipts_by_message_id.get(item.id, {}),
+                    full_name_by_user_id=full_name_by_user_id,
+                ),
                 attachments=files_map.get(item.id, []),
             )
             for item in messages
         ]
 
-    def _can_acknowledge_chat_messages(self, *, current_user: CurrentUser, request_owner_user_id: str) -> bool:
-        if current_user.role_id == settings.contractor_role_id:
-            return True
-        return current_user.user_id == request_owner_user_id
-    
+    async def create_message_upload(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_id: int,
+        path: str,
+        name: str,
+    ) -> UploadedMessageAttachment:
+        await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=True)
+        db_file = await self._files.create(path=path, name=name)
+        return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
+
     async def create_message(
         self,
         *,
@@ -409,28 +513,37 @@ class OfferService:
         offer_id: int,
         text: str,
         attachments: list[AttachmentFileInput] | None = None,
-    ) -> int:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        OfferPolicy.can_send_chat_message(
-            current_user,
-            offer_owner_user_id=offer.id_user,
-            request_owner_user_id=request.id_user,
+        existing_file_refs: list[ExistingAttachmentFileInput] | None = None,
+    ) -> OfferMessageMutationResult:
+        offer, request, chat, _ = await self._require_chat_context(
+            current_user=current_user,
+            offer_id=offer_id,
+            require_send=True,
         )
 
-        if not text.strip():
+        normalized_text = text.strip()
+        new_attachments = attachments or []
+        stored_file_refs = existing_file_refs or []
+        if not normalized_text and not new_attachments and not stored_file_refs:
             raise Conflict("Message text cannot be empty")
 
-        chat = await self._offers.get_chat(offer_id=offer.id)
-        if chat is None:
-            raise NotFound("Chat not found")
-
+        message_type = self._resolve_message_type(
+            has_text=bool(normalized_text),
+            has_attachments=bool(new_attachments or stored_file_refs),
+        )
         message = await self._messages.create(
             chat_id=chat.id,
             user_id=current_user.user_id,
-            text=text.strip(),
+            text=normalized_text,
+            message_type=message_type,
         )
-        for attachment in attachments or []:
+        for attachment in new_attachments:
             db_file = await self._files.create(path=attachment.path, name=attachment.name)
+            await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
+        for file_ref in stored_file_refs:
+            db_file = await self._files.get_by_id(file_ref.file_id)
+            if db_file is None:
+                raise NotFound("File not found")
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
 
         if current_user.user_id != offer.id_user:
@@ -441,58 +554,175 @@ class OfferService:
             if tg_id is not None:
                 await notify_new_message(tg_id=tg_id, request_id=request.id)
 
-        return message.id
-    
-    async def mark_messages_received(self, *, current_user: CurrentUser, offer_id: int, message_ids: list[int]) -> int:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        OfferPolicy.can_send_chat_message(
-            current_user,
-            offer_owner_user_id=offer.id_user,
-            request_owner_user_id=request.id_user,
+        return OfferMessageMutationResult(
+            offer_id=offer.id,
+            chat_id=chat.id,
+            request_id=request.id,
+            message_id=message.id,
         )
 
+    async def mark_messages_received(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_id: int,
+        message_ids: list[int] | None = None,
+        up_to_message_id: int | None = None,
+    ) -> OfferMessageAckResult:
+        _, request, chat, _ = await self._require_chat_context(
+            current_user=current_user,
+            offer_id=offer_id,
+            require_send=True,
+        )
         if not self._can_acknowledge_chat_messages(
             current_user=current_user,
             request_owner_user_id=request.id_user,
         ):
-            return 0
+            return OfferMessageAckResult(offer_id=offer_id, chat_id=chat.id, updated_message_ids=[])
 
-        chat = await self._offers.get_chat(offer_id=offer.id)
-        if chat is None:
-            raise NotFound("Chat not found")
-
-        return await self._messages.update_status_for_recipient(
+        updated_message_ids = await self._messages.mark_delivered(
             chat_id=chat.id,
+            recipient_user_id=current_user.user_id,
             message_ids=message_ids,
-            recipient_user_id=current_user.user_id,
-            from_status="send",
-            to_status="received",
+            up_to_message_id=up_to_message_id,
+        )
+        return OfferMessageAckResult(
+            offer_id=offer_id,
+            chat_id=chat.id,
+            updated_message_ids=updated_message_ids,
         )
 
-    async def mark_messages_read(self, *, current_user: CurrentUser, offer_id: int, message_ids: list[int]) -> int:
-        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        OfferPolicy.can_send_chat_message(
-            current_user,
-            offer_owner_user_id=offer.id_user,
-            request_owner_user_id=request.id_user,
+    async def mark_messages_read(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_id: int,
+        message_ids: list[int] | None = None,
+        up_to_message_id: int | None = None,
+    ) -> OfferMessageAckResult:
+        _, request, chat, _ = await self._require_chat_context(
+            current_user=current_user,
+            offer_id=offer_id,
+            require_send=True,
         )
-
         if not self._can_acknowledge_chat_messages(
             current_user=current_user,
             request_owner_user_id=request.id_user,
         ):
-            return 0
+            return OfferMessageAckResult(offer_id=offer_id, chat_id=chat.id, updated_message_ids=[])
 
-        chat = await self._offers.get_chat(offer_id=offer.id)
-        if chat is None:
-            raise NotFound("Chat not found")
-
-        ids: list[int] | None = message_ids or None
-        
-        return await self._messages.update_status_for_recipient(
+        updated_message_ids = await self._messages.mark_read(
             chat_id=chat.id,
-            message_ids=ids,
             recipient_user_id=current_user.user_id,
-            from_status="received",
-            to_status="read",
+            message_ids=message_ids,
+            up_to_message_id=up_to_message_id,
         )
+
+        last_read_message_id = await self._chats.get_message_read_boundary(
+            chat_id=chat.id,
+            user_id=current_user.user_id,
+            up_to_message_id=up_to_message_id,
+            message_ids=updated_message_ids,
+        )
+        if last_read_message_id is not None:
+            await self._chats.advance_last_read(
+                chat_id=chat.id,
+                user_id=current_user.user_id,
+                message_id=last_read_message_id,
+            )
+
+        return OfferMessageAckResult(
+            offer_id=offer_id,
+            chat_id=chat.id,
+            updated_message_ids=updated_message_ids,
+            last_read_message_id=last_read_message_id,
+        )
+
+    async def get_chat_state(self, *, current_user: CurrentUser, offer_id: int) -> ChatState:
+        _, _, _, chat_state = await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=False)
+        return chat_state
+
+    async def build_message_item(self, *, current_user: CurrentUser, offer_id: int, message_id: int) -> OfferMessageItem:
+        items = await self.list_messages(current_user=current_user, offer_id=offer_id)
+        for item in items:
+            if item.id == message_id:
+                return item
+        raise NotFound("Message not found")
+
+    def _can_acknowledge_chat_messages(self, *, current_user: CurrentUser, request_owner_user_id: str) -> bool:
+        if current_user.role_id == settings.contractor_role_id:
+            return True
+        return current_user.user_id == request_owner_user_id
+
+    def _resolve_message_type(self, *, has_text: bool, has_attachments: bool) -> str:
+        if has_text and has_attachments:
+            return "mixed"
+        if has_attachments:
+            return "file"
+        return "text"
+
+    def _resolve_message_status(
+        self,
+        *,
+        message_user_id: str,
+        current_user_id: str,
+        active_participant_user_ids: Sequence[str],
+        receipts_by_user: dict[str, MessageReceiptRow],
+    ) -> str:
+        if message_user_id != current_user_id:
+            current_user_receipt = receipts_by_user.get(current_user_id)
+            if current_user_receipt is None:
+                return "send"
+            if current_user_receipt.read_at is not None:
+                return "read"
+            if current_user_receipt.delivered_at is not None:
+                return "received"
+            return "send"
+
+        recipient_ids = [user_id for user_id in active_participant_user_ids if user_id != current_user_id]
+        if not recipient_ids:
+            return "read"
+        if any(
+            receipts_by_user.get(user_id) and receipts_by_user[user_id].read_at is not None
+            for user_id in recipient_ids
+        ):
+            return "read"
+        if any(
+            receipts_by_user.get(user_id) and receipts_by_user[user_id].delivered_at is not None
+            for user_id in recipient_ids
+        ):
+            return "received"
+        return "send"
+
+    def _build_read_by(
+        self,
+        *,
+        message_user_id: str,
+        current_user_id: str,
+        active_participant_user_ids: Sequence[str],
+        receipts_by_user: dict[str, MessageReceiptRow],
+        full_name_by_user_id: dict[str, str | None],
+    ) -> list[OfferMessageReader]:
+        if message_user_id != current_user_id:
+            return []
+
+        readers: list[OfferMessageReader] = []
+        for user_id in active_participant_user_ids:
+            if user_id == current_user_id:
+                continue
+            receipt = receipts_by_user.get(user_id)
+            if receipt is None or receipt.read_at is None:
+                continue
+            read_at = receipt.read_at
+            if not isinstance(read_at, datetime):
+                continue
+            readers.append(
+                OfferMessageReader(
+                    user_id=user_id,
+                    user_full_name=full_name_by_user_id.get(user_id),
+                    read_at=read_at,
+                )
+            )
+
+        readers.sort(key=lambda item: item.read_at)
+        return readers

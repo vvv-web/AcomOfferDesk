@@ -21,7 +21,9 @@ from app.schemas.offers import (
     OfferFileMutationResponse,
     OfferMessageCreatePayload,
     OfferMessageCreateResponse,
+    OfferMessageFileUploadResponse,
     OfferMessageListData,
+    OfferMessageReadBySchema,
     OfferMessageListResponse,
     OfferMessageSchema,
     OfferMessageStatusUpdatePayload,
@@ -31,7 +33,10 @@ from app.schemas.offers import (
     OfferWorkspaceResponse,
 )
 from app.schemas.requests import RequestFileSchema
-from app.services.offers import AttachmentFileInput, OfferService
+from app.realtime.contracts import OutboundEnvelope
+from app.realtime.runtime import get_chat_runtime
+from app.services.chat_realtime import ChatRealtimeService, build_offer_service
+from app.services.offers import AttachmentFileInput
 
 router = APIRouter()
 
@@ -202,6 +207,7 @@ def _offer_workspace_actions(
         actions.extend(
             [
                 Link(href=f"/api/v1/offers/{offer_id}/messages", method="POST"),
+                Link(href=f"/api/v1/offers/{offer_id}/messages/files", method="POST"),
                 Link(href=f"/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
             ]
         )
@@ -272,7 +278,7 @@ async def get_contractor_info(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorInfoResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         contractor = await service.get_contractor_info(current_user=current_user, contractor_user_id=id_user)
 
     return ContractorInfoResponse(
@@ -306,7 +312,7 @@ async def get_contractor_request_view(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorRequestViewResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         item = await service.get_request_view(current_user=current_user, request_id=request_id)
 
     return ContractorRequestViewResponse(
@@ -364,7 +370,7 @@ async def create_empty_offer(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferCreateResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         offer_id = await service.create_empty_offer(current_user=current_user, request_id=request_id)
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
@@ -384,7 +390,7 @@ async def get_offer_workspace(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferWorkspaceResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         item = await service.get_workspace(current_user=current_user, offer_id=offer_id)
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
@@ -482,7 +488,7 @@ async def update_offer_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferStatusMutationResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         status = await service.update_status(current_user=current_user, offer_id=offer_id, status=payload.status)
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
@@ -505,7 +511,7 @@ async def add_offer_file(
     stored_path, safe_name, _ = await _validate_and_store_upload(file)
 
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         file_id = await service.add_file(
             current_user=current_user,
             offer_id=offer_id,
@@ -532,7 +538,7 @@ async def delete_offer_file(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferFileMutationResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         await service.remove_file(current_user=current_user, offer_id=offer_id, file_id=file_id)
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
@@ -552,7 +558,7 @@ async def list_offer_messages(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferMessageListResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
+        service = build_offer_service(uow)
         items = await service.list_messages(current_user=current_user, offer_id=offer_id)
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
@@ -566,8 +572,17 @@ async def list_offer_messages(
                     user_full_name=item.user_full_name,
                     text=item.text,
                     type=item.type,
+                    status=item.status,
                     created_at=item.created_at,
                     updated_at=item.updated_at,
+                    read_by=[
+                        OfferMessageReadBySchema(
+                            user_id=reader.user_id,
+                            user_full_name=reader.user_full_name,
+                            read_at=reader.read_at,
+                        )
+                        for reader in item.read_by
+                    ],
                     attachments=[
                         RequestFileSchema(
                             id=f.id,
@@ -595,15 +610,55 @@ async def create_offer_message(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferMessageCreateResponse:
+    realtime_service = ChatRealtimeService()
+    result, message_payload = await realtime_service.create_message(
+        current_user=current_user,
+        offer_id=offer_id,
+        text=payload.text,
+    )
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
-        message_id = await service.create_message(current_user=current_user, offer_id=offer_id, text=payload.text)
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
+    await get_chat_runtime().publish_chat_event(
+        chat_id=result.chat_id,
+        event=OutboundEnvelope(
+            type="message.created",
+            data=message_payload,
+        ),
+    )
+
     return OfferMessageCreateResponse(
-        data={"offer_id": offer_id, "message_id": message_id},
+        data={"offer_id": offer_id, "message_id": result.message_id},
         _links=LinkSet(
             self=Link(href=f"/api/v1/offers/{offer_id}/messages", method="GET"),
+            available_actions=actions,
+        ),
+    )
+
+
+@router.post("/offers/{offer_id}/messages/files", response_model=OfferMessageFileUploadResponse)
+async def upload_offer_message_file(
+    offer_id: int = PathParam(..., ge=1),
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> OfferMessageFileUploadResponse:
+    stored_path, safe_name, _ = await _validate_and_store_upload(file)
+    realtime_service = ChatRealtimeService()
+    uploaded = await realtime_service.upload_message_file(
+        current_user=current_user,
+        offer_id=offer_id,
+        path=stored_path,
+        name=safe_name,
+    )
+
+    async with uow:
+        actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
+
+    return OfferMessageFileUploadResponse(
+        data=uploaded,
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/offers/{offer_id}/messages/files", method="POST"),
             available_actions=actions,
         ),
     )
@@ -630,8 +685,8 @@ async def create_offer_message_with_attachments(
         attachments.append(AttachmentFileInput(path=stored_path, name=safe_name))
 
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
-        message_id = await service.create_message(
+        service = build_offer_service(uow)
+        result = await service.create_message(
             current_user=current_user,
             offer_id=offer_id,
             text=text,
@@ -639,8 +694,20 @@ async def create_offer_message_with_attachments(
         )
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
+    message_payload = await ChatRealtimeService().load_message_payload(
+        offer_id=result.offer_id,
+        message_id=result.message_id,
+    )
+    await get_chat_runtime().publish_chat_event(
+        chat_id=result.chat_id,
+        event=OutboundEnvelope(
+            type="message.created",
+            data=message_payload,
+        ),
+    )
+
     return OfferMessageCreateResponse(
-        data={"offer_id": offer_id, "message_id": message_id},
+        data={"offer_id": offer_id, "message_id": result.message_id},
         _links=LinkSet(
             self=Link(href=f"/api/v1/offers/{offer_id}/messages", method="GET"),
             available_actions=actions,
@@ -656,16 +723,30 @@ async def mark_offer_messages_received(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferMessageStatusUpdateResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
-        updated_count = await service.mark_messages_received(
+        service = build_offer_service(uow)
+        ack = await service.mark_messages_received(
             current_user=current_user,
             offer_id=offer_id,
             message_ids=payload.message_ids,
+            up_to_message_id=payload.up_to_message_id,
         )
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
+    if ack.updated_message_ids:
+        await get_chat_runtime().publish_chat_event(
+            chat_id=ack.chat_id,
+            event=OutboundEnvelope(
+                type="message.delivered",
+                data={
+                    "chat_id": ack.chat_id,
+                    "user_id": current_user.user_id,
+                    "message_ids": ack.updated_message_ids,
+                },
+            ),
+        )
+
     return OfferMessageStatusUpdateResponse(
-        data={"offer_id": offer_id, "updated_count": updated_count},
+        data={"offer_id": offer_id, "updated_count": ack.updated_count},
         _links=LinkSet(
             self=Link(href=f"/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
             available_actions=actions,
@@ -681,16 +762,33 @@ async def mark_offer_messages_read(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferMessageStatusUpdateResponse:
     async with uow:
-        service = OfferService(uow.requests, uow.offers, uow.files, uow.messages, uow.profiles, uow.company_contacts, uow.users)
-        updated_count = await service.mark_messages_read(
+        service = build_offer_service(uow)
+        ack = await service.mark_messages_read(
             current_user=current_user,
             offer_id=offer_id,
             message_ids=payload.message_ids,
+            up_to_message_id=payload.up_to_message_id,
         )
+        profile = await uow.profiles.get_by_id(current_user.user_id) if uow.profiles is not None else None
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
+    if ack.updated_message_ids:
+        await get_chat_runtime().publish_chat_event(
+            chat_id=ack.chat_id,
+            event=OutboundEnvelope(
+                type="message.read",
+                data={
+                    "chat_id": ack.chat_id,
+                    "user_id": current_user.user_id,
+                    "user_full_name": profile.full_name if profile else None,
+                    "message_ids": ack.updated_message_ids,
+                    "last_read_message_id": ack.last_read_message_id,
+                },
+            ),
+        )
+
     return OfferMessageStatusUpdateResponse(
-        data={"offer_id": offer_id, "updated_count": updated_count},
+        data={"offer_id": offer_id, "updated_count": ack.updated_count},
         _links=LinkSet(
             self=Link(href=f"/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
             available_actions=actions,

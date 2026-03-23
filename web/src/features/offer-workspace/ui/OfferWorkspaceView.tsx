@@ -128,6 +128,7 @@ export const OfferWorkspaceView = () => {
     offerDecisionStatus,
     isUpdatingOfferStatus,
     messages,
+    typingUserIds,
     isSending,
     canUpload,
     canDeleteFile,
@@ -146,7 +147,8 @@ export const OfferWorkspaceView = () => {
     handleDeleteOffer,
     handleCreateNewOffer,
     onSendMessage,
-    onMessageInputClick
+    onMessageInputClick,
+    onMessageDraftChange
   } = useOfferWorkspace();
 
   const statusConfig = useMemo(
@@ -478,12 +480,14 @@ export const OfferWorkspaceView = () => {
         isOpen={isChatOpen}
         onToggleOpen={setIsChatOpen}
         messages={messages}
+        typingUserIds={typingUserIds}
         sessionLogin={session?.login}
         canSendMessage={canSendMessage}
         canSendMessageWithAttachments={canSendMessageWithAttachments}
         isSending={isSending}
         onSendMessage={onSendMessage}
         onMessageInputClick={onMessageInputClick}
+        onMessageDraftChange={onMessageDraftChange}
         onDownloadAttachment={(downloadUrl, name) => {
           void downloadFile(downloadUrl, name);
         }}

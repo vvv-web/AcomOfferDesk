@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 import re
 
 from sqlalchemy import Select, func, literal, select, update
@@ -11,8 +12,8 @@ from app.models.orm_models import ChatParticipant, File, Message, MessageFile, M
 
 
 EMAIL_MESSAGE_ID_MARKER = "[email_message_id:"
-AUTO_EMAIL_MESSAGE_PREFIX = "Сообщение сформировано автоматически из письма"
-AUTO_EMAIL_OFFER_CREATED_TEXT = "Оффер сформирован автоматически из письма"
+AUTO_EMAIL_MESSAGE_PREFIX = "РЎРѕРѕР±С‰РµРЅРёРµ СЃС„РѕСЂРјРёСЂРѕРІР°РЅРѕ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёР· РїРёСЃСЊРјР°"
+AUTO_EMAIL_OFFER_CREATED_TEXT = "РћС„С„РµСЂ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёР· РїРёСЃСЊРјР°"
 
 
 def strip_email_message_marker(text: str) -> str:
@@ -20,6 +21,7 @@ def strip_email_message_marker(text: str) -> str:
     pattern = rf"^{re.escape(EMAIL_MESSAGE_ID_MARKER)}[^\]]+\]\s*"
     cleaned = re.sub(pattern, "", normalized, count=1)
     return cleaned.strip()
+
 
 def build_auto_email_content(*, text: str) -> str:
     clean_text = text.strip()
@@ -34,6 +36,15 @@ def build_email_message_text(*, text: str, message_id: str) -> str:
     if clean_text:
         return f"{marker}\n\n{clean_text}"
     return marker
+
+
+@dataclass(frozen=True, slots=True)
+class MessageReceiptRow:
+    message_id: int
+    user_id: str
+    delivered_at: object | None
+    read_at: object | None
+
 
 class MessageRepository:
     def __init__(self, session: AsyncSession):
@@ -60,6 +71,11 @@ class MessageRepository:
         await self._create_receipts_for_new_message(message_id=message.id, chat_id=chat_id, sender_user_id=user_id)
         return message
 
+    async def get_by_id(self, *, message_id: int) -> Message | None:
+        stmt = select(Message).where(Message.id == message_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_by_chat(self, *, chat_id: int) -> list[Message]:
         stmt: Select[tuple[Message]] = (
             select(Message)
@@ -85,68 +101,111 @@ class MessageRepository:
     async def attach_file(self, *, message_id: int, file_id: int) -> None:
         self._session.add(MessageFile(id=file_id, id_message=message_id))
 
-    async def update_status_for_recipient(
+    async def list_receipts_by_message_ids(
+        self,
+        *,
+        message_ids: Sequence[int],
+        recipient_user_ids: Sequence[str] | None = None,
+    ) -> list[MessageReceiptRow]:
+        if not message_ids:
+            return []
+
+        stmt = (
+            select(
+                MessageReceipt.id_message,
+                MessageReceipt.id_user,
+                MessageReceipt.delivered_at,
+                MessageReceipt.read_at,
+            )
+            .where(MessageReceipt.id_message.in_(message_ids))
+            .order_by(MessageReceipt.id_message.asc(), MessageReceipt.id_user.asc())
+        )
+        if recipient_user_ids is not None:
+            if not recipient_user_ids:
+                return []
+            stmt = stmt.where(MessageReceipt.id_user.in_(recipient_user_ids))
+
+        result = await self._session.execute(stmt)
+        return [
+            MessageReceiptRow(
+                message_id=int(row.id_message),
+                user_id=str(row.id_user),
+                delivered_at=row.delivered_at,
+                read_at=row.read_at,
+            )
+            for row in result.all()
+        ]
+
+    async def mark_delivered(
         self,
         *,
         chat_id: int,
-        message_ids: Sequence[int] | None,
         recipient_user_id: str,
-        from_status: str,
-        to_status: str,
-    ) -> int:
-        _ = from_status
+        message_ids: Sequence[int] | None = None,
+        up_to_message_id: int | None = None,
+    ) -> list[int]:
         if message_ids is not None and not message_ids:
-            return 0
+            return []
 
-        message_ids_stmt = (
-            select(Message.id)
-            .where(
-                Message.id_chat == chat_id,
-                Message.id_user != recipient_user_id,
-            )
+        message_ids_stmt = self._build_recipient_message_ids_stmt(
+            chat_id=chat_id,
+            recipient_user_id=recipient_user_id,
+            message_ids=message_ids,
+            up_to_message_id=up_to_message_id,
         )
-
-        if message_ids is not None:
-            message_ids_stmt = message_ids_stmt.where(Message.id.in_(message_ids))
-
-        if to_status == "received":
-            await self._ensure_receipts_for_recipient(
-                recipient_user_id=recipient_user_id,
-                message_ids_stmt=message_ids_stmt,
+        await self._ensure_receipts_for_recipient(
+            recipient_user_id=recipient_user_id,
+            message_ids_stmt=message_ids_stmt,
+        )
+        stmt = (
+            update(MessageReceipt)
+            .where(
+                MessageReceipt.id_user == recipient_user_id,
+                MessageReceipt.id_message.in_(message_ids_stmt),
+                MessageReceipt.delivered_at.is_(None),
             )
-            stmt = (
-                update(MessageReceipt)
-                .where(
-                    MessageReceipt.id_user == recipient_user_id,
-                    MessageReceipt.id_message.in_(message_ids_stmt),
-                    MessageReceipt.delivered_at.is_(None),
-                )
-                .values(delivered_at=func.now())
-            )
-            result = await self._session.execute(stmt)
-            return int(result.rowcount or 0)
+            .values(delivered_at=func.now())
+            .returning(MessageReceipt.id_message)
+        )
+        result = await self._session.execute(stmt)
+        return [int(message_id) for message_id in result.scalars().all()]
 
-        if to_status == "read":
-            await self._ensure_receipts_for_recipient(
-                recipient_user_id=recipient_user_id,
-                message_ids_stmt=message_ids_stmt,
-            )
-            stmt = (
-                update(MessageReceipt)
-                .where(
-                    MessageReceipt.id_user == recipient_user_id,
-                    MessageReceipt.id_message.in_(message_ids_stmt),
-                    MessageReceipt.read_at.is_(None),
-                )
-                .values(
-                    delivered_at=func.coalesce(MessageReceipt.delivered_at, func.now()),
-                    read_at=func.now(),
-                )
-            )
-            result = await self._session.execute(stmt)
-            return int(result.rowcount or 0)
+    async def mark_read(
+        self,
+        *,
+        chat_id: int,
+        recipient_user_id: str,
+        message_ids: Sequence[int] | None = None,
+        up_to_message_id: int | None = None,
+    ) -> list[int]:
+        if message_ids is not None and not message_ids:
+            return []
 
-        return 0
+        message_ids_stmt = self._build_recipient_message_ids_stmt(
+            chat_id=chat_id,
+            recipient_user_id=recipient_user_id,
+            message_ids=message_ids,
+            up_to_message_id=up_to_message_id,
+        )
+        await self._ensure_receipts_for_recipient(
+            recipient_user_id=recipient_user_id,
+            message_ids_stmt=message_ids_stmt,
+        )
+        stmt = (
+            update(MessageReceipt)
+            .where(
+                MessageReceipt.id_user == recipient_user_id,
+                MessageReceipt.id_message.in_(message_ids_stmt),
+                MessageReceipt.read_at.is_(None),
+            )
+            .values(
+                delivered_at=func.coalesce(MessageReceipt.delivered_at, func.now()),
+                read_at=func.now(),
+            )
+            .returning(MessageReceipt.id_message)
+        )
+        result = await self._session.execute(stmt)
+        return [int(message_id) for message_id in result.scalars().all()]
 
     async def _create_receipts_for_new_message(self, *, message_id: int, chat_id: int, sender_user_id: str) -> None:
         await self._session.execute(
@@ -188,7 +247,25 @@ class MessageRepository:
                 index_elements=[MessageReceipt.id_message, MessageReceipt.id_user],
             )
         )
-    
+
+    def _build_recipient_message_ids_stmt(
+        self,
+        *,
+        chat_id: int,
+        recipient_user_id: str,
+        message_ids: Sequence[int] | None,
+        up_to_message_id: int | None,
+    ):
+        stmt = select(Message.id).where(
+            Message.id_chat == chat_id,
+            Message.id_user != recipient_user_id,
+        )
+        if message_ids is not None:
+            stmt = stmt.where(Message.id.in_(message_ids))
+        if up_to_message_id is not None:
+            stmt = stmt.where(Message.id <= up_to_message_id)
+        return stmt
+
     async def exists_with_email_message_id(self, *, email_message_id: str) -> bool:
         marker = f"{EMAIL_MESSAGE_ID_MARKER}{email_message_id}]"
         stmt = select(Message.id).where(Message.text.contains(marker)).limit(1)

@@ -1,8 +1,13 @@
 import React from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
+import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
+import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import { alpha } from '@mui/material/styles';
-import { Box, Button, Chip, Divider, IconButton, Paper, Stack, SvgIcon, TextField, Typography } from '@mui/material';
+import { Box, Button, Chip, Divider, IconButton, Menu, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { OfferWorkspaceMessage } from '@shared/api/offers/offerWorkspaceActions';
@@ -24,6 +29,20 @@ const formatTime = (value: string | null) => {
   if (Number.isNaN(date.getTime())) return value;
 
   return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(date);
+};
+
+const formatReadAt = (value: string | null) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
 };
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -71,48 +90,55 @@ const formatDayLabel = (iso: string | null) => {
   }).format(d);
 };
 
+const getMessageStatusLabel = (status: OfferWorkspaceMessage['status']) => {
+  if (status === 'send') {
+    return 'Отправлено на сервер';
+  }
+  if (status === 'received') {
+    return 'Доставлено получателю';
+  }
+  return 'Прочитано получателем';
+};
+
 const MessageStatusIcon = ({ status }: { status: OfferWorkspaceMessage['status'] }) => {
-  const isDouble = status === 'received' || status === 'read';
-  const colorByStatus: Record<OfferWorkspaceMessage['status'], string> = {
-    send: 'rgba(214,236,255,0.95)',
-    received: '#d2e9ff',
-    read: '#ffffff'
+  const statusMeta: Record<OfferWorkspaceMessage['status'], { color: string; label: string }> = {
+    send: {
+      color: 'rgba(255,255,255,0.78)',
+      label: 'Отправлено на сервер'
+    },
+    received: {
+      color: 'rgba(255,255,255,0.82)',
+      label: 'Доставлено получателю'
+    },
+    read: {
+      color: '#9fe4ff',
+      label: 'Прочитано получателем'
+    }
   };
 
-  const color = colorByStatus[status];
+  const meta = statusMeta[status];
 
   return (
     <Box
       component="span"
       sx={{
+        position: 'relative',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        ml: 0.5,
-        color,
-        opacity: status === 'send' ? 0.9 : 1,
+        width: 22,
+        height: 22,
+        ml: 0.35,
+        flexShrink: 0,
+        transform: 'translateY(2px)'
       }}
       aria-label={`message-status-${status}`}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ display: 'block' }}>
-        <path
-          d="M6.6 12.6l3.1 3.1 7.7-7.7"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {isDouble ? (
-          <path
-            d="M10.2 12.6l3.1 3.1 7.7-7.7"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity="0.95"
-          />
-        ) : null}
-      </svg>
+      {status === 'send' ? (
+        <DoneRoundedIcon sx={{ fontSize: 18, color: meta.color }} aria-hidden="true" />
+      ) : (
+        <DoneAllRoundedIcon sx={{ fontSize: 18, color: meta.color }} aria-hidden="true" />
+      )}
     </Box>
   );
 };
@@ -122,12 +148,14 @@ type OfferWorkspaceChatPanelProps = {
   isOpen: boolean;
   onToggleOpen: (next: boolean) => void;
   messages: OfferWorkspaceMessage[];
+  typingUserIds: string[];
   sessionLogin?: string;
   canSendMessage: boolean;
   canSendMessageWithAttachments: boolean;
   isSending: boolean;
   onSendMessage: (text: string, files: File[]) => Promise<void>;
   onMessageInputClick: () => Promise<void> | void;
+  onMessageDraftChange: (text: string) => Promise<void> | void;
   onDownloadAttachment: (downloadUrl: string, name: string) => void;
   readOnlyNotice?: string | null;
   contractorUserId?: string;
@@ -138,12 +166,14 @@ export const OfferWorkspaceChatPanel = ({
   isOpen,
   onToggleOpen,
   messages,
+  typingUserIds,
   sessionLogin,
   canSendMessage,
   canSendMessageWithAttachments,
   isSending,
   onSendMessage,
   onMessageInputClick,
+  onMessageDraftChange,
   onDownloadAttachment,
   readOnlyNotice,
   contractorUserId
@@ -164,6 +194,11 @@ export const OfferWorkspaceChatPanel = ({
   const attachedFiles = watch('files');
   const messageText = watch('text');
   const messagesContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const [statusMenuState, setStatusMenuState] = React.useState<{
+    mouseX: number;
+    mouseY: number;
+    message: OfferWorkspaceMessage;
+  } | null>(null);
 
   const scrollToBottom = React.useCallback((force = false) => {
     const container = messagesContainerRef.current;
@@ -198,6 +233,26 @@ export const OfferWorkspaceChatPanel = ({
     scrollToBottom();
   }, [scrollToBottom, sortedMessages]);
 
+  React.useEffect(() => {
+    void onMessageDraftChange(messageText);
+  }, [messageText, onMessageDraftChange]);
+
+  const handleStatusContextMenu = React.useCallback(
+    (event: React.MouseEvent, message: OfferWorkspaceMessage) => {
+      event.preventDefault();
+      setStatusMenuState({
+        mouseX: event.clientX + 2,
+        mouseY: event.clientY - 6,
+        message
+      });
+    },
+    []
+  );
+
+  const handleCloseStatusMenu = React.useCallback(() => {
+    setStatusMenuState(null);
+  }, []);
+
   const onSubmitMessage = async (values: ChatFormValues) => {
     if (!canSendMessage) return;
 
@@ -231,9 +286,7 @@ export const OfferWorkspaceChatPanel = ({
               Чат по офферу №{offerId}
             </Typography>
             <IconButton onClick={() => onToggleOpen(false)} aria-label="Скрыть чат">
-              <SvgIcon fontSize="small">
-                <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-              </SvgIcon>
+              <CloseRoundedIcon fontSize="small" />
             </IconButton>
           </Box>
           <Divider />
@@ -273,6 +326,7 @@ export const OfferWorkspaceChatPanel = ({
                     const isSystemVisualMessage = isSystemMessage || isAutoOfferCreatedMessage;
                     const displayText = isEmailOriginMessage ? parsedEmailText.body : item.text;
                     const normalizedDisplayText = displayText.trim();
+                    const hasVisibleText = normalizedDisplayText.length > 0;
                     const shouldHideEmptyAutoMessage =
                       isAutoOfferCreatedMessage &&
                       normalizedDisplayText.length === 0 &&
@@ -384,6 +438,11 @@ export const OfferWorkspaceChatPanel = ({
                                 overflowWrap: 'anywhere'
                               };
                             }}
+                            onContextMenu={
+                              ownMessage && !isSystemVisualMessage
+                                ? (event) => handleStatusContextMenu(event, item)
+                                : undefined
+                            }
                           >
                             {!isGroupedWithPrev && !isSystemVisualMessage  ? (
                               <Typography
@@ -413,67 +472,85 @@ export const OfferWorkspaceChatPanel = ({
                                 {AUTO_EMAIL_MESSAGE_LABEL}
                               </Typography>
                             ) : null}
-                            
-                            <Typography
-                              variant={isSystemVisualMessage  ? 'caption' : 'body1'}
-                              sx={{
-                                mb: item.attachments.length > 0 ? 0.8 : 0.4,
-                                lineHeight: 1.32,
-                                whiteSpace: 'pre-wrap',
-                                fontStyle: isSystemVisualMessage ? 'italic' : 'normal',
-                                textAlign: isSystemVisualMessage ? 'center' : 'left',
-                                display: isEmailOriginMessage && !normalizedDisplayText ? 'none' : 'block'
-                              }}
-                            >
-                              {displayText}
-                            </Typography>
-
-                            {item.attachments.length > 0 ? (
-                              <Stack spacing={0.5} sx={{ mb: 0.75 }}>
-                                {item.attachments.map((attachment) => (
-                                  <Chip
-                                    key={attachment.id}
-                                    size="small"
-                                    label={attachment.name}
-                                    variant="outlined"
-                                    onClick={() => onDownloadAttachment(attachment.download_url, attachment.name)}
-                                    sx={(theme) => ({
-                                      alignSelf: isSystemVisualMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
-                                      borderColor: ownMessage
-                                        ? alpha(theme.palette.common.white, 0.35)
-                                        : theme.palette.divider,
-                                      color: ownMessage ? 'rgba(255,255,255,0.92)' : theme.palette.text.primary,
-                                      backgroundColor: ownMessage
-                                        ? alpha(theme.palette.primary.dark, 0.34)
-                                        : theme.palette.background.default,
-                                      '& .MuiChip-label': { color: 'inherit' }
-                                    })}
-                                  />
-                                ))}
-                              </Stack>
-                            ) : null}
 
                             <Box
                               sx={{
-                                display: 'flex',
-                                justifyContent: isSystemVisualMessage ? 'center' : 'flex-end',
-                                alignItems: 'center',
-                                gap: 0.6,
-                                mt: 0.2
+                                position: 'relative',
+                                pr: isSystemVisualMessage ? 0 : hasVisibleText ? 8.8 : 7.4,
+                                pb: 0,
+                                minHeight: isSystemVisualMessage ? 'auto' : 18
                               }}
                             >
-                              <Typography
-                                variant="caption"
+                              {hasVisibleText ? (
+                                <Typography
+                                  variant={isSystemVisualMessage ? 'caption' : 'body1'}
+                                  component="div"
                                 sx={{
-                                  fontSize: 12,
-                                  lineHeight: 1,
-                                  color: ownMessage && !isSystemVisualMessage ? alpha('#fff', 0.82) : 'text.secondary'
-                                }}
-                              >
-                                {formatTime(item.created_at)}
-                              </Typography>
+                                    mb: item.attachments.length > 0 ? 0.8 : 0.35,
+                                    lineHeight: 1.32,
+                                    whiteSpace: 'pre-wrap',
+                                    fontStyle: isSystemVisualMessage ? 'italic' : 'normal',
+                                    textAlign: isSystemVisualMessage ? 'center' : 'left',
+                                    display: 'block'
+                                  }}
+                                >
+                                  {displayText}
+                                </Typography>
+                              ) : null}
 
-                              {ownMessage && !isSystemVisualMessage ? <MessageStatusIcon status={item.status} /> : null}
+                              {item.attachments.length > 0 ? (
+                                <Stack spacing={0.5} sx={{ mb: 0 }}>
+                                  {item.attachments.map((attachment) => (
+                                    <Chip
+                                      key={attachment.id}
+                                      size="small"
+                                      label={attachment.name}
+                                      variant="outlined"
+                                      onClick={() => onDownloadAttachment(attachment.download_url, attachment.name)}
+                                      sx={(theme) => ({
+                                        alignSelf: isSystemVisualMessage ? 'center' : ownMessage ? 'flex-end' : 'flex-start',
+                                        borderColor: ownMessage
+                                          ? alpha(theme.palette.common.white, 0.35)
+                                          : theme.palette.divider,
+                                        color: ownMessage ? 'rgba(255,255,255,0.92)' : theme.palette.text.primary,
+                                        backgroundColor: ownMessage
+                                          ? alpha(theme.palette.primary.dark, 0.34)
+                                          : theme.palette.background.default,
+                                        '& .MuiChip-label': { color: 'inherit' }
+                                      })}
+                                    />
+                                  ))}
+                                </Stack>
+                              ) : null}
+
+                              {!isSystemVisualMessage ? (
+                                <Box
+                                  sx={{
+                                    position: 'absolute',
+                                    right: 0,
+                                    bottom: -5,
+                                    display: 'inline-flex',
+                                    alignItems: 'flex-end',
+                                    gap: 0.15,
+                                    whiteSpace: 'nowrap',
+                                    color: ownMessage ? alpha('#fff', 0.82) : 'text.secondary'
+                                  }}
+                                >
+                                  <Typography
+                                    component="span"
+                                    variant="caption"
+                                    sx={{
+                                      fontSize: 12,
+                                      lineHeight: '12px',
+                                      color: 'inherit'
+                                    }}
+                                  >
+                                    {formatTime(item.created_at)}
+                                  </Typography>
+
+                                  {ownMessage ? <MessageStatusIcon status={item.status} /> : null}
+                                </Box>
+                              ) : null}
                             </Box>
                           </Box>
                         </Box>
@@ -482,6 +559,12 @@ export const OfferWorkspaceChatPanel = ({
                   })}
                 </Stack>
               )}
+
+              {typingUserIds.length > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5, textAlign: 'center' }}>
+                  {typingUserIds.length === 1 ? `${typingUserIds[0]} печатает...` : 'Несколько участников печатают...'}
+                </Typography>
+              ) : null}
             </Box>
 
             {readOnlyNotice ? (
@@ -527,16 +610,7 @@ export const OfferWorkspaceChatPanel = ({
                       }
                     }}
                   >
-                    <SvgIcon fontSize="small">
-                      <path
-                        d="M15.5 6.5v8.25a3.75 3.75 0 1 1-7.5 0V5.75a2.5 2.5 0 1 1 5 0v7.5a1.25 1.25 0 1 1-2.5 0V7.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.9"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </SvgIcon>
+                    <AttachFileRoundedIcon fontSize="small" />
                     <Controller
                       control={control}
                       name="files"
@@ -571,28 +645,59 @@ export const OfferWorkspaceChatPanel = ({
                     }
                   }}
                 >
-                  <SvgIcon fontSize="small">
-                    <path
-                      d="M3.5 12.5 19.75 4.5l-3.75 15-4.25-6-8.25-1z"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.85"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="m19.75 4.5-8 9"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.85"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </SvgIcon>
+                  <SendRoundedIcon fontSize="small" />
                 </IconButton>
               </Stack>
             </Box>
           </Stack>
+
+          <Menu
+            open={statusMenuState !== null}
+            onClose={handleCloseStatusMenu}
+            anchorReference="anchorPosition"
+            anchorPosition={
+              statusMenuState !== null
+                ? { top: statusMenuState.mouseY, left: statusMenuState.mouseX }
+                : undefined
+            }
+            transformOrigin={{ horizontal: 'left', vertical: 'top' }}
+          >
+            {statusMenuState ? (
+              <Box sx={{ minWidth: 260, maxWidth: 340, py: 0.5 }}>
+                <MenuItem onClick={handleCloseStatusMenu}>
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', mr: 1 }}>
+                    <MessageStatusIcon status={statusMenuState.message.status} />
+                  </Box>
+                  <Typography variant="body2">
+                    {getMessageStatusLabel(statusMenuState.message.status)}
+                  </Typography>
+                </MenuItem>
+
+                <Divider />
+
+                {statusMenuState.message.read_by.length > 0 ? (
+                  statusMenuState.message.read_by.map((reader) => (
+                    <MenuItem key={reader.user_id} onClick={handleCloseStatusMenu}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" noWrap>
+                          {reader.user_full_name?.trim() || reader.user_id}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Прочитал(а) {formatReadAt(reader.read_at)}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))
+                ) : (
+                  <MenuItem onClick={handleCloseStatusMenu}>
+                    <Typography variant="body2" color="text.secondary">
+                      Пока никто не прочитал
+                    </Typography>
+                  </MenuItem>
+                )}
+              </Box>
+            ) : null}
+          </Menu>
         </>
       ) : (
         <Box sx={{ p: 1 }}>

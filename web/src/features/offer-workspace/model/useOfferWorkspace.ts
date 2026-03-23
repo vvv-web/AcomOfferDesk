@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
+import { useChatRealtime } from '@app/providers/ChatRealtimeProvider';
 import { getOfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import type { OfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { getOfferContractorInfo } from '@shared/api/offers/getOfferContractorInfo';
@@ -19,10 +20,12 @@ const workspacePollIntervalMs = 7000;
 export const useOfferWorkspace = () => {
   const { id } = useParams<{ id: string }>();
   const { session, logout } = useAuth();
+  const { client: realtimeClient, connectionState, onEvent } = useChatRealtime();
   const navigate = useNavigate();
   const offerId = Number(id ?? 0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const contractorInfoRef = useRef<OfferContractorInfo | null>(null);
+  const previousSelectedOfferIdRef = useRef<number | null>(null);
 
   const [workspace, setWorkspace] = useState<OfferWorkspace | null>(null);
   const [contractorInfo, setContractorInfo] = useState<OfferContractorInfo | null>(null);
@@ -34,8 +37,6 @@ export const useOfferWorkspace = () => {
   const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
 
-  const { messages, chatActions, isSending, chatErrorMessage, loadMessages, handleSendMessage, markReadByInputFocus } = useOfferMessages(session?.login);
-
   const sortedOffers = useMemo(
     () => [...(workspace?.offers ?? [])].sort((left, right) => new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime()),
     [workspace?.offers]
@@ -45,10 +46,29 @@ export const useOfferWorkspace = () => {
     [selectedOfferId, sortedOffers, workspace?.offer]
   );
 
+  const {
+    messages,
+    chatActions,
+    isSending,
+    chatErrorMessage,
+    typingUserIds,
+    loadMessages,
+    handleSendMessage,
+    markReadByInputFocus,
+    handleDraftActivity
+  } = useOfferMessages({
+    activeOfferId: selectedOfferId,
+    offerItems: workspace?.offers ?? [],
+    sessionLogin: session?.login,
+    connectionState,
+    onRealtimeEvent: onEvent,
+    realtimeClient
+  });
+
   const refreshWorkspace = useCallback(async (targetOfferId: number) => {
     const nextWorkspace = await getOfferWorkspace(targetOfferId);
     setWorkspace(nextWorkspace);
-    setSelectedOfferId((prev) => (nextWorkspace.offers.some((item) => item.offer_id === prev) ? prev : nextWorkspace.offers[0]?.offer_id ?? targetOfferId));
+    setSelectedOfferId((prev: number) => (nextWorkspace.offers.some((item) => item.offer_id === prev) ? prev : nextWorkspace.offers[0]?.offer_id ?? targetOfferId));
 
     const nextContractorId = nextWorkspace.offer.contractor_user_id;
     if (!nextContractorId) {
@@ -98,18 +118,69 @@ export const useOfferWorkspace = () => {
     contractorInfoRef.current = contractorInfo;
   }, [contractorInfo]);
 
-  useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  useEffect(() => {
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
   useEffect(() => {
-    if (!selectedOfferId) return;
+    if (!selectedOfferId) {
+      return;
+    }
+
+    const previousOfferId = previousSelectedOfferIdRef.current;
+    if (previousOfferId && previousOfferId !== selectedOfferId) {
+      realtimeClient.unsubscribe(previousOfferId);
+      setErrorMessage(null);
+    }
+
+    realtimeClient.subscribe(selectedOfferId);
+    previousSelectedOfferIdRef.current = selectedOfferId;
+
+    return () => {
+      realtimeClient.unsubscribe(selectedOfferId);
+    };
+  }, [realtimeClient, selectedOfferId]);
+
+  useEffect(() => {
+    if (!selectedOfferId) {
+      return;
+    }
+
     const sync = async () => {
       const nextWorkspace = await refreshWorkspace(selectedOfferId);
-      await loadMessages(selectedOfferId, nextWorkspace.offers);
+      if (connectionState !== 'connected') {
+        await loadMessages(selectedOfferId, nextWorkspace.offers, false);
+      }
     };
+
     void sync().catch(() => undefined);
-    const interval = window.setInterval(() => { void sync().catch(() => undefined); }, workspacePollIntervalMs);
+    const interval = window.setInterval(() => {
+      void sync().catch(() => undefined);
+    }, workspacePollIntervalMs);
     return () => window.clearInterval(interval);
-  }, [selectedOfferId, refreshWorkspace, loadMessages]);
+  }, [connectionState, loadMessages, refreshWorkspace, selectedOfferId]);
+
+  useEffect(() => {
+    if (!selectedOffer || !workspace || !isChatOpen || !session?.login) {
+      return;
+    }
+
+    const lastIncomingMessage = [...messages]
+      .filter((message) => message.offer_id === selectedOffer.offer_id && message.user_id !== session.login)
+      .sort((left, right) => new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime())[0];
+
+    if (!lastIncomingMessage) {
+      return;
+    }
+
+    void markReadByInputFocus({
+      offerId: selectedOffer.offer_id,
+      canSetReadMessages: hasAvailableAction({ availableActions: chatActions }, `/api/v1/offers/${selectedOffer.offer_id}/messages/read`, 'PATCH'),
+      canSetReceivedMessages: hasAvailableAction({ availableActions: chatActions }, `/api/v1/offers/${selectedOffer.offer_id}/messages/received`, 'PATCH'),
+      sessionLogin: session.login,
+      offerItems: workspace.offers
+    }).catch(() => undefined);
+  }, [chatActions, isChatOpen, markReadByInputFocus, messages, selectedOffer, session?.login, workspace]);
 
   const availableActions = useMemo(() => {
     if (chatActions.length > 0) return chatActions;
@@ -122,7 +193,7 @@ export const useOfferWorkspace = () => {
   const canUpload = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files`, 'POST') && (!isContractor || isSelectedOfferSubmitted);
   const canDeleteFile = (hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files/{file_id}`, 'DELETE') || hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files/1`, 'DELETE')) && (!isContractor || isSelectedOfferSubmitted);
   const canSendMessage = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages`, 'POST');
-  const canSendMessageWithAttachments = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/attachments`, 'POST') || canSendMessage;
+  const canSendMessageWithAttachments = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/files`, 'POST') || hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/attachments`, 'POST') || canSendMessage;
   const canSetReadMessages = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/read`, 'PATCH');
   const canSetReceivedMessages = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/received`, 'PATCH');
   const canEditOfferStatus = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER;
@@ -141,7 +212,9 @@ export const useOfferWorkspace = () => {
       await refreshWorkspace(selectedOffer.offer_id);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось загрузить файл'));
-    } finally { setIsUploading(false); }
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDeleteFile = async (fileId: number) => {
@@ -183,14 +256,16 @@ export const useOfferWorkspace = () => {
       await refreshWorkspace(selectedOffer.offer_id);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось удалить отклик'));
-    } finally { setIsUpdatingOfferStatus(false); }
+    } finally {
+      setIsUpdatingOfferStatus(false);
+    }
   };
 
   const handleCreateNewOffer = async () => {
     if (!workspace) return;
     const createOfferAction = findAvailableAction({ availableActions: workspace.availableActions ?? [] }, `/api/v1/requests/${workspace.request.request_id}/offers`, 'POST');
     if (!createOfferAction) return;
-    if (!window.confirm('Создать новый отклик для этой заявки? Предыдущие удаленные отклики останутся в истории.')) return;
+    if (!window.confirm('Создать новый отклик для этой заявки? Предыдущие удалённые отклики останутся в истории.')) return;
     setIsUpdatingOfferStatus(true);
     try {
       const createdOffer = await createOfferForRequest(workspace.request.request_id, createOfferAction);
@@ -201,7 +276,9 @@ export const useOfferWorkspace = () => {
       navigate(createdOffer.workspacePath, { replace: true });
     } catch (error) {
       setErrorMessage(getErrorMessage(error, 'Не удалось создать новый отклик'));
-    } finally { setIsUpdatingOfferStatus(false); }
+    } finally {
+      setIsUpdatingOfferStatus(false);
+    }
   };
 
   return {
@@ -223,6 +300,8 @@ export const useOfferWorkspace = () => {
     offerDecisionStatus,
     isUpdatingOfferStatus,
     messages,
+    typingUserIds,
+    connectionState,
     isSending,
     canUpload,
     canDeleteFile,
@@ -241,12 +320,16 @@ export const useOfferWorkspace = () => {
     handleDeleteOffer,
     handleCreateNewOffer,
     onSendMessage: async (text: string, files: File[]) => {
-      if (!selectedOffer || !workspace) return;
-      await handleSendMessage({ offerId: selectedOffer.offer_id, text, files, canSendMessage, canSendMessageWithAttachments, offerItems: workspace.offers });
+      if (!selectedOffer) return;
+      await handleSendMessage({ offerId: selectedOffer.offer_id, text, files, canSendMessage });
     },
     onMessageInputClick: async () => {
       if (!selectedOffer || !workspace) return;
       await markReadByInputFocus({ offerId: selectedOffer.offer_id, canSetReadMessages, canSetReceivedMessages, sessionLogin: session?.login, offerItems: workspace.offers });
+    },
+    onMessageDraftChange: async (text: string) => {
+      if (!selectedOffer) return;
+      await handleDraftActivity({ offerId: selectedOffer.offer_id, text, canSendMessage });
     }
   };
 };

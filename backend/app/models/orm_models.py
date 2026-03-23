@@ -290,7 +290,16 @@ class ChatParticipant(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    joined_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     left_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    last_read_message_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    last_read_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    is_muted: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    is_archived: Mapped[bool] = mapped_column(nullable=False, server_default="false")
 
 
 class MessageReceipt(Base):

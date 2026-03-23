@@ -45,6 +45,17 @@ type UploadResponse = {
   };
 };
 
+type MessageFileUploadResponse = {
+  data: {
+    offer_id: number;
+    file_id: number;
+    name: string;
+    path: string;
+    upload_token: string;
+    download_url: string;
+  };
+};
+
 type MessageStatusPayload = {
   message_ids: number[];
 };
@@ -68,6 +79,7 @@ export const getOfferMessages = async (offerId: number): Promise<OfferMessagesRe
     items: (response.data.items ?? []).map((message) => ({
       ...message,
       offer_id: response.data.offer_id,
+      read_by: message.read_by ?? [],
       attachments: message.attachments ?? []
     })),
     availableActions: resolveAvailableActions(response)
@@ -147,6 +159,22 @@ export const uploadOfferFile = async (offerId: number, file: File) => {
       body: formData
     },
     'Не удалось загрузить файл'
+  );
+
+  return response.data;
+};
+
+export const uploadOfferMessageFile = async (offerId: number, file: File) => {
+  const formData = new FormData();
+  formData.set('file', file);
+
+  const response = await fetchJson<MessageFileUploadResponse>(
+    `/api/v1/offers/${offerId}/messages/files`,
+    {
+      method: 'POST',
+      body: formData
+    },
+    'Не удалось загрузить вложение для сообщения'
   );
 
   return response.data;
