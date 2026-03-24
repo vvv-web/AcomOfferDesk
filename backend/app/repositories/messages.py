@@ -7,6 +7,7 @@ import re
 from sqlalchemy import Select, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.orm_models import ChatParticipant, File, Message, MessageFile, MessageReceipt
 
@@ -91,6 +92,7 @@ class MessageRepository:
 
         stmt: Select[tuple[int, File]] = (
             select(MessageFile.id_message, File)
+            .options(joinedload(File.storage_object))
             .join(File, File.id == MessageFile.id)
             .where(MessageFile.id_message.in_(message_ids))
             .order_by(MessageFile.id_message.asc(), File.id.asc())

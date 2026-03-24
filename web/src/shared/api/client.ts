@@ -31,6 +31,8 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Unsupported file extension': 'Неподдерживаемое расширение файла',
   'File cannot be empty': 'Файл не может быть пустым',
   'File content does not match extension': 'Содержимое файла не соответствует расширению',
+  'Only lead economist can manage normative files': 'Только ведущий экономист может загружать нормативные документы',
+  'Partner card file is not configured': 'Не загружен нормативный документ для карты партнера',
   Forbidden: 'Доступ запрещен'
 };
 

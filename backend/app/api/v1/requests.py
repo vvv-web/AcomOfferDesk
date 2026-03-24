@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import io
-import os
 import zipfile
 from datetime import datetime
-from pathlib import Path
-from uuid import uuid4
+from urllib.parse import quote
 
-import anyio
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
@@ -41,6 +38,7 @@ from app.schemas.requests import (
     RequestOfferStatsSchema,
     RequestStatsSchema,
 )
+from app.services.files import FileService
 from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
 from app.services.email_notifications import EmailNotificationService
 
@@ -139,6 +137,11 @@ async def _validate_upload(file: UploadFile) -> tuple[str, bytes]:
         raise Conflict("File content does not match extension")
 
     return filename, content
+
+
+def _build_content_disposition(filename: str) -> str:
+    quoted = quote(filename, safe="")
+    return f"attachment; filename*=UTF-8''{quoted}"
 
 def _request_actions(current_user: CurrentUser) -> list[Link] | None:
     try:
@@ -515,37 +518,44 @@ async def create_request(
     if not files:
         raise Conflict("At least one file is required")
 
-    relative_dir = Path("uploads")
-    await anyio.Path(relative_dir).mkdir(parents=True, exist_ok=True)
-
+    validator = FileService()
     file_inputs: list[RequestFileCreateInput] = []
     for file in files:
-        safe_name, content = await _validate_upload(file)
-
-        ext = os.path.splitext(safe_name)[1]
-        generated_name = f"{uuid4().hex}{ext}"
-        relative_path = relative_dir / generated_name
-        await anyio.Path(relative_path).write_bytes(content)
-        file_inputs.append(RequestFileCreateInput(path=str(relative_path), name=safe_name))
-
-    async with uow:
-        email_notifications = EmailNotificationService(uow.profiles, uow.requests)
-        service = RequestService(
-            uow.requests,
-            uow.files,
-            uow.users,
-            uow.offers,
-            uow.user_status_periods,
-            email_notifications=email_notifications,
+        prepared = await validator.prepare_upload(file)
+        file_inputs.append(
+            RequestFileCreateInput(
+                original_name=prepared.original_name,
+                content_bytes=prepared.content_bytes,
+                mime_type=prepared.mime_type,
+            )
         )
-        request_id, file_ids = await service.create_request(
-            current_user=current_user,
-            deadline_at=deadline_at,
-            description=description,
-            files=file_inputs,
-            additional_emails=additional_emails,
-            hidden_contractor_ids=hidden_contractor_ids,
-        )
+
+    request_file_service: FileService | None = None
+    try:
+        async with uow:
+            request_file_service = FileService(uow.files)
+            email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+            service = RequestService(
+                uow.requests,
+                uow.files,
+                uow.users,
+                uow.offers,
+                uow.user_status_periods,
+                email_notifications=email_notifications,
+                file_service=request_file_service,
+            )
+            request_id, file_ids = await service.create_request(
+                current_user=current_user,
+                deadline_at=deadline_at,
+                description=description,
+                files=file_inputs,
+                additional_emails=additional_emails,
+                hidden_contractor_ids=hidden_contractor_ids,
+            )
+    except Exception:
+        if request_file_service is not None:
+            await request_file_service.cleanup_tracked_objects()
+        raise
 
     return RequestCreateResponse(
         data={"request_id": request_id, "file_ids": file_ids},
@@ -623,22 +633,33 @@ async def add_request_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestFileMutationResponse:
-    safe_name, content = await _validate_upload(file)
+    prepared = await FileService().prepare_upload(file)
 
-    relative_dir = Path("uploads")
-    await anyio.Path(relative_dir).mkdir(parents=True, exist_ok=True)
-    ext = os.path.splitext(safe_name)[1]
-    generated_name = f"{uuid4().hex}{ext}"
-    relative_path = relative_dir / generated_name
-    await anyio.Path(relative_path).write_bytes(content)
-
-    async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
-        file_id = await service.attach_file(
-            current_user=current_user,
-            request_id=request_id,
-            file_data=RequestFileCreateInput(path=str(relative_path), name=safe_name),
-        )
+    request_file_service: FileService | None = None
+    try:
+        async with uow:
+            request_file_service = FileService(uow.files)
+            service = RequestService(
+                uow.requests,
+                uow.files,
+                uow.users,
+                uow.offers,
+                uow.user_status_periods,
+                file_service=request_file_service,
+            )
+            file_id = await service.attach_file(
+                current_user=current_user,
+                request_id=request_id,
+                file_data=RequestFileCreateInput(
+                    original_name=prepared.original_name,
+                    content_bytes=prepared.content_bytes,
+                    mime_type=prepared.mime_type,
+                ),
+            )
+    except Exception:
+        if request_file_service is not None:
+            await request_file_service.cleanup_tracked_objects()
+        raise
 
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
@@ -708,7 +729,7 @@ async def download_file(
     file_id: int = PathParam(..., ge=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
-) -> FileResponse:
+) -> StreamingResponse:
     can_download = False
     try:
         UserPolicy.can_view_requests(current_user)
@@ -736,9 +757,15 @@ async def download_file(
             )
             if not linked_to_open_request and not linked_to_own_offer and not linked_to_own_message:
                 raise Forbidden("Insufficient permissions for file download")
-
-    file_path = Path(db_file.path)
-    if not file_path.exists() or not file_path.is_file():
-        raise NotFound("File content not found")
-
-    return FileResponse(path=file_path, filename=db_file.name, media_type="application/octet-stream")
+    file_service = FileService()
+    content = await file_service.read_bytes(db_file=db_file)
+    media_type = db_file.mime_type or "application/octet-stream"
+    headers = {
+        "Content-Disposition": _build_content_disposition(db_file.original_name),
+        "Content-Length": str(len(content)),
+    }
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=media_type,
+        headers=headers,
+    )

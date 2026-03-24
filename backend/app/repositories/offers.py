@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import Select, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.orm_models import Chat, File, Message, MessageFile, Offer, OfferFile, TgUser, User
 
@@ -45,6 +46,7 @@ class OfferRepository:
     async def list_offer_files(self, *, offer_id: int) -> list[File]:
         stmt: Select[tuple[File]] = (
             select(File)
+            .options(joinedload(File.storage_object))
             .join(OfferFile, OfferFile.id == File.id)
             .where(OfferFile.id_offer == offer_id)
             .order_by(File.id.asc())

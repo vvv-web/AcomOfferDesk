@@ -97,6 +97,8 @@ def _build_auth_links(*, role_id: int, self_href: str) -> LinkSet:
             Link(href="/api/v1/files/{file_id}/download", method="GET"),
             Link(href="/api/v1/feedback", method="POST"),
         ]
+        if role_id == settings.lead_economist_role_id:
+            links.available_actions.append(Link(href="/api/v1/normative-files/1", method="POST"))
     elif role_id == settings.economist_role_id:
         links.available_actions = [
             Link(href="/api/v1/requests", method="GET"),

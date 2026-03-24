@@ -3,10 +3,8 @@ from __future__ import annotations
 import smtplib
 from dataclasses import dataclass
 
-import anyio
-
 from app.core.config import settings
-from app.domain.exceptions import Conflict
+from app.domain.exceptions import Conflict, NotFound
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.infrastructure.email.email_templates.request_notification_email import (
     build_request_notification_email_payload,
@@ -16,6 +14,7 @@ from app.infrastructure.email.reply_token_codec import ReplyTokenCodec
 from app.infrastructure.email_service import SMTPEmailService
 from app.repositories.profiles import ActiveContractorEmailRecipient, ProfileRepository
 from app.repositories.requests import RequestRepository
+from app.services.files import FileService
 
 MAX_EMAIL_ATTACHMENT_SIZE_MB = 20
 
@@ -36,11 +35,13 @@ class SendRequestNotificationEmailUseCase:
         profile_repository: ProfileRepository,
         email_service: SMTPEmailService,
         app_url: str,
+        file_service: FileService | None = None,
     ) -> None:
         self._request_repository = request_repository
         self._profile_repository = profile_repository
         self._email_service = email_service
         self._app_url = app_url.rstrip("/")
+        self._file_service = file_service or FileService()
 
     async def execute(
         self,
@@ -189,16 +190,18 @@ class SendRequestNotificationEmailUseCase:
         max_total_size_bytes = MAX_EMAIL_ATTACHMENT_SIZE_MB * 1024 * 1024
 
         for file in files:
-            file_path = anyio.Path(file.path)
-            if not await file_path.exists():
+            try:
+                content_bytes = await self._file_service.read_bytes(db_file=file)
+            except NotFound:
                 continue
-            content_bytes = await file_path.read_bytes()
+            except Exception:
+                continue
             total_size_bytes += len(content_bytes)
             attachment_items.append(
                 EmailAttachment(
                     filename=file.name,
                     content_bytes=content_bytes,
-                    mime_type="application/octet-stream",
+                    mime_type=file.mime_type,
                 )
             )
 

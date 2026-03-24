@@ -36,6 +36,7 @@ from app.schemas.requests import RequestFileSchema
 from app.realtime.contracts import OutboundEnvelope
 from app.realtime.runtime import get_chat_runtime
 from app.services.chat_realtime import ChatRealtimeService, build_offer_service
+from app.services.files import FileService
 from app.services.offers import AttachmentFileInput
 
 router = APIRouter()
@@ -508,17 +509,27 @@ async def add_offer_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferFileMutationResponse:
-    stored_path, safe_name, _ = await _validate_and_store_upload(file)
+    prepared = await FileService().prepare_upload(file)
 
-    async with uow:
-        service = build_offer_service(uow)
-        file_id = await service.add_file(
-            current_user=current_user,
-            offer_id=offer_id,
-            path=stored_path,
-            name=safe_name,
-        )
-        actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
+    offer_file_service: FileService | None = None
+    try:
+        async with uow:
+            offer_file_service = FileService(uow.files)
+            service = build_offer_service(uow, file_service=offer_file_service)
+            file_id = await service.add_file(
+                current_user=current_user,
+                offer_id=offer_id,
+                upload=AttachmentFileInput(
+                    original_name=prepared.original_name,
+                    content_bytes=prepared.content_bytes,
+                    mime_type=prepared.mime_type,
+                ),
+            )
+            actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
+    except Exception:
+        if offer_file_service is not None:
+            await offer_file_service.cleanup_tracked_objects()
+        raise
 
 
     return OfferFileMutationResponse(
@@ -643,13 +654,16 @@ async def upload_offer_message_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferMessageFileUploadResponse:
-    stored_path, safe_name, _ = await _validate_and_store_upload(file)
+    prepared = await FileService().prepare_upload(file)
     realtime_service = ChatRealtimeService()
     uploaded = await realtime_service.upload_message_file(
         current_user=current_user,
         offer_id=offer_id,
-        path=stored_path,
-        name=safe_name,
+        upload=AttachmentFileInput(
+            original_name=prepared.original_name,
+            content_bytes=prepared.content_bytes,
+            mime_type=prepared.mime_type,
+        ),
     )
 
     async with uow:
@@ -678,21 +692,34 @@ async def create_offer_message_with_attachments(
     attachments: list[AttachmentFileInput] = []
     total_size = 0
     for file in files:
-        stored_path, safe_name, file_size = await _validate_and_store_upload(file)
-        total_size += file_size
+        prepared = await FileService().prepare_upload(file)
+        total_size += len(prepared.content_bytes)
         if total_size > _MAX_TOTAL_ATTACHMENT_SIZE_BYTES:
             raise Conflict("Attachments total size exceeded")
-        attachments.append(AttachmentFileInput(path=stored_path, name=safe_name))
-
-    async with uow:
-        service = build_offer_service(uow)
-        result = await service.create_message(
-            current_user=current_user,
-            offer_id=offer_id,
-            text=text,
-            attachments=attachments,
+        attachments.append(
+            AttachmentFileInput(
+                original_name=prepared.original_name,
+                content_bytes=prepared.content_bytes,
+                mime_type=prepared.mime_type,
+            )
         )
-        actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
+
+    offer_file_service: FileService | None = None
+    try:
+        async with uow:
+            offer_file_service = FileService(uow.files)
+            service = build_offer_service(uow, file_service=offer_file_service)
+            result = await service.create_message(
+                current_user=current_user,
+                offer_id=offer_id,
+                text=text,
+                attachments=attachments,
+            )
+            actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
+    except Exception:
+        if offer_file_service is not None:
+            await offer_file_service.cleanup_tracked_objects()
+        raise
 
     message_payload = await ChatRealtimeService().load_message_payload(
         offer_id=result.offer_id,

@@ -15,6 +15,11 @@ class CurrentUser:
 
 class UserPolicy:
     @staticmethod
+    def can_manage_normative_files(current_user: CurrentUser) -> None:
+        if current_user.role_id != settings.lead_economist_role_id:
+            raise Forbidden("Only lead economist can manage normative files")
+
+    @staticmethod
     def can_view_feedback(current_user: CurrentUser) -> None:
         if current_user.role_id != settings.superadmin_role_id:
             raise Forbidden("Only superadmin can view feedback")

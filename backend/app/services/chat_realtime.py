@@ -7,7 +7,9 @@ from app.core.chat_upload_tokens import create_chat_upload_token, decode_chat_up
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser
+from app.services.files import FileService
 from app.services.offers import (
+    AttachmentFileInput,
     ExistingAttachmentFileInput,
     OfferMessageAckResult,
     OfferMessageMutationResult,
@@ -26,7 +28,7 @@ class ChatSyncSnapshot:
     resync_required: bool
 
 
-def build_offer_service(uow: UnitOfWork) -> OfferService:
+def build_offer_service(uow: UnitOfWork, *, file_service: FileService | None = None) -> OfferService:
     assert uow.requests is not None
     assert uow.offers is not None
     assert uow.chats is not None
@@ -44,6 +46,7 @@ def build_offer_service(uow: UnitOfWork) -> OfferService:
         uow.profiles,
         uow.company_contacts,
         uow.users,
+        file_service=file_service,
     )
 
 
@@ -56,17 +59,22 @@ class ChatRealtimeService:
         *,
         current_user: CurrentUser,
         offer_id: int,
-        path: str,
-        name: str,
+        upload: AttachmentFileInput,
     ) -> dict:
-        async with self._uow_factory() as uow:
-            service = build_offer_service(uow)
-            uploaded = await service.create_message_upload(
-                current_user=current_user,
-                offer_id=offer_id,
-                path=path,
-                name=name,
-            )
+        file_service: FileService | None = None
+        try:
+            async with self._uow_factory() as uow:
+                file_service = FileService(uow.files)
+                service = build_offer_service(uow, file_service=file_service)
+                uploaded = await service.create_message_upload(
+                    current_user=current_user,
+                    offer_id=offer_id,
+                    upload=upload,
+                )
+        except Exception:
+            if file_service is not None:
+                await file_service.cleanup_tracked_objects()
+            raise
 
         upload_token = await create_chat_upload_token(
             file_id=uploaded.file_id,
@@ -96,19 +104,26 @@ class ChatRealtimeService:
             file_refs=file_refs or [],
         )
 
-        async with self._uow_factory() as uow:
-            service = build_offer_service(uow)
-            result = await service.create_message(
-                current_user=current_user,
-                offer_id=offer_id,
-                text=text,
-                existing_file_refs=existing_file_refs,
-            )
-            message_payload = await self._build_message_payload(
-                uow=uow,
-                offer_id=result.offer_id,
-                message_id=result.message_id,
-            )
+        file_service: FileService | None = None
+        try:
+            async with self._uow_factory() as uow:
+                file_service = FileService(uow.files)
+                service = build_offer_service(uow, file_service=file_service)
+                result = await service.create_message(
+                    current_user=current_user,
+                    offer_id=offer_id,
+                    text=text,
+                    existing_file_refs=existing_file_refs,
+                )
+                message_payload = await self._build_message_payload(
+                    uow=uow,
+                    offer_id=result.offer_id,
+                    message_id=result.message_id,
+                )
+        except Exception:
+            if file_service is not None:
+                await file_service.cleanup_tracked_objects()
+            raise
 
         return result, message_payload
 

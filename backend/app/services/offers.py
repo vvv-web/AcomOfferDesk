@@ -15,6 +15,7 @@ from app.repositories.offers import OfferRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
+from app.services.files import FileService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
@@ -28,8 +29,9 @@ DEFAULT_PARTNER_CARD_NAME = "КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛ
 
 @dataclass(frozen=True)
 class AttachmentFileInput:
-    path: str
-    name: str
+    original_name: str
+    content_bytes: bytes
+    mime_type: str
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,7 @@ class OfferService:
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
         users: UserRepository,
+        file_service: FileService | None = None,
     ):
         self._requests = requests
         self._offers = offers
@@ -174,17 +177,7 @@ class OfferService:
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._users = users
-
-    def _ensure_partner_card_file(self, files: list[RequestFileItem]) -> None:
-        if any(file_item.id == 1 for file_item in files):
-            return
-        files.append(
-            RequestFileItem(
-                id=1,
-                path=DEFAULT_PARTNER_CARD_PATH,
-                name=DEFAULT_PARTNER_CARD_NAME,
-            )
-        )
+        self._file_service = file_service or FileService(files)
 
     async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: int) -> None:
         if current_user.role_id != settings.contractor_role_id:
@@ -248,7 +241,6 @@ class OfferService:
         owner_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
-        self._ensure_partner_card_file(request_file_items)
         existing_offer = await self._offers.get_contractor_offer_for_request(
             request_id=request.id,
             contractor_user_id=current_user.user_id,
@@ -305,7 +297,6 @@ class OfferService:
         request_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
-        self._ensure_partner_card_file(request_file_items)
         offer_files = await self._offers.list_offer_files(offer_id=offer.id)
         request_offers = await self._offers.list_by_request(request_id=request.id)
         request_offers = [request_offer for request_offer in request_offers if request_offer.id_user == offer.id_user]
@@ -381,7 +372,13 @@ class OfferService:
             note=company.note if company else None,
         )
 
-    async def add_file(self, *, current_user: CurrentUser, offer_id: int, path: str, name: str) -> int:
+    async def add_file(
+        self,
+        *,
+        current_user: CurrentUser,
+        offer_id: int,
+        upload: AttachmentFileInput,
+    ) -> int:
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
@@ -391,7 +388,15 @@ class OfferService:
         if offer.status in {"accepted", "rejected"}:
             raise Conflict("Cannot edit files for finalized offer")
 
-        db_file = await self._files.create(path=path, name=name)
+        prepared = await self._file_service.prepare_bytes(
+            original_name=upload.original_name,
+            content_bytes=upload.content_bytes,
+            mime_type=upload.mime_type,
+        )
+        db_file = await self._file_service.create_offer_file(
+            offer_id=offer.id,
+            upload=prepared,
+        )
         await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
         return db_file.id
 
@@ -406,9 +411,7 @@ class OfferService:
         if not detached:
             raise NotFound("File is not attached to offer")
 
-        deleted = await self._files.delete_by_id(file_id=file_id)
-        if not deleted:
-            raise NotFound("File not found")
+        await self._file_service.delete_file(file_id=file_id)
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
@@ -499,11 +502,18 @@ class OfferService:
         *,
         current_user: CurrentUser,
         offer_id: int,
-        path: str,
-        name: str,
+        upload: AttachmentFileInput,
     ) -> UploadedMessageAttachment:
         await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=True)
-        db_file = await self._files.create(path=path, name=name)
+        prepared = await self._file_service.prepare_bytes(
+            original_name=upload.original_name,
+            content_bytes=upload.content_bytes,
+            mime_type=upload.mime_type,
+        )
+        db_file = await self._file_service.create_chat_temp_file(
+            offer_id=offer_id,
+            upload=prepared,
+        )
         return UploadedMessageAttachment(file_id=db_file.id, path=db_file.path, name=db_file.name)
 
     async def create_message(
@@ -538,7 +548,15 @@ class OfferService:
             message_type=message_type,
         )
         for attachment in new_attachments:
-            db_file = await self._files.create(path=attachment.path, name=attachment.name)
+            prepared = await self._file_service.prepare_bytes(
+                original_name=attachment.original_name,
+                content_bytes=attachment.content_bytes,
+                mime_type=attachment.mime_type,
+            )
+            db_file = await self._file_service.create_chat_message_file(
+                offer_id=offer.id,
+                upload=prepared,
+            )
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
         for file_ref in stored_file_refs:
             db_file = await self._files.get_by_id(file_ref.file_id)

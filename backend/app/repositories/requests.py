@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.orm_models import (
     Chat,
@@ -53,6 +54,7 @@ class RequestRepository:
     async def list_files_by_request_id(self, *, request_id: int) -> list[File]:
         stmt = (
             select(File)
+            .options(joinedload(File.storage_object))
             .join(RequestFile, RequestFile.id == File.id)
             .where(RequestFile.id_request == request_id)
             .order_by(File.id.asc())
@@ -244,6 +246,7 @@ class RequestRepository:
 
         stmt = (
             select(Request, RequestOfferStats, RequestFile, File, Profile, unread_messages_count)
+            .options(joinedload(File.storage_object))
             .outerjoin(RequestOfferStats, RequestOfferStats.request_id == Request.id)
             .outerjoin(RequestFile, RequestFile.id_request == Request.id)
             .outerjoin(File, File.id == RequestFile.id)
@@ -260,6 +263,7 @@ class RequestRepository:
     ) -> list[tuple[Request, RequestFile | None, File | None, Profile | None]]:
         stmt = (
             select(Request, RequestFile, File, Profile)
+            .options(joinedload(File.storage_object))
             .outerjoin(RequestFile, RequestFile.id_request == Request.id)
             .outerjoin(File, File.id == RequestFile.id)
             .outerjoin(Profile, Profile.id == Request.id_user)
@@ -296,6 +300,7 @@ class RequestRepository:
         )
         stmt = (
             select(Request, Offer, RequestFile, File, Profile, unread_messages_count)
+            .options(joinedload(File.storage_object))
             .join(Offer, Offer.id_request == Request.id)
             .join(User, User.id == Offer.id_user)
             .outerjoin(RequestFile, RequestFile.id_request == Request.id)
@@ -319,6 +324,7 @@ class RequestRepository:
     async def list_open_with_stats_and_files(self) -> list[tuple[Request, RequestOfferStats | None, RequestFile | None, File | None, Profile | None]]:
         stmt = (
             select(Request, RequestOfferStats, RequestFile, File, Profile)
+            .options(joinedload(File.storage_object))
             .outerjoin(RequestOfferStats, RequestOfferStats.request_id == Request.id)
             .outerjoin(RequestFile, RequestFile.id_request == Request.id)
             .outerjoin(File, File.id == RequestFile.id)
@@ -408,6 +414,7 @@ class RequestRepository:
     async def list_files(self, *, request_id: int) -> list[File]:
         stmt: Select[tuple[File]] = (
             select(File)
+            .options(joinedload(File.storage_object))
             .join(RequestFile, RequestFile.id == File.id)
             .where(RequestFile.id_request == request_id)
             .order_by(File.id.asc())
@@ -441,6 +448,7 @@ class RequestRepository:
 
         stmt: Select[tuple[Offer, File | None, Profile | None, CompanyContact | None, int]] = (
             select(Offer, File, Profile, CompanyContact, unread_messages_count)
+            .options(joinedload(File.storage_object))
             .outerjoin(OfferFile, OfferFile.id_offer == Offer.id)
             .outerjoin(File, File.id == OfferFile.id)
             .outerjoin(Profile, Profile.id == Offer.id_user)

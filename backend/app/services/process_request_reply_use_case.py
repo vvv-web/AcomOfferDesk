@@ -3,9 +3,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from email.utils import parseaddr
-from pathlib import Path
-
-import anyio
 
 from app.core.config import settings
 from app.core.uow import UnitOfWork
@@ -16,6 +13,8 @@ from app.repositories.messages import (
     build_auto_email_content,
     build_email_message_text,
 )
+from app.services.files import FileService
+from app.services.offers import AttachmentFileInput
 
 logger = logging.getLogger("gunicorn.error")
 
@@ -36,12 +35,10 @@ class ProcessRequestReplyUseCase:
         uow_factory: type[UnitOfWork] = UnitOfWork,
         inbox_service: IMAPInboxService,
         reply_token_codec: ReplyTokenCodec,
-        upload_dir: Path = Path("uploads"),
     ) -> None:
         self._uow_factory = uow_factory
         self._inbox_service = inbox_service
         self._reply_token_codec = reply_token_codec
-        self._upload_dir = upload_dir
 
     @classmethod
     def from_settings(cls) -> "ProcessRequestReplyUseCase":
@@ -163,203 +160,213 @@ class ProcessRequestReplyUseCase:
             assert uow.offers is not None
             assert uow.requests is not None
             assert uow.files is not None
+            file_service = FileService(uow.files)
+            try:
+                duplicate = await uow.messages.exists_with_email_message_id(email_message_id=incoming.message_id)
+                if duplicate:
+                    logger.info(
+                        "Skip email: duplicate Message-ID already exists uid=%s message_id=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                    )
+                    return False, False, False, 0
 
-            duplicate = await uow.messages.exists_with_email_message_id(email_message_id=incoming.message_id)
-            if duplicate:
-                logger.info(
-                    "Skip email: duplicate Message-ID already exists uid=%s message_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
+                contractor_profile = await uow.profiles.get_active_contractor_by_mail(
+                    email=from_email,
+                    contractor_role_id=settings.contractor_role_id,
                 )
-                return False, False, False, 0
+                if contractor_profile is None:
+                    logger.info(
+                        "Skip email: contractor profile not found or inactive uid=%s message_id=%s sender=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        from_email,
+                    )
+                    return False, False, False, 0
 
-            contractor_profile = await uow.profiles.get_active_contractor_by_mail(
-                email=from_email,
-                contractor_role_id=settings.contractor_role_id,
-            )
-            if contractor_profile is None:
-                logger.info(
-                    "Skip email: contractor profile not found or inactive uid=%s message_id=%s sender=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    from_email,
-                )
-                return False, False, False, 0
+                if contractor_profile.id != claims.user_id:
+                    logger.info(
+                        "Skip email: token user mismatch uid=%s message_id=%s sender_user_id=%s token_user_id=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        contractor_profile.id,
+                        claims.user_id,
+                    )
+                    return False, False, False, 0
 
-            if contractor_profile.id != claims.user_id:
-                logger.info(
-                    "Skip email: token user mismatch uid=%s message_id=%s sender_user_id=%s token_user_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    contractor_profile.id,
-                    claims.user_id,
-                )
-                return False, False, False, 0
+                request = await uow.requests.get_by_id(request_id=claims.request_id)
+                if request is None:
+                    logger.info(
+                        "Skip email: request not found uid=%s message_id=%s request_id=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        claims.request_id,
+                    )
+                    return False, False, False, 0
 
-            request = await uow.requests.get_by_id(request_id=claims.request_id)
-            if request is None:
-                logger.info(
-                    "Skip email: request not found uid=%s message_id=%s request_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    claims.request_id,
-                )
-                return False, False, False, 0
+                if await uow.requests.is_hidden_for_contractor(
+                    request_id=claims.request_id,
+                    contractor_user_id=contractor_profile.id,
+                ):
+                    logger.info(
+                        "Skip email: request is hidden for contractor uid=%s message_id=%s request_id=%s contractor_id=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        claims.request_id,
+                        contractor_profile.id,
+                    )
+                    return False, False, False, 0
 
-            if await uow.requests.is_hidden_for_contractor(
-                request_id=claims.request_id,
-                contractor_user_id=contractor_profile.id,
-            ):
-                logger.info(
-                    "Skip email: request is hidden for contractor uid=%s message_id=%s request_id=%s contractor_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    claims.request_id,
-                    contractor_profile.id,
-                )
-                return False, False, False, 0
-
-            offer = await uow.offers.get_contractor_offer_for_request(
-                request_id=claims.request_id,
-                contractor_user_id=contractor_profile.id,
-            )
-
-            is_new_offer = offer is None
-            if is_new_offer:
-                offer = await uow.offers.create(
+                offer = await uow.offers.get_contractor_offer_for_request(
                     request_id=claims.request_id,
                     contractor_user_id=contractor_profile.id,
                 )
-                logger.info(
-                    "Created new offer from email: uid=%s message_id=%s offer_id=%s request_id=%s contractor_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    offer.id,
-                    claims.request_id,
-                    contractor_profile.id,
-                )
-            else:
-                logger.info(
-                    "Using existing offer for email: uid=%s message_id=%s offer_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    offer.id,
-                )
 
-            assert offer is not None
-            files_saved = 0
-            message_created = False
-
-            if is_new_offer:
-                await uow.messages.create(
-                    chat_id=offer.id,
-                    user_id=contractor_profile.id,
-                    text=AUTO_EMAIL_OFFER_CREATED_TEXT,
-                    message_type="system",
-                )
-                logger.info(
-                    "Created system auto-offer message: uid=%s message_id=%s chat_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    offer.id,
-                )
-                message_created = True
-
-                email_text = build_auto_email_content(text=incoming.text)
-                if incoming.text.strip():
-                    message = await uow.messages.create(
-                        chat_id=offer.id,
-                        user_id=contractor_profile.id,
-                        text=build_email_message_text(text=email_text, message_id=incoming.message_id),
-                        message_type="email",
+                is_new_offer = offer is None
+                if is_new_offer:
+                    offer = await uow.offers.create(
+                        request_id=claims.request_id,
+                        contractor_user_id=contractor_profile.id,
                     )
                     logger.info(
-                        "Created initial message for new offer: uid=%s message_id=%s chat_id=%s message_id_db=%s",
+                        "Created new offer from email: uid=%s message_id=%s offer_id=%s request_id=%s contractor_id=%s",
                         incoming.uid,
                         incoming.message_id,
                         offer.id,
-                        message.id,
-                    )
-                elif incoming.attachments:
-                    logger.info(
-                        "Attachment-only email for new offer: skip extra text message uid=%s message_id=%s chat_id=%s",
-                        incoming.uid,
-                        incoming.message_id,
-                        offer.id,
+                        claims.request_id,
+                        contractor_profile.id,
                     )
                 else:
                     logger.info(
-                        "New offer created with system message only: empty text and no attachments uid=%s message_id=%s",
-                        incoming.uid,
-                        incoming.message_id,
-                    )
-
-                for attachment in incoming.attachments:
-                    file_path = await self._save_attachment(attachment.safe_file_name, attachment.content_bytes)
-                    db_file = await uow.files.create(path=file_path, name=attachment.original_name)
-                    await uow.offers.attach_file(offer_id=offer.id, file_id=db_file.id)
-                    logger.info(
-                        "Attached file to offer: uid=%s message_id=%s offer_id=%s file_id=%s file_name=%s file_path=%s bytes=%s",
+                        "Using existing offer for email: uid=%s message_id=%s offer_id=%s",
                         incoming.uid,
                         incoming.message_id,
                         offer.id,
+                    )
+
+                assert offer is not None
+                files_saved = 0
+                message_created = False
+
+                if is_new_offer:
+                    await uow.messages.create(
+                        chat_id=offer.id,
+                        user_id=contractor_profile.id,
+                        text=AUTO_EMAIL_OFFER_CREATED_TEXT,
+                        message_type="system",
+                    )
+                    logger.info(
+                        "Created system auto-offer message: uid=%s message_id=%s chat_id=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        offer.id,
+                    )
+                    message_created = True
+
+                    email_text = build_auto_email_content(text=incoming.text)
+                    if incoming.text.strip():
+                        message = await uow.messages.create(
+                            chat_id=offer.id,
+                            user_id=contractor_profile.id,
+                            text=build_email_message_text(text=email_text, message_id=incoming.message_id),
+                            message_type="email",
+                        )
+                        logger.info(
+                            "Created initial message for new offer: uid=%s message_id=%s chat_id=%s message_id_db=%s",
+                            incoming.uid,
+                            incoming.message_id,
+                            offer.id,
+                            message.id,
+                        )
+                    elif incoming.attachments:
+                        logger.info(
+                            "Attachment-only email for new offer: skip extra text message uid=%s message_id=%s chat_id=%s",
+                            incoming.uid,
+                            incoming.message_id,
+                            offer.id,
+                        )
+                    else:
+                        logger.info(
+                            "New offer created with system message only: empty text and no attachments uid=%s message_id=%s",
+                            incoming.uid,
+                            incoming.message_id,
+                        )
+
+                    for attachment in incoming.attachments:
+                        db_file = await file_service.create_offer_file(
+                            offer_id=offer.id,
+                            upload=AttachmentFileInput(
+                                original_name=attachment.original_name,
+                                content_bytes=attachment.content_bytes,
+                                mime_type=attachment.content_type,
+                            ),
+                        )
+                        await uow.offers.attach_file(offer_id=offer.id, file_id=db_file.id)
+                        logger.info(
+                            "Attached file to offer: uid=%s message_id=%s offer_id=%s file_id=%s file_name=%s storage_key=%s bytes=%s",
+                            incoming.uid,
+                            incoming.message_id,
+                            offer.id,
+                            db_file.id,
+                            attachment.original_name,
+                            db_file.storage_key,
+                            len(attachment.content_bytes),
+                        )
+                        files_saved += 1
+
+                    return True, True, message_created, files_saved
+
+                if not incoming.text.strip() and not incoming.attachments:
+                    logger.info(
+                        "Skip email for existing offer: empty text and no attachments uid=%s message_id=%s offer_id=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        offer.id,
+                    )
+                    return False, False, False, 0
+
+                message_text = build_email_message_text(
+                    text=build_auto_email_content(text=incoming.text),
+                    message_id=incoming.message_id,
+                )
+                message = await uow.messages.create(
+                    chat_id=offer.id,
+                    user_id=contractor_profile.id,
+                    text=message_text,
+                    message_type="email",
+                )
+                logger.info(
+                    "Created message in existing offer chat: uid=%s message_id=%s chat_id=%s message_id_db=%s",
+                    incoming.uid,
+                    incoming.message_id,
+                    offer.id,
+                    message.id,
+                )
+                message_created = True
+
+                for attachment in incoming.attachments:
+                    db_file = await file_service.create_chat_message_file(
+                        offer_id=offer.id,
+                        upload=AttachmentFileInput(
+                            original_name=attachment.original_name,
+                            content_bytes=attachment.content_bytes,
+                            mime_type=attachment.content_type,
+                        ),
+                    )
+                    await uow.messages.attach_file(message_id=message.id, file_id=db_file.id)
+                    logger.info(
+                        "Attached file to message: uid=%s message_id=%s message_id_db=%s file_id=%s file_name=%s storage_key=%s bytes=%s",
+                        incoming.uid,
+                        incoming.message_id,
+                        message.id,
                         db_file.id,
                         attachment.original_name,
-                        file_path,
+                        db_file.storage_key,
                         len(attachment.content_bytes),
                     )
                     files_saved += 1
 
-                return True, True, message_created, files_saved
-
-            if not incoming.text.strip() and not incoming.attachments:
-                logger.info(
-                    "Skip email for existing offer: empty text and no attachments uid=%s message_id=%s offer_id=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    offer.id,
-                )
-                return False, False, False, 0
-
-            message_text = build_email_message_text(
-                text=build_auto_email_content(text=incoming.text),
-                message_id=incoming.message_id,
-            )
-            message = await uow.messages.create(
-                chat_id=offer.id,
-                user_id=contractor_profile.id,
-                text=message_text,
-                message_type="email",
-            )
-            logger.info(
-                "Created message in existing offer chat: uid=%s message_id=%s chat_id=%s message_id_db=%s",
-                incoming.uid,
-                incoming.message_id,
-                offer.id,
-                message.id,
-            )
-            message_created = True
-
-            for attachment in incoming.attachments:
-                file_path = await self._save_attachment(attachment.safe_file_name, attachment.content_bytes)
-                db_file = await uow.files.create(path=file_path, name=attachment.original_name)
-                await uow.messages.attach_file(message_id=message.id, file_id=db_file.id)
-                logger.info(
-                    "Attached file to message: uid=%s message_id=%s message_id_db=%s file_id=%s file_name=%s file_path=%s bytes=%s",
-                    incoming.uid,
-                    incoming.message_id,
-                    message.id,
-                    db_file.id,
-                    attachment.original_name,
-                    file_path,
-                    len(attachment.content_bytes),
-                )
-                files_saved += 1
-
-            return True, False, message_created, files_saved
-
-    async def _save_attachment(self, safe_name: str, content: bytes) -> str:
-        await anyio.Path(self._upload_dir).mkdir(parents=True, exist_ok=True)
-        relative_path = self._upload_dir / safe_name
-        await anyio.Path(relative_path).write_bytes(content)
-        return str(relative_path)
+                return True, False, message_created, files_saved
+            except Exception:
+                await file_service.cleanup_tracked_objects()
+                raise

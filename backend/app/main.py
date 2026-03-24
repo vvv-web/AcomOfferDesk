@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.api.v1 import router as v1_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.realtime.runtime import ChatRealtimeRuntime, set_chat_runtime
+from app.services.files import FileService
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ async def lifespan(_: FastAPI):
     stop_event = asyncio.Event()
     leader_lock = _PollingLeaderLock(Path('/tmp/acom_offerdesk_reply_polling.lock'))
     is_leader = leader_lock.try_acquire()
+    await FileService().ensure_bucket_exists()
     realtime_runtime = ChatRealtimeRuntime()
     set_chat_runtime(realtime_runtime)
     await realtime_runtime.start()

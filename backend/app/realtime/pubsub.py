@@ -62,9 +62,12 @@ class RabbitMQRealtimePubSub:
             await self._queue.consume(consume)
             logger.info("Realtime pubsub connected to RabbitMQ")
             return True
-        except Exception:
+        except Exception as exc:
             await self._reset_connection()
-            logger.exception("Failed to connect realtime pubsub to RabbitMQ")
+            if self._connect_task is None:
+                logger.exception("Failed to connect realtime pubsub to RabbitMQ")
+            else:
+                logger.warning("Realtime pubsub reconnect failed: %s", exc)
             return False
 
     async def _reconnect_loop(self) -> None:

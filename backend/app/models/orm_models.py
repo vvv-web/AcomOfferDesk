@@ -100,12 +100,60 @@ class CompanyContact(Base):
     user: Mapped[User] = relationship("User", back_populates="company_contact")
 
 
+class StorageObject(Base):
+    __tablename__ = "storage_objects"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    storage_bucket: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    files: Mapped[list["File"]] = relationship("File", back_populates="storage_object")
+
+
 class File(Base):
     __tablename__ = "files"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    path: Mapped[str] = mapped_column(Text, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
+    id_storage_object: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("storage_objects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    original_name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    storage_object: Mapped[StorageObject] = relationship("StorageObject", back_populates="files", lazy="joined")
+
+    @property
+    def path(self) -> str:
+        return self.storage_object.storage_key
+
+    @property
+    def name(self) -> str:
+        return self.original_name
+
+    @property
+    def storage_bucket(self) -> str:
+        return self.storage_object.storage_bucket
+
+    @property
+    def storage_key(self) -> str:
+        return self.storage_object.storage_key
+
+    @property
+    def content_sha256(self) -> str:
+        return self.storage_object.content_sha256
+
+    @property
+    def mime_type(self) -> str:
+        return self.storage_object.mime_type
+
+    @property
+    def size_bytes(self) -> int:
+        return self.storage_object.size_bytes
 
 
 class Request(Base):
@@ -338,6 +386,13 @@ class MessageFile(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), primary_key=True)
     id_message: Mapped[int] = mapped_column(BigInteger, ForeignKey("messages.id", ondelete="CASCADE"))
+
+
+class NormativeFile(Base):
+    __tablename__ = "normative_files"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id_file: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), nullable=False)
 
 
 class FeedBack(Base):

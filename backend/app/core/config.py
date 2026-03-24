@@ -88,6 +88,14 @@ class Settings(BaseSettings):
         default=60,
         validation_alias="REQUEST_MAILBOX_POLL_INTERVAL_SECONDS",
     )
+    s3_endpoint: str = Field(..., validation_alias="S3_ENDPOINT")
+    s3_public_endpoint: str | None = Field(default=None, validation_alias="S3_PUBLIC_ENDPOINT")
+    s3_access_key: str = Field(..., validation_alias="S3_ACCESS_KEY")
+    s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
+    s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
+    s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
+    s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
+    max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
@@ -122,6 +130,18 @@ class Settings(BaseSettings):
             self.refresh_cookie_samesite = "lax"
         if not self.refresh_token_secret:
             self.refresh_token_secret = self.jwt_secret
+        self.s3_endpoint = self.s3_endpoint.strip()
+        if self.s3_public_endpoint is not None:
+            self.s3_public_endpoint = self.s3_public_endpoint.strip() or None
+        self.s3_bucket = self.s3_bucket.strip()
+        if not self.s3_endpoint:
+            raise ValueError("S3_ENDPOINT must not be blank")
+        if not self.s3_bucket:
+            raise ValueError("S3_BUCKET must not be blank")
+        if self.s3_presigned_get_ttl_seconds <= 0:
+            self.s3_presigned_get_ttl_seconds = 300
+        if self.max_upload_size_bytes <= 0:
+            self.max_upload_size_bytes = 10 * 1024 * 1024
         return self
 
     @property

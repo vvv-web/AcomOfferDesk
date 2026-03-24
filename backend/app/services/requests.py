@@ -13,10 +13,10 @@ from app.repositories.requests import RequestRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.email_notifications import EmailNotificationService
+from app.services.files import FileService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
 
-DEFAULT_PARTNER_CARD_PATH = "uploads/КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
-DEFAULT_PARTNER_CARD_NAME = "КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
+PARTNER_CARD_NORMATIVE_ID = 1
 EDITABLE_REQUEST_STATUSES = {"open", "review", "closed", "cancelled"}
 
 REQUEST_STATUS_LABELS = {
@@ -49,8 +49,9 @@ def format_offer_status(status: str | None) -> str:
 
 @dataclass(frozen=True)
 class RequestFileCreateInput:
-    path: str
-    name: str
+    original_name: str
+    content_bytes: bytes
+    mime_type: str
 
 
 @dataclass(frozen=True)
@@ -181,6 +182,7 @@ class RequestService:
         offers: OfferRepository,
         user_status_periods: UserStatusPeriodRepository,
         email_notifications: EmailNotificationService | None = None,
+        file_service: FileService | None = None,
     ):
         self._requests = requests
         self._files = files
@@ -188,6 +190,7 @@ class RequestService:
         self._offers = offers
         self._user_status_periods = user_status_periods
         self._email_notifications = email_notifications
+        self._file_service = file_service or FileService(files)
 
     async def create_request(
         self,
@@ -214,8 +217,18 @@ class RequestService:
         )
 
         file_ids: list[int] = []
+        partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
+        file_ids.append(partner_card_file_id)
         for file_item in files:
-            db_file = await self._files.create(path=file_item.path, name=file_item.name)
+            prepared = await self._file_service.prepare_bytes(
+                original_name=file_item.original_name,
+                content_bytes=file_item.content_bytes,
+                mime_type=file_item.mime_type,
+            )
+            db_file = await self._file_service.create_request_file(
+                request_id=request.id,
+                upload=prepared,
+            )
             await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
             file_ids.append(db_file.id)
 
@@ -436,7 +449,15 @@ class RequestService:
 
         RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
 
-        db_file = await self._files.create(path=file_data.path, name=file_data.name)
+        prepared = await self._file_service.prepare_bytes(
+            original_name=file_data.original_name,
+            content_bytes=file_data.content_bytes,
+            mime_type=file_data.mime_type,
+        )
+        db_file = await self._file_service.create_request_file(
+            request_id=request.id,
+            upload=prepared,
+        )
         await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
         return db_file.id
 
@@ -457,22 +478,20 @@ class RequestService:
         if not detached:
             raise NotFound("File is not attached to request")
 
-        deleted = await self._files.delete_by_id(file_id=file_id)
-        if not deleted:
-            raise NotFound("File not found")
+        await self._file_service.delete_file(file_id=file_id)
 
-    
-    def _ensure_partner_card_file(self, files: list[RequestFileItem]) -> None:
-        if any(file_item.id == 1 for file_item in files):
-            return
-        files.append(
-            RequestFileItem(
-                id=1,
-                path=DEFAULT_PARTNER_CARD_PATH,
-                name=DEFAULT_PARTNER_CARD_NAME,
-            )
+    async def _attach_partner_card_file(self, *, request_id: int) -> int:
+        partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)
+        if partner_card is None:
+            raise Conflict("Partner card file is not configured")
+
+        db_file = await self._files.create(
+            storage_object_id=partner_card.id_storage_object,
+            original_name=partner_card.original_name,
         )
-        
+        await self._requests.attach_file(request_id=request_id, file_id=db_file.id)
+        return db_file.id
+
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.can_view_requests(current_user)
@@ -510,9 +529,6 @@ class RequestService:
             if file_items:
                 existing.files.extend(file_items)
 
-        for item in grouped.values():
-            self._ensure_partner_card_file(item.files)
-
         return list(grouped.values())
 
 
@@ -546,9 +562,6 @@ class RequestService:
 
             if file_items:
                 existing.files.extend(file_items)
-
-        for item in grouped.values():
-            self._ensure_partner_card_file(item.files)
 
         return list(grouped.values())
 
@@ -598,9 +611,6 @@ class RequestService:
                 )
                 
 
-        for item in grouped.values():
-            self._ensure_partner_card_file(item.files)
-
         return list(grouped.values())
     
     
@@ -640,9 +650,6 @@ class RequestService:
             if file_items:
                 existing.files.extend(file_items)
 
-        for item in grouped.values():
-            self._ensure_partner_card_file(item.files)
-
         return list(grouped.values())
 
 
@@ -659,7 +666,6 @@ class RequestService:
             RequestFileItem(id=file.id, path=file.path, name=file.name)
             for file in request_files
         ]
-        self._ensure_partner_card_file(request_file_items)
 
         offer_rows = await self._requests.list_offers_with_files_and_contacts(
             request_id=request_id,
