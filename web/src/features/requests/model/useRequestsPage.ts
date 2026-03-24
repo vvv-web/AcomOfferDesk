@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { getOfferedRequests } from '@shared/api/requests/getOfferedRequests';
@@ -12,6 +12,41 @@ import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared
 
 const POLL_INTERVAL_MS = 10000;
 
+const buildRequestsSignature = (items: RequestWithOfferStats[]) => JSON.stringify(
+  items.map((item) => ({
+    id: item.id,
+    owner: item.id_user,
+    status: item.status,
+    updated_at: item.updated_at,
+    deadline_at: item.deadline_at,
+    id_offer: item.id_offer,
+    unread_messages_count: item.unread_messages_count ?? 0,
+    count_submitted: item.count_submitted ?? 0,
+    count_deleted_alert: item.count_deleted_alert ?? 0,
+    offers: (item.offers ?? []).map((offer) => ({
+      id: offer.id,
+      status: offer.status,
+      unread_messages_count: offer.unread_messages_count ?? 0
+    }))
+  }))
+);
+
+const buildOwnerOptionsSignature = (
+  items: Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>
+) => JSON.stringify(
+  items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    unavailable: item.unavailablePeriod
+      ? {
+          status: item.unavailablePeriod.status,
+          startedAt: item.unavailablePeriod.startedAt,
+          endedAt: item.unavailablePeriod.endedAt
+        }
+      : null
+  }))
+);
+
 export const useRequestsPage = () => {
   const { session } = useAuth();
   const [searchParams] = useSearchParams();
@@ -20,6 +55,8 @@ export const useRequestsPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [chatAlertsMap, setChatAlertsMap] = useState<Record<number, number>>({});
+  const requestsSignatureRef = useRef('');
+  const ownerOptionsSignatureRef = useRef('');
 
   const contractorTabParam = searchParams.get('tab');
   const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
@@ -58,7 +95,11 @@ export const useRequestsPage = () => {
             : await getOfferedRequests()
           : await getRequests();
 
-        setRequests(data.requests);
+        const nextSignature = buildRequestsSignature(data.requests);
+        if (requestsSignatureRef.current !== nextSignature) {
+          requestsSignatureRef.current = nextSignature;
+          setRequests(data.requests);
+        }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки заявок');
       } finally {
@@ -72,25 +113,29 @@ export const useRequestsPage = () => {
 
   const fetchOwners = useCallback(async () => {
     if (!canEditOwner) {
+      ownerOptionsSignatureRef.current = '';
       setOwnerOptions([]);
       return;
     }
 
     try {
       const economists = await getRequestEconomists();
-      setOwnerOptions(
-        economists.map((item) => ({
-          id: item.user_id,
-          label: `${item.full_name?.trim() || item.user_id} (${item.role})`,
-          unavailablePeriod: item.unavailable_period
-            ? {
-                status: item.unavailable_period.status,
-                startedAt: item.unavailable_period.started_at,
-                endedAt: item.unavailable_period.ended_at,
-              }
-            : null,
-        }))
-      );
+      const nextOwnerOptions = economists.map((item) => ({
+        id: item.user_id,
+        label: `${item.full_name?.trim() || item.user_id} (${item.role})`,
+        unavailablePeriod: item.unavailable_period
+          ? {
+              status: item.unavailable_period.status,
+              startedAt: item.unavailable_period.started_at,
+              endedAt: item.unavailable_period.ended_at,
+            }
+          : null,
+      }));
+      const nextSignature = buildOwnerOptionsSignature(nextOwnerOptions);
+      if (ownerOptionsSignatureRef.current !== nextSignature) {
+        ownerOptionsSignatureRef.current = nextSignature;
+        setOwnerOptions(nextOwnerOptions);
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Ошибка загрузки списка ответственных');
     }
@@ -99,6 +144,9 @@ export const useRequestsPage = () => {
   useEffect(() => {
     void fetchRequests(true);
     const intervalId = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
       void fetchRequests(false);
     }, POLL_INTERVAL_MS);
 
@@ -136,7 +184,7 @@ export const useRequestsPage = () => {
       if (targetOwner?.unavailablePeriod) {
         const start = formatUnavailabilityDate(targetOwner.unavailablePeriod.startedAt);
         const end = formatUnavailabilityDate(targetOwner.unavailablePeriod.endedAt);
-        setErrorMessage(`Нельзя назначить ответственного: сотрудник в нерабочем статусе (${start} — ${end})`);
+        setErrorMessage(`Нельзя назначить ответственного: сотрудник в нерабочем статусе (${start} - ${end})`);
         return;
       }
 

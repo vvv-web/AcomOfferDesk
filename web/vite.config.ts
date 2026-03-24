@@ -17,6 +17,36 @@ export default defineConfig({
       "@features": path.resolve(__dirname, "src/features"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (id.includes("node_modules/react-router") || id.includes("node_modules/@remix-run")) {
+            return "vendor-router";
+          }
+
+          if (
+            id.includes("node_modules/react") ||
+            id.includes("node_modules/scheduler") ||
+            id.includes("node_modules/@mui") ||
+            id.includes("node_modules/@emotion")
+          ) {
+            return "vendor-framework";
+          }
+
+          if (id.includes("node_modules/react-hook-form") || id.includes("node_modules/@hookform") || id.includes("node_modules/zod")) {
+            return "vendor-forms";
+          }
+
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     host: true,

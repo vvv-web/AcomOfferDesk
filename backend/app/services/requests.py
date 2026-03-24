@@ -551,73 +551,51 @@ class RequestService:
         UserPolicy.can_view_requests(current_user)
         rows = await self._requests.list_with_stats_and_files(current_user_id=current_user.user_id)
 
-        grouped: dict[int, RequestListItem] = {}
-        for request, stats, request_file, db_file, profile, unread_messages_count in rows:
-            existing = grouped.get(request.id)
-            file_items = []
-            if request_file and db_file:
-                file_items = [RequestFileItem(id=db_file.id, path=db_file.path, name=db_file.name)]
-
-            if existing is None:
-                grouped[request.id] = RequestListItem(
-                    request_id=request.id,
-                    description=request.description,
-                    status=request.status,
-                    status_label=format_request_status(request.status),
-                    deadline_at=request.deadline_at,
-                    created_at=request.created_at,
-                    updated_at=request.updated_at,
-                    closed_at=request.closed_at,
-                    owner_user_id=request.id_user,
-                    owner_full_name=profile.full_name if profile else None,
-                    chosen_offer_id=request.id_offer,
-                    count_submitted=stats.count_submitted if stats else 0,
-                    count_deleted_alert=stats.count_deleted_alert if stats else 0,
-                    count_accepted_total=stats.count_accepted_total if stats else 0,
-                    count_rejected_total=stats.count_rejected_total if stats else 0,
-                    unread_messages_count=unread_messages_count,
-                    files=file_items,
-                )
-                continue
-
-            if file_items:
-                existing.files.extend(file_items)
-
-        return list(grouped.values())
+        return [
+            RequestListItem(
+                request_id=request.id,
+                description=request.description,
+                status=request.status,
+                status_label=format_request_status(request.status),
+                deadline_at=request.deadline_at,
+                created_at=request.created_at,
+                updated_at=request.updated_at,
+                closed_at=request.closed_at,
+                owner_user_id=request.id_user,
+                owner_full_name=profile.full_name if profile else None,
+                chosen_offer_id=request.id_offer,
+                count_submitted=stats.count_submitted if stats else 0,
+                count_deleted_alert=stats.count_deleted_alert if stats else 0,
+                count_accepted_total=stats.count_accepted_total if stats else 0,
+                count_rejected_total=stats.count_rejected_total if stats else 0,
+                unread_messages_count=unread_messages_count,
+                files=[],
+            )
+            for request, stats, profile, unread_messages_count in rows
+        ]
 
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
         UserPolicy.can_view_open_requests(current_user)
         rows = await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id)
 
-        grouped: dict[int, OpenRequestListItem] = {}
-        for request, request_file, db_file, profile in rows:
-            existing = grouped.get(request.id)
-            file_items = []
-            if request_file and db_file:
-                file_items = [RequestFileItem(id=db_file.id, path=db_file.path, name=db_file.name)]
-
-            if existing is None:
-                grouped[request.id] = OpenRequestListItem(
-                    request_id=request.id,
-                    description=request.description,
-                    status=request.status,
-                    status_label=format_request_status(request.status),
-                    deadline_at=request.deadline_at,
-                    created_at=request.created_at,
-                    updated_at=request.updated_at,
-                    closed_at=request.closed_at,
-                    owner_user_id=request.id_user,
-                    owner_full_name=profile.full_name if profile else None,
-                    chosen_offer_id=request.id_offer,
-                    files=file_items,
-                )
-                continue
-
-            if file_items:
-                existing.files.extend(file_items)
-
-        return list(grouped.values())
+        return [
+            OpenRequestListItem(
+                request_id=request.id,
+                description=request.description,
+                status=request.status,
+                status_label=format_request_status(request.status),
+                deadline_at=request.deadline_at,
+                created_at=request.created_at,
+                updated_at=request.updated_at,
+                closed_at=request.closed_at,
+                owner_user_id=request.id_user,
+                owner_full_name=profile.full_name if profile else None,
+                chosen_offer_id=request.id_offer,
+                files=[],
+            )
+            for request, profile in rows
+        ]
 
 
     async def list_offered_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
@@ -625,9 +603,8 @@ class RequestService:
         rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
 
         grouped: dict[int, OpenRequestListItem] = {}
-        request_file_ids: dict[int, set[int]] = {}
         request_offer_ids: dict[int, set[int]] = {}
-        for request, offer, request_file, db_file, profile, unread_messages_count in rows:
+        for request, offer, profile, unread_messages_count in rows:
             existing = grouped.get(request.id)
             
             if existing is None:
@@ -647,12 +624,7 @@ class RequestService:
                     offers=[],
                 )
                 grouped[request.id] = existing
-                request_file_ids[request.id] = set()
                 request_offer_ids[request.id] = set()
-
-            if request_file and db_file and db_file.id not in request_file_ids[request.id]:
-                request_file_ids[request.id].add(db_file.id)
-                existing.files.append(RequestFileItem(id=db_file.id, path=db_file.path, name=db_file.name))
 
             if offer.id not in request_offer_ids[request.id]:
                 request_offer_ids[request.id].add(offer.id)
@@ -672,39 +644,28 @@ class RequestService:
         UserPolicy.can_view_open_requests(current_user)
         rows = await self._requests.list_open_with_stats_and_files()
 
-        grouped: dict[int, RequestListItem] = {}
-        for request, stats, request_file, db_file, profile in rows:
-            existing = grouped.get(request.id)
-            file_items = []
-            if request_file and db_file:
-                file_items = [RequestFileItem(id=db_file.id, path=db_file.path, name=db_file.name)]
-
-            if existing is None:
-                grouped[request.id] = RequestListItem(
-                    request_id=request.id,
-                    description=request.description,
-                    status=request.status,
-                    status_label=format_request_status(request.status),
-                    deadline_at=request.deadline_at,
-                    created_at=request.created_at,
-                    updated_at=request.updated_at,
-                    closed_at=request.closed_at,
-                    owner_user_id=request.id_user,
-                    owner_full_name=profile.full_name if profile else None,
-                    chosen_offer_id=request.id_offer,
-                    count_submitted=stats.count_submitted if stats else 0,
-                    count_deleted_alert=stats.count_deleted_alert if stats else 0,
-                    count_accepted_total=stats.count_accepted_total if stats else 0,
-                    count_rejected_total=stats.count_rejected_total if stats else 0,
-                    unread_messages_count=0,
-                    files=file_items,
-                )
-                continue
-
-            if file_items:
-                existing.files.extend(file_items)
-
-        return list(grouped.values())
+        return [
+            RequestListItem(
+                request_id=request.id,
+                description=request.description,
+                status=request.status,
+                status_label=format_request_status(request.status),
+                deadline_at=request.deadline_at,
+                created_at=request.created_at,
+                updated_at=request.updated_at,
+                closed_at=request.closed_at,
+                owner_user_id=request.id_user,
+                owner_full_name=profile.full_name if profile else None,
+                chosen_offer_id=request.id_offer,
+                count_submitted=stats.count_submitted if stats else 0,
+                count_deleted_alert=stats.count_deleted_alert if stats else 0,
+                count_accepted_total=stats.count_accepted_total if stats else 0,
+                count_rejected_total=stats.count_rejected_total if stats else 0,
+                unread_messages_count=0,
+                files=[],
+            )
+            for request, stats, profile in rows
+        ]
 
 
     async def get_request_details(self, *, current_user: CurrentUser, request_id: int) -> RequestDetailItem:

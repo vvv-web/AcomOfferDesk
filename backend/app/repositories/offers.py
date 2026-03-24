@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import Select, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -56,6 +58,20 @@ class OfferRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_offer_files_by_offer_ids(self, *, offer_ids: Sequence[int]) -> list[tuple[int, File]]:
+        if not offer_ids:
+            return []
+
+        stmt: Select[tuple[int, File]] = (
+            select(OfferFile.id_offer, File)
+            .options(joinedload(File.storage_object))
+            .join(File, File.id == OfferFile.id)
+            .where(OfferFile.id_offer.in_(offer_ids))
+            .order_by(OfferFile.id_offer.asc(), File.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
 
     async def attach_file(self, *, offer_id: int, file_id: int) -> None:
         self._session.add(OfferFile(id=file_id, id_offer=offer_id))

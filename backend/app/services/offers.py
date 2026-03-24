@@ -312,9 +312,15 @@ class OfferService:
         request_profile = await self._profiles.get_by_id(request.id_user)
         request_files = await self._requests.list_files(request_id=request.id)
         request_file_items = [RequestFileItem(id=f.id, path=f.path, name=f.name) for f in request_files]
-        offer_files = await self._offers.list_offer_files(offer_id=offer.id)
         request_offers = await self._offers.list_by_request(request_id=request.id)
         request_offers = [request_offer for request_offer in request_offers if request_offer.id_user == offer.id_user]
+        offer_ids = [request_offer.id for request_offer in request_offers]
+        offer_files_rows = await self._offers.list_offer_files_by_offer_ids(offer_ids=offer_ids)
+        offer_files_by_offer_id: dict[int, list[RequestFileItem]] = {request_offer_id: [] for request_offer_id in offer_ids}
+        for request_offer_id, db_file in offer_files_rows:
+            offer_files_by_offer_id.setdefault(request_offer_id, []).append(
+                RequestFileItem(id=db_file.id, path=db_file.path, name=db_file.name)
+            )
 
         return OfferWorkspace(
             request=OfferWorkspaceRequest(
@@ -339,7 +345,7 @@ class OfferService:
                 offer_amount=offer.offer_amount,
                 created_at=offer.created_at,
                 updated_at=offer.updated_at,
-                files=[RequestFileItem(id=f.id, path=f.path, name=f.name) for f in offer_files],
+                files=list(offer_files_by_offer_id.get(offer.id, [])),
             ),
             offers=[
                 OfferWorkspaceOffer(
@@ -349,10 +355,7 @@ class OfferService:
                     offer_amount=request_offer.offer_amount,
                     created_at=request_offer.created_at,
                     updated_at=request_offer.updated_at,
-                    files=[
-                        RequestFileItem(id=f.id, path=f.path, name=f.name)
-                        for f in await self._offers.list_offer_files(offer_id=request_offer.id)
-                    ],
+                    files=list(offer_files_by_offer_id.get(request_offer.id, [])),
                 )
                 for request_offer in request_offers
             ],

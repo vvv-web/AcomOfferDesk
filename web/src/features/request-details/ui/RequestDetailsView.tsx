@@ -98,6 +98,32 @@ const normalizeOfferStatus = (value: string | null): OfferDecisionStatus => {
     return '';
 };
 
+const buildRequestDetailsSignature = (request: RequestDetails | null) => {
+    if (!request) {
+        return '';
+    }
+
+    return JSON.stringify({
+        id: request.id,
+        id_user: request.id_user,
+        status: request.status,
+        deadline_at: request.deadline_at,
+        updated_at: request.updated_at,
+        initial_amount: request.initial_amount,
+        final_amount: request.final_amount,
+        id_offer: request.id_offer,
+        count_deleted_alert: request.count_deleted_alert,
+        offers: request.offers.map((offer) => ({
+            id: offer.offer_id,
+            status: offer.status,
+            updated_at: offer.updated_at,
+            amount: offer.offer_amount,
+            unread_messages_count: offer.unread_messages_count ?? 0,
+            files: offer.files.map((file) => [file.id, file.name])
+        })),
+        files: request.files.map((file) => [file.id, file.name])
+    });
+};
 
 const toDeadlineIso = (date: string) => `${date}T23:59:59`;
 
@@ -122,6 +148,8 @@ export const RequestDetailsView = () => {
     const [newFile, setNewFile] = useState<File | null>(null);
     const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
     const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+    const requestSignatureRef = useRef('');
+    const hasPendingChangesRef = useRef(false);
 
     const [isSaving, setIsSaving] = useState(false);
     const [isSendingEmails, setIsSendingEmails] = useState(false);
@@ -148,6 +176,11 @@ export const RequestDetailsView = () => {
         initialAmount !== baselineInitialAmount ||
         finalAmount !== baselineFinalAmount ||
         hasFileChanges;
+
+    useEffect(() => {
+        hasPendingChangesRef.current = hasPendingChanges;
+    }, [hasPendingChanges]);
+
     const canEditRequest = useMemo(
         () =>
             hasAvailableAction(
@@ -189,14 +222,18 @@ export const RequestDetailsView = () => {
     }, []);
 
     const syncRequestState = useCallback((nextRequest: RequestDetails, forceBaseline: boolean) => {
-        setRequestDetails(nextRequest);
-        setOffers(nextRequest.offers ?? []);
-        setOffersStatusMap(
-            (nextRequest.offers ?? []).reduce<Record<number, OfferDecisionStatus>>((acc, offer) => {
-                acc[offer.offer_id] = normalizeOfferStatus(offer.status);
-                return acc;
-            }, {})
-        );
+        const nextSignature = buildRequestDetailsSignature(nextRequest);
+        if (requestSignatureRef.current !== nextSignature) {
+            requestSignatureRef.current = nextSignature;
+            setRequestDetails(nextRequest);
+            setOffers(nextRequest.offers ?? []);
+            setOffersStatusMap(
+                (nextRequest.offers ?? []).reduce<Record<number, OfferDecisionStatus>>((acc, offer) => {
+                    acc[offer.offer_id] = normalizeOfferStatus(offer.status);
+                    return acc;
+                }, {})
+            );
+        }
 
         if (forceBaseline) {
             const nextStatus = (statusOptions.find((o) => o.value === nextRequest.status)?.value ?? 'open') as RequestStatus;
@@ -231,14 +268,7 @@ export const RequestDetailsView = () => {
             }
             try {
                 const nextRequest = await getRequestDetails(requestId);
-                const hasLocalChanges =
-                    status !== baselineStatus ||
-                    deadline !== baselineDeadline ||
-                    ownerUserId !== baselineOwnerUserId ||
-                    initialAmount !== baselineInitialAmount ||
-                    finalAmount !== baselineFinalAmount ||
-                    hasFileChanges;
-                syncRequestState(nextRequest, !hasLocalChanges);
+                syncRequestState(nextRequest, !hasPendingChangesRef.current);
                 setOffersError(null);
             } catch (error) {
                 setOffersError(error instanceof Error ? error.message : 'Не удалось загрузить заявку');
@@ -248,21 +278,7 @@ export const RequestDetailsView = () => {
                 }
             }
         },
-        [
-            baselineDeadline,
-            baselineFinalAmount,
-            baselineInitialAmount,
-            baselineOwnerUserId,
-            baselineStatus,
-            deadline,
-            finalAmount,
-            hasFileChanges,
-            initialAmount,
-            ownerUserId,
-            requestId,
-            status,
-            syncRequestState
-        ]
+        [requestId, syncRequestState]
     );
 
     const fetchOwners = useCallback(async () => {
@@ -295,6 +311,9 @@ export const RequestDetailsView = () => {
     useEffect(() => {
         void fetchRequest(true);
         const intervalId = window.setInterval(() => {
+            if (document.hidden || hasPendingChangesRef.current) {
+                return;
+            }
             void fetchRequest(false);
         }, pollIntervalMs);
         return () => window.clearInterval(intervalId);

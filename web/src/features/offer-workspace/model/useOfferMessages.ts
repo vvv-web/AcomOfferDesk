@@ -3,6 +3,7 @@ import {
   getOfferMessages,
   markOfferMessagesRead,
   markOfferMessagesReceived,
+  type OfferMessagesResult,
   type OfferWorkspaceMessage,
   uploadOfferMessageFile
 } from '@shared/api/offers/offerWorkspaceActions';
@@ -13,17 +14,50 @@ import type { ChatRealtimeEnvelope, RealtimeConnectionState } from '@shared/ws/c
 
 const TYPING_STOP_DELAY_MS = 2500;
 
-export const buildUnifiedChat = async (offers: Array<{ offer_id: number; status: string; created_at: string | null; updated_at: string | null }>) => {
+type OfferMessagesByOfferId = Map<number, OfferMessagesResult>;
+
+const loadOfferMessagesMap = async (
+  offers: Array<{ offer_id: number; status: string; created_at: string | null; updated_at: string | null }>,
+  preloadedResponses: OfferMessagesByOfferId = new Map()
+) => {
+  const missingOffers = offers.filter((offer) => !preloadedResponses.has(offer.offer_id));
+  if (missingOffers.length === 0) {
+    return preloadedResponses;
+  }
+
+  const loadedResponses = await Promise.all(
+    missingOffers.map(async (offer) => [offer.offer_id, await getOfferMessages(offer.offer_id)] as const)
+  );
+
+  const responsesByOfferId = new Map(preloadedResponses);
+  loadedResponses.forEach(([offerId, response]) => {
+    responsesByOfferId.set(offerId, response);
+  });
+  return responsesByOfferId;
+};
+
+export const buildUnifiedChat = async (
+  offers: Array<{ offer_id: number; status: string; created_at: string | null; updated_at: string | null }>,
+  preloadedResponses: OfferMessagesByOfferId = new Map()
+) => {
   const sortedByCreated = [...offers].sort(
     (left, right) => new Date(left.created_at ?? 0).getTime() - new Date(right.created_at ?? 0).getTime()
   );
+  const responsesByOfferId = await loadOfferMessagesMap(sortedByCreated, preloadedResponses);
   const merged: OfferWorkspaceMessage[] = [];
 
   for (let idx = 0; idx < sortedByCreated.length; idx += 1) {
     const offer = sortedByCreated[idx];
-    const response = await getOfferMessages(offer.offer_id);
+    const response = responsesByOfferId.get(offer.offer_id);
+    if (!response) {
+      continue;
+    }
     merged.push(
-      ...response.items.map((message) => ({ ...message, offer_id: offer.offer_id, is_muted: offer.status === 'deleted' }))
+      ...response.items.map((message: OfferWorkspaceMessage) => ({
+        ...message,
+        offer_id: offer.offer_id,
+        is_muted: offer.status === 'deleted'
+      }))
     );
 
     if (offer.status === 'deleted') {
@@ -61,7 +95,10 @@ export const buildUnifiedChat = async (offers: Array<{ offer_id: number; status:
     }
   }
 
-  return merged.sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
+  return {
+    merged: merged.sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()),
+    responsesByOfferId
+  };
 };
 
 type UseOfferMessagesParams = {
@@ -109,7 +146,11 @@ export const useOfferMessages = ({
 
   const loadMessages = useCallback(async (offerId: number, nextOfferItems: typeof offerItems, syncStatuses = true) => {
     const messagesResponse = await getOfferMessages(offerId);
-    setMessages(await buildUnifiedChat(nextOfferItems));
+    const { merged } = await buildUnifiedChat(
+      nextOfferItems,
+      new Map<number, OfferMessagesResult>([[offerId, messagesResponse]])
+    );
+    setMessages(merged);
     setChatActions(messagesResponse.availableActions);
 
     if (!syncStatuses || !sessionLogin) {
@@ -131,7 +172,11 @@ export const useOfferMessages = ({
       } else {
         await markOfferMessagesReceived(offerId, incomingSendIds);
         const refreshed = await getOfferMessages(offerId);
-        setMessages(await buildUnifiedChat(nextOfferItems));
+        const { merged } = await buildUnifiedChat(
+          nextOfferItems,
+          new Map<number, OfferMessagesResult>([[offerId, refreshed]])
+        );
+        setMessages(merged);
         setChatActions(refreshed.availableActions);
       }
     }

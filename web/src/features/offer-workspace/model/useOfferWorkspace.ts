@@ -16,7 +16,56 @@ import { getErrorMessage } from '@shared/lib/errors';
 import { useOfferMessages } from './useOfferMessages';
 
 const workspacePollIntervalMs = 7000;
-const areJsonEqual = <T,>(left: T | null, right: T | null) => JSON.stringify(left) === JSON.stringify(right);
+
+const buildWorkspaceSignature = (workspace: OfferWorkspace | null) => {
+  if (!workspace) {
+    return '';
+  }
+
+  return JSON.stringify({
+    request: {
+      id: workspace.request.request_id,
+      updated_at: workspace.request.updated_at,
+      status: workspace.request.status,
+      deadline_at: workspace.request.deadline_at,
+      files: workspace.request.files.map((file) => [file.id, file.name])
+    },
+    current_offer: {
+      id: workspace.offer.offer_id,
+      status: workspace.offer.status,
+      updated_at: workspace.offer.updated_at,
+      amount: workspace.offer.offer_amount,
+      files: workspace.offer.files.map((file) => [file.id, file.name])
+    },
+    offers: workspace.offers.map((offer) => ({
+      id: offer.offer_id,
+      status: offer.status,
+      updated_at: offer.updated_at,
+      amount: offer.offer_amount,
+      files: offer.files.map((file) => [file.id, file.name])
+    })),
+    available_actions: workspace.availableActions.map((action) => [action.href, action.method])
+  });
+};
+
+const buildContractorSignature = (contractor: OfferContractorInfo | null) => {
+  if (!contractor) {
+    return '';
+  }
+
+  return JSON.stringify({
+    user_id: contractor.user_id,
+    full_name: contractor.full_name,
+    phone: contractor.phone,
+    mail: contractor.mail,
+    company_name: contractor.company_name,
+    inn: contractor.inn,
+    company_phone: contractor.company_phone,
+    company_mail: contractor.company_mail,
+    address: contractor.address,
+    note: contractor.note
+  });
+};
 
 const toAmountInputValue = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -90,7 +139,7 @@ export const useOfferWorkspace = () => {
 
   const refreshWorkspace = useCallback(async (targetOfferId: number) => {
     const nextWorkspace = await getOfferWorkspace(targetOfferId);
-    if (!areJsonEqual(workspaceRef.current, nextWorkspace)) {
+    if (buildWorkspaceSignature(workspaceRef.current) !== buildWorkspaceSignature(nextWorkspace)) {
       workspaceRef.current = nextWorkspace;
       setWorkspace(nextWorkspace);
     }
@@ -114,7 +163,7 @@ export const useOfferWorkspace = () => {
     }
     try {
       const nextContractorInfo = await getOfferContractorInfo(nextContractorId);
-      if (!areJsonEqual(contractorInfoRef.current, nextContractorInfo)) {
+      if (buildContractorSignature(contractorInfoRef.current) !== buildContractorSignature(nextContractorInfo)) {
         contractorInfoRef.current = nextContractorInfo;
         setContractorInfo(nextContractorInfo);
       }
@@ -206,6 +255,9 @@ export const useOfferWorkspace = () => {
     }
 
     const interval = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
       void refreshWorkspace(selectedOfferId)
         .then((nextWorkspace) => loadMessages(selectedOfferId, nextWorkspace.offers, false))
         .catch(() => undefined);

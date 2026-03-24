@@ -232,7 +232,7 @@ class RequestRepository:
         self,
         *,
         current_user_id: str,
-    ) -> list[tuple[Request, RequestOfferStats | None, RequestFile | None, File | None, Profile | None, int]]:
+    ) -> list[tuple[Request, RequestOfferStats | None, Profile | None, int]]:
         unread_messages_count = (
             select(func.count())
             .select_from(Message)
@@ -253,11 +253,8 @@ class RequestRepository:
         )
 
         stmt = (
-            select(Request, RequestOfferStats, RequestFile, File, Profile, unread_messages_count)
-            .options(joinedload(File.storage_object))
+            select(Request, RequestOfferStats, Profile, unread_messages_count)
             .outerjoin(RequestOfferStats, RequestOfferStats.request_id == Request.id)
-            .outerjoin(RequestFile, RequestFile.id_request == Request.id)
-            .outerjoin(File, File.id == RequestFile.id)
             .outerjoin(Profile, Profile.id == Request.id_user)
             .order_by(Request.created_at.desc(), Request.id.desc())
         )
@@ -268,12 +265,9 @@ class RequestRepository:
         self,
         *,
         contractor_user_id: str,
-    ) -> list[tuple[Request, RequestFile | None, File | None, Profile | None]]:
+    ) -> list[tuple[Request, Profile | None]]:
         stmt = (
-            select(Request, RequestFile, File, Profile)
-            .options(joinedload(File.storage_object))
-            .outerjoin(RequestFile, RequestFile.id_request == Request.id)
-            .outerjoin(File, File.id == RequestFile.id)
+            select(Request, Profile)
             .outerjoin(Profile, Profile.id == Request.id_user)
             .outerjoin(
                 RequestHiddenContractor,
@@ -288,7 +282,7 @@ class RequestRepository:
 
     async def list_with_offers_for_contractor(
         self, *, contractor_user_id: str
-    ) -> list[tuple[Request, Offer, RequestFile | None, File | None, Profile | None, int]]:
+    ) -> list[tuple[Request, Offer, Profile | None, int]]:
         unread_messages_count = (
             select(func.count())
             .select_from(Message)
@@ -307,12 +301,9 @@ class RequestRepository:
             .scalar_subquery()
         )
         stmt = (
-            select(Request, Offer, RequestFile, File, Profile, unread_messages_count)
-            .options(joinedload(File.storage_object))
+            select(Request, Offer, Profile, unread_messages_count)
             .join(Offer, Offer.id_request == Request.id)
             .join(User, User.id == Offer.id_user)
-            .outerjoin(RequestFile, RequestFile.id_request == Request.id)
-            .outerjoin(File, File.id == RequestFile.id)
             .outerjoin(Profile, Profile.id == Request.id_user)
             .outerjoin(
                 RequestHiddenContractor,
@@ -329,13 +320,10 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
     
-    async def list_open_with_stats_and_files(self) -> list[tuple[Request, RequestOfferStats | None, RequestFile | None, File | None, Profile | None]]:
+    async def list_open_with_stats_and_files(self) -> list[tuple[Request, RequestOfferStats | None, Profile | None]]:
         stmt = (
-            select(Request, RequestOfferStats, RequestFile, File, Profile)
-            .options(joinedload(File.storage_object))
+            select(Request, RequestOfferStats, Profile)
             .outerjoin(RequestOfferStats, RequestOfferStats.request_id == Request.id)
-            .outerjoin(RequestFile, RequestFile.id_request == Request.id)
-            .outerjoin(File, File.id == RequestFile.id)
             .outerjoin(Profile, Profile.id == Request.id_user)
             .where(Request.status == "open")
             .order_by(Request.created_at.desc(), Request.id.desc())
