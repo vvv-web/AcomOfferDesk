@@ -109,6 +109,19 @@ const formatDate = (value: string | null, withTime = false) => {
   }).format(date);
 };
 
+const formatAmount = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '-';
+  }
+
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+};
+
 export const OfferWorkspaceView = () => {
   const {
     session,
@@ -127,6 +140,7 @@ export const OfferWorkspaceView = () => {
     setIsChatOpen,
     offerDecisionStatus,
     isUpdatingOfferStatus,
+    isUpdatingOfferAmount,
     messages,
     typingUserIds,
     isSending,
@@ -137,13 +151,18 @@ export const OfferWorkspaceView = () => {
     canSetReadMessages,
     canSetReceivedMessages,
     canEditOfferStatus,
+    canEditOfferAmount,
     canDeleteOwnOffer,
     isEconomist,
     isContractor,
     acceptedOfferId,
+    offerAmountInput,
+    setOfferAmountInput,
+    baselineOfferAmount,
     handleUpload,
     handleDeleteFile,
     handleStatusChange,
+    handleOfferAmountSave,
     handleDeleteOffer,
     handleCreateNewOffer,
     onSendMessage,
@@ -157,6 +176,8 @@ export const OfferWorkspaceView = () => {
   );
 
   const detailsRows = [
+    { id: 'initialAmount', label: 'Initial amount', value: formatAmount(workspace?.request.initial_amount ?? null) },
+    { id: 'finalAmount', label: 'Final amount', value: formatAmount(workspace?.request.final_amount ?? null) },
     { id: 'owner', label: 'Ответственный', value: workspace?.request.owner_full_name ?? '-' },
     { id: 'created', label: 'Создана', value: formatDate(workspace?.request.created_at ?? null) },
     { id: 'closed', label: 'Закрыта', value: formatDate(workspace?.request.closed_at ?? null) },
@@ -438,6 +459,34 @@ export const OfferWorkspaceView = () => {
               <Stack spacing={1} sx={{ mb: 1.5 }}>
                 <Typography variant="body2">Создана: {formatDate(offerItem.created_at)}</Typography>
                 <Typography variant="body2">Последнее изменение: {formatDate(offerItem.updated_at)}</Typography>
+              </Stack>
+
+              <Stack spacing={1} sx={{ mb: 1.5 }}>
+                <Typography variant="body2">Offer amount: {formatAmount(offerItem.offer_amount)}</Typography>
+                {isCurrent && canEditOfferAmount ? (
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    spacing={1}
+                    alignItems={{ xs: 'stretch', md: 'center' }}
+                  >
+                    <TextField
+                      size="small"
+                      label="Offer amount"
+                      value={offerAmountInput}
+                      onChange={(event) => setOfferAmountInput(event.target.value)}
+                      disabled={isUpdatingOfferAmount}
+                      inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                      sx={{ width: { xs: '100%', md: 220 } }}
+                    />
+                    <Button
+                      variant="outlined"
+                      onClick={() => void handleOfferAmountSave()}
+                      disabled={isUpdatingOfferAmount || offerAmountInput === baselineOfferAmount || !offerAmountInput.trim()}
+                    >
+                      {isUpdatingOfferAmount ? 'Сохранение...' : 'Сохранить сумму'}
+                    </Button>
+                  </Stack>
+                ) : null}
               </Stack>
 
               <Stack direction="row" flexWrap="wrap" gap={1}>

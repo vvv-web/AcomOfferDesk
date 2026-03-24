@@ -8,6 +8,8 @@ from app.domain.policies import CurrentUser
 from app.schemas.dashboard import (
     DashboardEconomistNodeSchema,
     DashboardRequestItemSchema,
+    DashboardSavingsItemSchema,
+    DashboardSavingsSummarySchema,
     DashboardStatusCounterSchema,
     UpcomingUnavailabilityItemSchema,
     ResponsibilityDashboardData,
@@ -90,6 +92,24 @@ async def get_responsibility_dashboard(
                 )
                 for item in dashboard.upcoming_unavailability
             ],
+            savings=DashboardSavingsSummarySchema(
+                total_closed_requests=dashboard.savings.total_closed_requests,
+                total_with_savings=dashboard.savings.total_with_savings,
+                total_savings_amount=dashboard.savings.total_savings_amount,
+                items=[
+                    DashboardSavingsItemSchema(
+                        request_id=item.request_id,
+                        owner_user_id=item.owner_user_id,
+                        owner_full_name=item.owner_full_name,
+                        initial_amount=item.initial_amount,
+                        offer_amount=item.offer_amount,
+                        final_amount=item.final_amount,
+                        savings_amount=item.savings_amount,
+                        closed_at=item.closed_at,
+                    )
+                    for item in dashboard.savings.items
+                ],
+            ),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/dashboard/responsibility", method="GET"),

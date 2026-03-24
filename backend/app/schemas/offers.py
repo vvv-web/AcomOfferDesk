@@ -78,6 +78,8 @@ class OfferWorkspaceRequestSchema(BaseModel):
     description: str | None
     status: str
     status_label: str
+    initial_amount: float | None
+    final_amount: float | None
     deadline_at: datetime
     owner_user_id: str
     owner_full_name: str | None
@@ -91,6 +93,7 @@ class OfferWorkspaceOfferSchema(BaseModel):
     offer_id: int
     status: str
     status_label: str
+    offer_amount: float | None
     created_at: datetime
     updated_at: datetime
     files: list[RequestFileSchema]
@@ -100,6 +103,7 @@ class OfferWorkspaceOfferListItemSchema(BaseModel):
     offer_id: int
     status: str
     status_label: str
+    offer_amount: float | None
     created_at: datetime
     updated_at: datetime
     files: list[RequestFileSchema]
@@ -218,4 +222,24 @@ class OfferStatusMutationResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: OfferStatusMutationResponseData
+    links: LinkSet = Field(alias="_links")
+
+
+class OfferCreatePayload(BaseModel):
+    offer_amount: float | None = None
+
+
+class OfferEditPayload(BaseModel):
+    offer_amount: float
+
+
+class OfferEditResponseData(BaseModel):
+    offer_id: int
+    offer_amount: float
+
+
+class OfferEditResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: OfferEditResponseData
     links: LinkSet = Field(alias="_links")

@@ -11,8 +11,8 @@ class OfferRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def create(self, *, request_id: int, contractor_user_id: str) -> Offer:
-        offer = Offer(id_request=request_id, id_user=contractor_user_id)
+    async def create(self, *, request_id: int, contractor_user_id: str, offer_amount: float | None = None) -> Offer:
+        offer = Offer(id_request=request_id, id_user=contractor_user_id, offer_amount=offer_amount)
         self._session.add(offer)
         await self._session.flush()
         return offer
@@ -24,6 +24,9 @@ class OfferRepository:
     
     async def update_status(self, *, offer: Offer, status: str) -> None:
         offer.status = status
+
+    async def update_amount(self, *, offer: Offer, offer_amount: float) -> None:
+        offer.offer_amount = offer_amount
 
     async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str) -> Offer | None:
         stmt: Select[tuple[Offer]] = (

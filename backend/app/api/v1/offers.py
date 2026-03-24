@@ -18,6 +18,9 @@ from app.schemas.offers import (
     ContractorInfoResponse,
     ContractorRequestViewResponse,
     OfferCreateResponse,
+    OfferCreatePayload,
+    OfferEditPayload,
+    OfferEditResponse,
     OfferFileMutationResponse,
     OfferMessageCreatePayload,
     OfferMessageCreateResponse,
@@ -191,11 +194,21 @@ def _offer_workspace_actions(
 
     try:
         RequestPolicy.can_edit(current_user, request_owner_user_id=request_owner_user_id)
-        actions.append(Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"))
+        actions.extend(
+            [
+                Link(href=f"/api/v1/offers/{offer_id}", method="PATCH"),
+                Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"),
+            ]
+        )
     except Forbidden:
         try:
             OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id)
-            actions.append(Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"))
+            actions.extend(
+                [
+                    Link(href=f"/api/v1/offers/{offer_id}", method="PATCH"),
+                    Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"),
+                ]
+            )
         except Forbidden:
             pass
 
@@ -367,12 +380,17 @@ async def get_contractor_request_view(
 @router.post("/requests/{request_id}/offers", response_model=OfferCreateResponse)
 async def create_empty_offer(
     request_id: int = PathParam(..., ge=1),
+    payload: OfferCreatePayload | None = Body(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> OfferCreateResponse:
     async with uow:
         service = build_offer_service(uow)
-        offer_id = await service.create_empty_offer(current_user=current_user, request_id=request_id)
+        offer_id = await service.create_offer(
+            current_user=current_user,
+            request_id=request_id,
+            offer_amount=(payload.offer_amount if payload is not None else None),
+        )
         actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
 
     return OfferCreateResponse(
@@ -402,6 +420,8 @@ async def get_offer_workspace(
                 "description": item.request.description,
                 "status": item.request.status,
                 "status_label": item.request.status_label,
+                "initial_amount": item.request.initial_amount,
+                "final_amount": item.request.final_amount,
                 "deadline_at": item.request.deadline_at,
                 "owner_user_id": item.request.owner_user_id,
                 "owner_full_name": item.request.owner_full_name,
@@ -422,6 +442,7 @@ async def get_offer_workspace(
                 "offer_id": item.offer.offer_id,
                 "status": item.offer.status,
                 "status_label": item.offer.status_label,
+                "offer_amount": item.offer.offer_amount,
                 "created_at": item.offer.created_at,
                 "updated_at": item.offer.updated_at,
                 "files": [
@@ -439,6 +460,7 @@ async def get_offer_workspace(
                     "offer_id": request_offer.offer_id,
                     "status": request_offer.status,
                     "status_label": request_offer.status_label,
+                    "offer_amount": request_offer.offer_amount,
                     "created_at": request_offer.created_at,
                     "updated_at": request_offer.updated_at,
                     "files": [
@@ -495,6 +517,31 @@ async def update_offer_status(
 
     return OfferStatusMutationResponse(
         data={"offer_id": offer_id, "status": status},
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/offers/{offer_id}/workspace", method="GET"),
+            available_actions=actions,
+        ),
+    )
+
+
+@router.patch("/offers/{offer_id}", response_model=OfferEditResponse)
+async def update_offer(
+    payload: OfferEditPayload = Body(...),
+    offer_id: int = PathParam(..., ge=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> OfferEditResponse:
+    async with uow:
+        service = build_offer_service(uow)
+        offer_amount = await service.update_amount(
+            current_user=current_user,
+            offer_id=offer_id,
+            offer_amount=payload.offer_amount,
+        )
+        actions = await _resolve_offer_action_links(offer_id=offer_id, current_user=current_user, uow=uow)
+
+    return OfferEditResponse(
+        data={"offer_id": offer_id, "offer_amount": offer_amount},
         _links=LinkSet(
             self=Link(href=f"/api/v1/offers/{offer_id}/workspace", method="GET"),
             available_actions=actions,

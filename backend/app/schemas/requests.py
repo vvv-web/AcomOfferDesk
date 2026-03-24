@@ -26,6 +26,7 @@ class OfferItemSchema(BaseModel):
     contractor_user_id: str
     status: str
     status_label: str
+    offer_amount: float | None
     created_at: datetime
     updated_at: datetime
     offer_workspace_url: str
@@ -49,6 +50,8 @@ class RequestItemSchema(BaseModel):
     description: str | None
     status: str
     status_label: str
+    initial_amount: float | None = None
+    final_amount: float | None = None
     deadline_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -157,6 +160,8 @@ class RequestEditPayload(BaseModel):
     status: str | None = None
     deadline_at: datetime | None = None
     owner_user_id: str | None = None
+    initial_amount: float | None = None
+    final_amount: float | None = None
 
 
 class RequestEmailNotificationPayload(BaseModel):

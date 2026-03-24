@@ -8,6 +8,7 @@ export type RequestDetailsFile = FileEntity;
 export type RequestDetailsOffer = {
   offer_id: number;
   status: string | null;
+  offer_amount?: number | null;
   created_at: string;
   updated_at: string;
   status_label?: string | null;
@@ -39,6 +40,8 @@ export type RequestDetails = {
   owner_full_name?: string | null;
   status: string;
   status_label: string;
+  initial_amount: number | null;
+  final_amount: number | null;
   deadline_at: string;
   closed_at: string | null;
   id_offer: number | null;
@@ -55,6 +58,8 @@ export type RequestDetails = {
 };
 
 type ApiRequestItem = RequestEntity & {
+  initial_amount?: number | null;
+  final_amount?: number | null;
   files: RequestDetailsFile[];
   offers?: RequestDetailsOffer[];
 };
@@ -85,6 +90,8 @@ export const getRequestDetails = async (requestId: number): Promise<RequestDetai
     owner_full_name: item.owner_full_name ?? null,
     status: item.status,
     status_label: item.status_label,
+    initial_amount: item.initial_amount ?? null,
+    final_amount: item.final_amount ?? null,
     deadline_at: item.deadline_at,
     closed_at: item.closed_at,
     id_offer: item.chosen_offer_id,

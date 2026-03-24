@@ -46,6 +46,16 @@ const formatDate = (value: string | null) => {
   }).format(date);
 };
 
+const parseAmountInput = (value: string) => {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
 export const ContractorRequestDetailsPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -54,6 +64,7 @@ export const ContractorRequestDetailsPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [offerAmount, setOfferAmount] = useState('');
 
   useEffect(() => {
     if (!Number.isFinite(requestId) || requestId <= 0) {
@@ -131,10 +142,24 @@ export const ContractorRequestDetailsPage = () => {
       return;
     }
 
+    const parsedOfferAmount = parseAmountInput(offerAmount);
+    if (Number.isNaN(parsedOfferAmount)) {
+      setErrorMessage('Укажите корректную сумму оффера');
+      return;
+    }
+    if (parsedOfferAmount !== null && parsedOfferAmount < 0) {
+      setErrorMessage('Сумма оффера не может быть отрицательной');
+      return;
+    }
+
     setIsResponding(true);
     setErrorMessage(null);
     try {
-      const createdOffer = await createOfferForRequest(request.id);
+      const createdOffer = await createOfferForRequest(
+        request.id,
+        undefined,
+        parsedOfferAmount === null ? undefined : { offer_amount: parsedOfferAmount }
+      );
       navigate(createdOffer.workspacePath);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить отклик');
@@ -248,6 +273,21 @@ export const ContractorRequestDetailsPage = () => {
           ]}
         />
       </Box>
+
+      {canCreateOffer ? (
+        <Stack spacing={1} sx={{ mt: 3, maxWidth: 360 }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            Сумма оффера, руб. (необязательно)
+          </Typography>
+          <TextField
+            size="small"
+            value={offerAmount}
+            onChange={(event) => setOfferAmount(event.target.value)}
+            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+            helperText="Можно оставить пустым и заполнить позже в workspace оффера."
+          />
+        </Stack>
+      ) : null}
 
       <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
         <Button variant="contained" disabled={!canCreateOffer || isResponding} onClick={() => void handleRespond()}>

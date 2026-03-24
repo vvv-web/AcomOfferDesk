@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
@@ -59,6 +60,8 @@ class RequestEditInput:
     status: str | None = None
     deadline_at: datetime | None = None
     owner_user_id: str | None = None
+    initial_amount: float | None = None
+    final_amount: float | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,7 @@ class OfferItem:
     contractor_user_id: str
     status: str
     status_label: str
+    offer_amount: float | None
     created_at: datetime
     updated_at: datetime
     offer_workspace_url: str
@@ -144,6 +148,8 @@ class RequestDetailItem:
     description: str | None
     status: str
     status_label: str
+    initial_amount: float | None
+    final_amount: float | None
     deadline_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -198,6 +204,7 @@ class RequestService:
         current_user: CurrentUser,
         deadline_at: datetime,
         description: str | None,
+        initial_amount: float | None,
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
@@ -207,6 +214,7 @@ class RequestService:
             raise Conflict("Deadline cannot be in the past")
         if not files:
             raise Conflict("At least one file is required")
+        self._validate_amount(value=initial_amount, field_name="Initial amount")
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
         normalized_hidden_contractor_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
 
@@ -214,6 +222,7 @@ class RequestService:
             id_user=current_user.user_id,
             deadline_at=deadline_at,
             description=description,
+            initial_amount=initial_amount,
         )
 
         file_ids: list[int] = []
@@ -340,6 +349,16 @@ class RequestService:
 
         RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
 
+        if data.initial_amount is not None:
+            self._validate_amount(value=data.initial_amount, field_name="Initial amount")
+            await self._requests.update_initial_amount(request=request, initial_amount=data.initial_amount)
+
+        if data.final_amount is not None:
+            self._validate_amount(value=data.final_amount, field_name="Final amount")
+            await self._requests.update_final_amount(request=request, final_amount=data.final_amount)
+
+        resulting_status = data.status if data.status is not None else request.status
+
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
                 raise Conflict("Unsupported request status")
@@ -349,6 +368,11 @@ class RequestService:
             if data.status == "closed":
                 closed_at = datetime.utcnow()
                 chosen_offer_id = await self._requests.get_latest_accepted_offer_id(request_id=request.id)
+                accepted_offer = await self._offers.get_by_id(offer_id=chosen_offer_id) if chosen_offer_id is not None else None
+                self._validate_closed_request_amounts(
+                    request=request,
+                    accepted_offer=accepted_offer,
+                )
 
             await self._requests.update_status(
                 request=request,
@@ -404,6 +428,14 @@ class RequestService:
                 )
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
 
+        if resulting_status == "closed" and data.status != "closed":
+            accepted_offer_id = request.id_offer or await self._requests.get_latest_accepted_offer_id(request_id=request.id)
+            accepted_offer = await self._offers.get_by_id(offer_id=accepted_offer_id) if accepted_offer_id is not None else None
+            self._validate_closed_request_amounts(
+                request=request,
+                accepted_offer=accepted_offer,
+            )
+
     async def _is_descendant(self, *, ancestor_user_id: str, target_user_id: str) -> bool:
         cursor_id: str | None = target_user_id
         visited: set[str] = set()
@@ -418,6 +450,28 @@ class RequestService:
             cursor_id = cursor_user.id_parent
 
         return False
+
+    def _validate_amount(self, *, value: float | None, field_name: str) -> None:
+        if value is None:
+            return
+        if value < 0:
+            raise Conflict(f"{field_name} cannot be negative")
+
+    def _validate_closed_request_amounts(self, *, request, accepted_offer) -> None:
+        if request.initial_amount is None:
+            raise Conflict("Initial amount is required to close request")
+        if request.final_amount is None:
+            raise Conflict("Final amount is required to close request")
+        if accepted_offer is None:
+            raise Conflict("Accepted offer is required to close request")
+        if accepted_offer.offer_amount is None:
+            raise Conflict("Accepted offer amount is required to close request")
+
+        initial_amount = Decimal(str(request.initial_amount))
+        final_amount = Decimal(str(request.final_amount))
+        offer_amount = Decimal(str(accepted_offer.offer_amount))
+        if final_amount != initial_amount and final_amount != offer_amount:
+            raise Conflict("Final amount must match initial amount or accepted offer amount")
     
     async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: int) -> DeletedAlertViewedResult:
         request = await self._requests.get_by_id(request_id=request_id)
@@ -681,6 +735,7 @@ class RequestService:
                     contractor_user_id=offer.id_user,
                     status=offer.status,
                     status_label=format_offer_status(offer.status),
+                    offer_amount=offer.offer_amount,
                     created_at=offer.created_at,
                     updated_at=offer.updated_at,
                     offer_workspace_url=f"/api/v1/offers/{offer.id}/workspace",
@@ -708,6 +763,8 @@ class RequestService:
             description=request.description,
             status=request.status,
             status_label=format_request_status(request.status),
+            initial_amount=request.initial_amount,
+            final_amount=request.final_amount,
             deadline_at=request.deadline_at,
             created_at=request.created_at,
             updated_at=request.updated_at,

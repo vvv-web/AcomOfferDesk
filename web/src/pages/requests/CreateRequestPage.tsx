@@ -31,8 +31,19 @@ import { DatePickerField } from '@shared/components/DatePickerField';
 
 const ALLOWED_FILE_EXTENSIONS = ['PDF', 'PNG', 'JPG', 'JPEG', 'TXT', 'MD', 'DOC', 'DOCX', 'DOCS', 'XLS', 'XLSX', 'EXL', 'CSV', 'ODS'];
 const MAX_FILE_SIZE_MB = 10;
+const normalizeAmountValue = (value: string) => value.trim().replace(',', '.');
+const isValidAmountValue = (value: string) => {
+  const normalized = normalizeAmountValue(value);
+  if (!normalized) {
+    return false;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0;
+};
 
 const schema = z.object({
+  initialAmount: z.string().trim().min(1, 'РЈРєР°Р¶РёС‚Рµ СЃСѓРјРјСѓ РїСЂРµРґРІР°СЂРёС‚РµР»СЊРЅРѕРіРѕ РґРѕРіРѕРІРѕСЂР°').refine(isValidAmountValue, 'РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅСѓСЋ СЃСѓРјРјСѓ'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
   files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
@@ -156,6 +167,7 @@ export const CreateRequestPage = () => {
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
+      initialAmount: '',
       description: '',
       deadlineAt: todayDate,
       files: [],
@@ -234,6 +246,7 @@ export const CreateRequestPage = () => {
       await createRequest({
         description: values.description?.trim() || null,
         deadline_at: `${values.deadlineAt}T23:59:59`,
+        initial_amount: normalizeAmountValue(values.initialAmount),
         files: values.files,
         additional_emails: additionalEmailsEnabled ? nextAdditionalEmails ?? values.additionalEmails : [],
         hidden_contractor_ids: hideFromContractorsEnabled ? values.hiddenContractorIds : [],
@@ -341,6 +354,26 @@ export const CreateRequestPage = () => {
                 sx={{
                   '& .MuiOutlinedInput-root': { borderRadius: 1 },
                   '& .MuiFormHelperText-root': { maxWidth: 206 },
+                }}
+              />
+            </Stack>
+
+            <Stack spacing={1}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                РЎСѓРјРјР° РїСЂРµРґРІР°СЂРёС‚РµР»СЊРЅРѕРіРѕ РґРѕРіРѕРІРѕСЂР°
+              </Typography>
+              <TextField
+                placeholder="РЈРєР°Р¶РёС‚Рµ СЃСѓРјРјСѓ РІ СЂСѓР±Р»СЏС…"
+                fullWidth
+                error={Boolean(errors.initialAmount)}
+                helperText={errors.initialAmount?.message ?? 'Р—РЅР°С‡РµРЅРёРµ initial_amount РґР»СЏ СЂР°СЃС‡С‘С‚Р° СЌРєРѕРЅРѕРјРёРё РїРѕ Р·Р°СЏРІРєРµ.'}
+                {...register('initialAmount')}
+                inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1,
+                    backgroundColor: 'background.paper',
+                  },
                 }}
               />
             </Stack>

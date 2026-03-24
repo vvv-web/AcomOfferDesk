@@ -8,6 +8,7 @@ export type WorkspaceOfferItem = {
   contractor_user_id?: string;
   status: string;
   status_label: string;
+  offer_amount?: number | null;
   created_at: string | null;
   updated_at: string | null;
   files: ContractorRequestViewFile[];
@@ -25,6 +26,8 @@ export type OfferWorkspace = {
     id_offer?: number | null;
     owner_user_id?: string;
     owner_full_name?: string | null;
+    initial_amount?: number | null;
+    final_amount?: number | null;
     deadline_at: string;
     created_at: string | null;
     updated_at: string | null;
@@ -89,6 +92,7 @@ const mapOfferItem = (offer: ApiOfferItem, contractorUserId?: string): Workspace
   contractor_user_id: contractorUserId,
   status: offer.status,
   status_label: offer.status_label,
+  offer_amount: offer.offer_amount ?? null,
   created_at: offer.created_at,
   updated_at: offer.updated_at,
   files: offer.files ?? [],

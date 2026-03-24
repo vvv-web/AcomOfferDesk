@@ -8,7 +8,7 @@ import type { OfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { getOfferContractorInfo } from '@shared/api/offers/getOfferContractorInfo';
 import type { OfferContractorInfo } from '@shared/api/offers/getOfferContractorInfo';
 import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
-import { deleteOfferFile, uploadOfferFile } from '@shared/api/offers/offerWorkspaceActions';
+import { deleteOfferFile, updateOfferAmount, uploadOfferFile } from '@shared/api/offers/offerWorkspaceActions';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { findAvailableAction, hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
@@ -17,6 +17,24 @@ import { useOfferMessages } from './useOfferMessages';
 
 const workspacePollIntervalMs = 7000;
 const areJsonEqual = <T,>(left: T | null, right: T | null) => JSON.stringify(left) === JSON.stringify(right);
+
+const toAmountInputValue = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '';
+  }
+
+  return String(value);
+};
+
+const parseAmountInput = (value: string) => {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
 
 export const useOfferWorkspace = () => {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +56,9 @@ export const useOfferWorkspace = () => {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
+  const [isUpdatingOfferAmount, setIsUpdatingOfferAmount] = useState(false);
+  const [offerAmountInput, setOfferAmountInput] = useState('');
+  const [baselineOfferAmount, setBaselineOfferAmount] = useState('');
 
   const sortedOffers = useMemo(
     () => [...(workspace?.offers ?? [])].sort((left, right) => new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime()),
@@ -147,6 +168,12 @@ export const useOfferWorkspace = () => {
   }, [workspace]);
 
   useEffect(() => {
+    const nextOfferAmount = toAmountInputValue(selectedOffer?.offer_amount ?? null);
+    setOfferAmountInput(nextOfferAmount);
+    setBaselineOfferAmount(nextOfferAmount);
+  }, [selectedOffer?.offer_amount, selectedOffer?.offer_id]);
+
+  useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace]);
 
@@ -216,6 +243,7 @@ export const useOfferWorkspace = () => {
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER || session?.roleId === ROLE.ECONOMIST;
   const isSelectedOfferSubmitted = selectedOffer?.status === 'submitted';
+  const offerEditActions = selectedOffer?.availableActions ?? workspace?.availableActions ?? [];
   const canUpload = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files`, 'POST') && (!isContractor || isSelectedOfferSubmitted);
   const canDeleteFile = (hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files/{file_id}`, 'DELETE') || hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files/1`, 'DELETE')) && (!isContractor || isSelectedOfferSubmitted);
   const canSendMessage = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages`, 'POST');
@@ -223,6 +251,8 @@ export const useOfferWorkspace = () => {
   const canSetReadMessages = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/read`, 'PATCH');
   const canSetReceivedMessages = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/received`, 'PATCH');
   const canEditOfferStatus = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER;
+  const canEditOfferAmount = Boolean(selectedOffer)
+    && hasAvailableAction({ availableActions: offerEditActions }, `/api/v1/offers/${selectedOfferId}`, 'PATCH');
   const canDeleteOwnOffer = isContractor && hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}`, 'PATCH');
 
   const acceptedOfferId = sortedOffers.find((item) => item.status === 'accepted')?.offer_id ?? null;
@@ -287,6 +317,35 @@ export const useOfferWorkspace = () => {
     }
   };
 
+  const handleOfferAmountSave = async () => {
+    if (!selectedOffer || !canEditOfferAmount) return;
+
+    const parsedOfferAmount = parseAmountInput(offerAmountInput);
+    if (parsedOfferAmount === null) {
+      setErrorMessage('Укажите сумму оффера');
+      return;
+    }
+    if (Number.isNaN(parsedOfferAmount)) {
+      setErrorMessage('Укажите корректную сумму оффера');
+      return;
+    }
+    if (parsedOfferAmount < 0) {
+      setErrorMessage('Сумма оффера не может быть отрицательной');
+      return;
+    }
+
+    setIsUpdatingOfferAmount(true);
+    setErrorMessage(null);
+    try {
+      await updateOfferAmount(selectedOffer.offer_id, parsedOfferAmount);
+      await refreshWorkspace(selectedOffer.offer_id);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Не удалось сохранить сумму оффера'));
+    } finally {
+      setIsUpdatingOfferAmount(false);
+    }
+  };
+
   const handleCreateNewOffer = async () => {
     if (!workspace) return;
     const createOfferAction = findAvailableAction({ availableActions: workspace.availableActions ?? [] }, `/api/v1/requests/${workspace.request.request_id}/offers`, 'POST');
@@ -325,6 +384,7 @@ export const useOfferWorkspace = () => {
     setIsChatOpen,
     offerDecisionStatus,
     isUpdatingOfferStatus,
+    isUpdatingOfferAmount,
     messages,
     typingUserIds,
     connectionState,
@@ -336,13 +396,18 @@ export const useOfferWorkspace = () => {
     canSetReadMessages,
     canSetReceivedMessages,
     canEditOfferStatus,
+    canEditOfferAmount,
     canDeleteOwnOffer,
     isEconomist,
     isContractor,
     acceptedOfferId,
+    offerAmountInput,
+    setOfferAmountInput,
+    baselineOfferAmount,
     handleUpload,
     handleDeleteFile,
     handleStatusChange,
+    handleOfferAmountSave,
     handleDeleteOffer,
     handleCreateNewOffer,
     onSendMessage: async (text: string, files: File[]) => {

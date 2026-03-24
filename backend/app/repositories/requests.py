@@ -36,11 +36,13 @@ class RequestRepository:
         id_user: str,
         deadline_at: datetime,
         description: str | None,
+        initial_amount: float | None = None,
     ) -> Request:
         request = Request(
             id_user=id_user,
             deadline_at=deadline_at,
             description=description,
+            initial_amount=initial_amount,
         )
         self._session.add(request)
         await self._session.flush()
@@ -89,6 +91,12 @@ class RequestRepository:
 
     async def update_owner(self, *, request: Request, user_id: str) -> None:
         request.id_user = user_id
+
+    async def update_initial_amount(self, *, request: Request, initial_amount: float) -> None:
+        request.initial_amount = initial_amount
+
+    async def update_final_amount(self, *, request: Request, final_amount: float) -> None:
+        request.final_amount = final_amount
 
     async def attach_file(self, *, request_id: int, file_id: int) -> None:
         self._session.add(RequestFile(id=file_id, id_request=request_id))
@@ -384,6 +392,24 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_closed_requests_with_chosen_offer_by_owner_ids(
+        self,
+        *,
+        owner_ids: list[str],
+    ) -> list[tuple[Request, Offer | None, Profile | None]]:
+        if not owner_ids:
+            return []
+
+        stmt = (
+            select(Request, Offer, Profile)
+            .outerjoin(Offer, Offer.id == Request.id_offer)
+            .outerjoin(Profile, Profile.id == Request.id_user)
+            .where(Request.id_user.in_(owner_ids), Request.status == "closed")
+            .order_by(Request.closed_at.desc(), Request.id.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
 
     async def decrement_deleted_alert(self, *, request_id: int) -> RequestOfferStats | None:
         stmt = select(RequestOfferStats).where(RequestOfferStats.request_id == request_id)

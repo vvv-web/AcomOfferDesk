@@ -3,6 +3,7 @@ import { fetchJson  } from '../client';
 export type CreateRequestPayload = {
   description?: string | null;
   deadline_at: string;
+  initial_amount?: string | number | null;
   files: File[];
   additional_emails?: string[];
   hidden_contractor_ids?: string[];
@@ -22,6 +23,10 @@ export const createRequest = async (payload: CreateRequestPayload): Promise<Crea
   
   if (payload.description) {
     formData.append('description', payload.description);
+  }
+
+  if (payload.initial_amount !== undefined && payload.initial_amount !== null && String(payload.initial_amount).trim() !== '') {
+    formData.append('initial_amount', String(payload.initial_amount));
   }
 
   payload.files.forEach((file) => {

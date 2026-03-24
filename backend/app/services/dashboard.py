@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 
 from app.core.config import settings
 from app.domain.policies import CurrentUser, UserPolicy
@@ -44,6 +45,26 @@ class DashboardRequestItem:
 
 
 @dataclass(frozen=True)
+class DashboardSavingsItem:
+    request_id: int
+    owner_user_id: str
+    owner_full_name: str | None
+    initial_amount: float
+    offer_amount: float
+    final_amount: float
+    savings_amount: float
+    closed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class DashboardSavingsSummary:
+    total_closed_requests: int
+    total_with_savings: int
+    total_savings_amount: float
+    items: list[DashboardSavingsItem]
+
+
+@dataclass(frozen=True)
 class ResponsibilityDashboard:
     tree: list[DashboardEconomistNode]
     unassigned_requests: list[DashboardRequestItem]
@@ -51,6 +72,7 @@ class ResponsibilityDashboard:
     assigned_requests: list[DashboardRequestItem]
     active_unavailability: list["UpcomingUnavailabilityItem"]
     upcoming_unavailability: list["UpcomingUnavailabilityItem"]
+    savings: DashboardSavingsSummary
 
 
 @dataclass(frozen=True)
@@ -78,25 +100,31 @@ class DashboardService:
 
         by_id = {user.id: (user, profile, role) for user, profile, role in staff_rows}
 
-        descendant_ids: set[str] = set()
-        for user_id in by_id:
-            cursor = user_id
-            seen: set[str] = set()
-            while cursor and cursor not in seen:
-                seen.add(cursor)
-                if cursor == current_user.user_id:
-                    if user_id != current_user.user_id:
-                        descendant_ids.add(user_id)
-                    break
-                parent = by_id.get(cursor)
-                cursor = parent[0].id_parent if parent else None
+        if current_user.role_id == settings.superadmin_role_id:
+            descendant_ids = set(by_id.keys())
+            staff_owner_ids = list(by_id.keys())
+            my_owner_ids: list[str] = []
+            assigned_owner_ids = list(by_id.keys())
+        else:
+            descendant_ids: set[str] = set()
+            for user_id in by_id:
+                cursor = user_id
+                seen: set[str] = set()
+                while cursor and cursor not in seen:
+                    seen.add(cursor)
+                    if cursor == current_user.user_id:
+                        if user_id != current_user.user_id:
+                            descendant_ids.add(user_id)
+                        break
+                    parent = by_id.get(cursor)
+                    cursor = parent[0].id_parent if parent else None
 
-        staff_owner_ids = list(descendant_ids)
-        if current_user.role_id == settings.lead_economist_role_id and current_user.user_id in by_id:
-            staff_owner_ids = [current_user.user_id, *staff_owner_ids]
+            staff_owner_ids = list(descendant_ids)
+            if current_user.role_id == settings.lead_economist_role_id and current_user.user_id in by_id:
+                staff_owner_ids = [current_user.user_id, *staff_owner_ids]
 
-        my_owner_ids = [current_user.user_id] if current_user.role_id == settings.lead_economist_role_id else []
-        assigned_owner_ids = list(descendant_ids)
+            my_owner_ids = [current_user.user_id] if current_user.role_id == settings.lead_economist_role_id else []
+            assigned_owner_ids = list(descendant_ids)
 
         request_counters = await self._requests.count_in_progress_requests_by_owner(
             owner_ids=staff_owner_ids,
@@ -218,6 +246,32 @@ class DashboardService:
             if period.id_user in by_id
         ]
 
+        savings_rows = await self._requests.list_closed_requests_with_chosen_offer_by_owner_ids(owner_ids=staff_owner_ids)
+        savings_items: list[DashboardSavingsItem] = []
+        total_savings_amount = Decimal("0")
+        for request, chosen_offer, profile in savings_rows:
+            savings_amount = self._calculate_savings(
+                initial_amount=request.initial_amount,
+                offer_amount=(chosen_offer.offer_amount if chosen_offer is not None else None),
+                final_amount=request.final_amount,
+            )
+            if savings_amount is None:
+                continue
+
+            total_savings_amount += savings_amount
+            savings_items.append(
+                DashboardSavingsItem(
+                    request_id=request.id,
+                    owner_user_id=request.id_user,
+                    owner_full_name=profile.full_name if profile else None,
+                    initial_amount=float(request.initial_amount),
+                    offer_amount=float(chosen_offer.offer_amount),
+                    final_amount=float(request.final_amount),
+                    savings_amount=float(savings_amount),
+                    closed_at=request.closed_at,
+                )
+            )
+
         return ResponsibilityDashboard(
             tree=tree,
             unassigned_requests=unassigned_requests,
@@ -225,9 +279,35 @@ class DashboardService:
             assigned_requests=assigned_requests,
             active_unavailability=active_unavailability,
             upcoming_unavailability=upcoming_unavailability,
+            savings=DashboardSavingsSummary(
+                total_closed_requests=len(savings_rows),
+                total_with_savings=len(savings_items),
+                total_savings_amount=float(total_savings_amount),
+                items=savings_items,
+            ),
         )
 
     def _sort_children(self, nodes: list[DashboardEconomistNode]) -> None:
         for node in nodes:
             node.children.sort(key=lambda item: (item.role_id, item.full_name or item.user_id))
             self._sort_children(node.children)
+
+    def _calculate_savings(
+        self,
+        *,
+        initial_amount,
+        offer_amount,
+        final_amount,
+    ) -> Decimal | None:
+        if initial_amount is None or offer_amount is None or final_amount is None:
+            return None
+
+        initial = Decimal(str(initial_amount))
+        offer = Decimal(str(offer_amount))
+        final = Decimal(str(final_amount))
+
+        if final == initial:
+            return offer - initial
+        if final == offer:
+            return initial - offer
+        return None

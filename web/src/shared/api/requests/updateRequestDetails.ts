@@ -7,6 +7,8 @@ export type UpdateRequestDetailsPayload = {
   status?: RequestStatus;
   deadline_at?: string | null;
   owner_user_id?: string;
+  initial_amount?: number;
+  final_amount?: number;
 };
 
 type UpdateRequestResponse = {
@@ -23,7 +25,7 @@ type UpdateRequestResponse = {
 export const updateRequestDetails = async (
   payload: UpdateRequestDetailsPayload
 ): Promise<UpdateRequestResponse> => {
-  const body: Record<string, string | null> = {};
+  const body: Record<string, string | number | null> = {};
 
   if (payload.status !== undefined) {
     body.status = payload.status;
@@ -35,6 +37,14 @@ export const updateRequestDetails = async (
 
   if (payload.owner_user_id !== undefined) {
     body.owner_user_id = payload.owner_user_id;
+  }
+
+  if (payload.initial_amount !== undefined) {
+    body.initial_amount = payload.initial_amount;
+  }
+
+  if (payload.final_amount !== undefined) {
+    body.final_amount = payload.final_amount;
   }
 
   return fetchJson<UpdateRequestResponse>(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict, Forbidden, NotFound
@@ -88,6 +89,8 @@ class OfferWorkspaceRequest:
     description: str | None
     status: str
     status_label: str
+    initial_amount: float | None
+    final_amount: float | None
     deadline_at: datetime
     owner_user_id: str
     owner_full_name: str | None
@@ -102,6 +105,7 @@ class OfferWorkspaceOffer:
     offer_id: int
     status: str
     status_label: str
+    offer_amount: float | None
     created_at: datetime
     updated_at: datetime
     files: list[RequestFileItem] = field(default_factory=list)
@@ -268,8 +272,15 @@ class OfferService:
             latest_offer_id=existing_offer.id if existing_offer is not None else None,
         )
 
-    async def create_empty_offer(self, *, current_user: CurrentUser, request_id: int) -> int:
+    async def create_offer(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: int,
+        offer_amount: float | None = None,
+    ) -> int:
         UserPolicy.can_create_offer(current_user)
+        self._validate_offer_amount(offer_amount)
 
         request = await self._requests.get_visible_open_by_id_for_contractor(
             request_id=request_id,
@@ -285,7 +296,11 @@ class OfferService:
         if existing_offer and existing_offer.status != "deleted":
             raise Conflict("Offer for this request already exists")
 
-        offer = await self._offers.create(request_id=request.id, contractor_user_id=current_user.user_id)
+        offer = await self._offers.create(
+            request_id=request.id,
+            contractor_user_id=current_user.user_id,
+            offer_amount=offer_amount,
+        )
         return offer.id
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
@@ -307,6 +322,8 @@ class OfferService:
                 description=request.description,
                 status=request.status,
                 status_label=format_request_status(request.status),
+                initial_amount=request.initial_amount,
+                final_amount=request.final_amount,
                 deadline_at=request.deadline_at,
                 owner_user_id=request.id_user,
                 owner_full_name=(request_profile.full_name if request_profile else None),
@@ -319,6 +336,7 @@ class OfferService:
                 offer_id=offer.id,
                 status=offer.status,
                 status_label=format_offer_status(offer.status),
+                offer_amount=offer.offer_amount,
                 created_at=offer.created_at,
                 updated_at=offer.updated_at,
                 files=[RequestFileItem(id=f.id, path=f.path, name=f.name) for f in offer_files],
@@ -328,6 +346,7 @@ class OfferService:
                     offer_id=request_offer.id,
                     status=request_offer.status,
                     status_label=format_offer_status(request_offer.status),
+                    offer_amount=request_offer.offer_amount,
                     created_at=request_offer.created_at,
                     updated_at=request_offer.updated_at,
                     files=[
@@ -440,6 +459,24 @@ class OfferService:
                 await notify_offer_status_finalized(tg_id=tg_id)
 
         return offer.status
+
+    async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
+        offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
+        self._validate_offer_amount(offer_amount)
+
+        is_contractor_editing_own_offer = (
+            current_user.role_id == settings.contractor_role_id
+            and current_user.user_id == offer.id_user
+        )
+
+        if is_contractor_editing_own_offer:
+            if offer.status in {"accepted", "rejected"}:
+                raise Conflict("Cannot edit amount for finalized offer")
+        else:
+            RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+
+        await self._offers.update_amount(offer=offer, offer_amount=offer_amount)
+        return float(Decimal(str(offer.offer_amount)))
 
     async def list_messages(self, *, current_user: CurrentUser, offer_id: int) -> list[OfferMessageItem]:
         _, _, chat, _ = await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=False)
@@ -678,6 +715,12 @@ class OfferService:
         if has_attachments:
             return "file"
         return "text"
+
+    def _validate_offer_amount(self, value: float | None) -> None:
+        if value is None:
+            return
+        if value < 0:
+            raise Conflict("Offer amount cannot be negative")
 
     def _resolve_message_status(
         self,

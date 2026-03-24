@@ -31,6 +31,7 @@ type NotificationStyle = {
 
 const columns = [
     { key: 'status', label: '', minWidth: 60, fraction: 0.3 },
+    { key: 'offerAmount', label: 'Offer amount', minWidth: 150, fraction: 1.1 },
     { key: 'offerId', label: 'Номер КП', minWidth: 100, fraction: 0.8 },
     { key: 'counterparty', label: 'Контрагент', minWidth: 220, fraction: 1.8 },
     { key: 'contacts', label: 'Контактное лицо', minWidth: 220, fraction: 1.8 },
@@ -57,6 +58,19 @@ const formatDate = (value: string | null) => {
         month: '2-digit',
         year: 'numeric'
     }).format(date);
+};
+
+const formatAmount = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+        return '-';
+    }
+
+    return new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(value);
 };
 
 const getFileLabelWithHint = (value: string, max = 18) => {
@@ -220,6 +234,7 @@ export const OffersTable = ({
                             {notificationStyle.icon}
                         </Box>
                     </Box>,
+                    <Typography variant="body2">{formatAmount(offer.offer_amount)}</Typography>,
                     <Typography variant="body2" fontWeight={600}>{offer.offer_id}</Typography>,
                     <Stack spacing={0.5}>
                         {counterpartyInfo.map((item) => (

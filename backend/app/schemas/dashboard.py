@@ -45,6 +45,24 @@ class UpcomingUnavailabilityItemSchema(BaseModel):
     ended_at: datetime
 
 
+class DashboardSavingsItemSchema(BaseModel):
+    request_id: int
+    owner_user_id: str
+    owner_full_name: str | None
+    initial_amount: float
+    offer_amount: float
+    final_amount: float
+    savings_amount: float
+    closed_at: datetime | None
+
+
+class DashboardSavingsSummarySchema(BaseModel):
+    total_closed_requests: int
+    total_with_savings: int
+    total_savings_amount: float
+    items: list[DashboardSavingsItemSchema]
+
+
 class ResponsibilityDashboardData(BaseModel):
     tree: list[DashboardEconomistNodeSchema]
     unassigned_requests: list[DashboardRequestItemSchema]
@@ -52,6 +70,7 @@ class ResponsibilityDashboardData(BaseModel):
     assigned_requests: list[DashboardRequestItemSchema]
     active_unavailability: list[UpcomingUnavailabilityItemSchema]
     upcoming_unavailability: list[UpcomingUnavailabilityItemSchema]
+    savings: DashboardSavingsSummarySchema
 
 
 class ResponsibilityDashboardResponse(BaseModel):

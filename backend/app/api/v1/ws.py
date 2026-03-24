@@ -5,6 +5,7 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
+from starlette.websockets import WebSocketState
 
 from app.core.session_tokens import AccessTokenClaims, decode_access_token
 from app.core.uow import UnitOfWork
@@ -87,7 +88,18 @@ async def chat_websocket(websocket: WebSocket) -> None:
 
     try:
         while True:
-            raw_event = await websocket.receive_json()
+            if websocket.client_state is not WebSocketState.CONNECTED:
+                break
+
+            try:
+                raw_event = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except RuntimeError as exc:
+                if "WebSocket is not connected" in str(exc):
+                    break
+                raise
+
             try:
                 event = client_event_adapter.validate_python(raw_event)
             except ValidationError as exc:

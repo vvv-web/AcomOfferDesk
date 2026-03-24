@@ -72,6 +72,24 @@ const toDateInputValue = (value: string | null) => {
     return datePart ?? '';
 };
 
+const toAmountInputValue = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+        return '';
+    }
+
+    return String(value);
+};
+
+const parseAmountInput = (value: string) => {
+    const normalized = value.trim().replace(',', '.');
+    if (!normalized) {
+        return null;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
 const normalizeOfferStatus = (value: string | null): OfferDecisionStatus => {
     if (value === 'accepted' || value === 'rejected') {
         return value;
@@ -94,6 +112,10 @@ export const RequestDetailsView = () => {
     const [baselineDeadline, setBaselineDeadline] = useState<string>('');
     const [ownerUserId, setOwnerUserId] = useState<string>('');
     const [baselineOwnerUserId, setBaselineOwnerUserId] = useState<string>('');
+    const [initialAmount, setInitialAmount] = useState<string>('');
+    const [baselineInitialAmount, setBaselineInitialAmount] = useState<string>('');
+    const [finalAmount, setFinalAmount] = useState<string>('');
+    const [baselineFinalAmount, setBaselineFinalAmount] = useState<string>('');
     const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
@@ -123,6 +145,8 @@ export const RequestDetailsView = () => {
         status !== baselineStatus ||
         deadline !== baselineDeadline ||
         ownerUserId !== baselineOwnerUserId ||
+        initialAmount !== baselineInitialAmount ||
+        finalAmount !== baselineFinalAmount ||
         hasFileChanges;
     const canEditRequest = useMemo(
         () =>
@@ -178,12 +202,18 @@ export const RequestDetailsView = () => {
             const nextStatus = (statusOptions.find((o) => o.value === nextRequest.status)?.value ?? 'open') as RequestStatus;
             const nextDeadline = toDateInputValue(nextRequest.deadline_at);
             const nextOwner = nextRequest.id_user ?? '';
+            const nextInitialAmount = toAmountInputValue(nextRequest.initial_amount);
+            const nextFinalAmount = toAmountInputValue(nextRequest.final_amount);
             setStatus(nextStatus);
             setBaselineStatus(nextStatus);
             setDeadline(nextDeadline);
             setBaselineDeadline(nextDeadline);
             setOwnerUserId(nextOwner);
             setBaselineOwnerUserId(nextOwner);
+            setInitialAmount(nextInitialAmount);
+            setBaselineInitialAmount(nextInitialAmount);
+            setFinalAmount(nextFinalAmount);
+            setBaselineFinalAmount(nextFinalAmount);
             setExistingFiles(nextRequest.files ?? []);
             setAdditionalEmails([]);
             setDeletedFileIds([]);
@@ -205,6 +235,8 @@ export const RequestDetailsView = () => {
                     status !== baselineStatus ||
                     deadline !== baselineDeadline ||
                     ownerUserId !== baselineOwnerUserId ||
+                    initialAmount !== baselineInitialAmount ||
+                    finalAmount !== baselineFinalAmount ||
                     hasFileChanges;
                 syncRequestState(nextRequest, !hasLocalChanges);
                 setOffersError(null);
@@ -218,10 +250,14 @@ export const RequestDetailsView = () => {
         },
         [
             baselineDeadline,
+            baselineFinalAmount,
+            baselineInitialAmount,
             baselineOwnerUserId,
             baselineStatus,
             deadline,
+            finalAmount,
             hasFileChanges,
+            initialAmount,
             ownerUserId,
             requestId,
             status,
@@ -268,15 +304,37 @@ export const RequestDetailsView = () => {
         void fetchOwners();
     }, [fetchOwners]);
 
-     const getSaveValidationError = (currentStatus: RequestStatus, currentDeadline: string) => {
+     const getSaveValidationError = (
+        currentStatus: RequestStatus,
+        currentDeadline: string,
+        currentInitialAmount: string,
+        currentFinalAmount: string
+    ) => {
         const statusChanged = currentStatus !== baselineStatus;
         const ownerChanged = ownerUserId !== baselineOwnerUserId;
         const isReopen = statusChanged && baselineStatus !== 'open' && currentStatus === 'open';
         const deadlineChanged = currentDeadline !== baselineDeadline;
+        const initialAmountChanged = currentInitialAmount !== baselineInitialAmount;
+        const finalAmountChanged = currentFinalAmount !== baselineFinalAmount;
+        const parsedInitialAmount = parseAmountInput(currentInitialAmount);
+        const parsedFinalAmount = parseAmountInput(currentFinalAmount);
 
         const isFinalStatus = currentStatus === 'closed' || currentStatus === 'cancelled';
-        if (!statusChanged && !deadlineChanged && !ownerChanged && !hasFileChanges) {
+        if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !hasFileChanges) {
             return 'Нет изменений для сохранения';
+        }
+
+        if (Number.isNaN(parsedInitialAmount)) {
+            return 'РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅСѓСЋ initial_amount';
+        }
+        if (Number.isNaN(parsedFinalAmount)) {
+            return 'РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅСѓСЋ final_amount';
+        }
+        if (parsedInitialAmount === null && (currentStatus === 'closed' || initialAmountChanged)) {
+            return 'РЈРєР°Р¶РёС‚Рµ initial_amount';
+        }
+        if ((parsedInitialAmount !== null && parsedInitialAmount < 0) || (parsedFinalAmount !== null && parsedFinalAmount < 0)) {
+            return 'РЎСѓРјРјР° РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕР№';
         }
 
         if ((deadlineChanged || isReopen) && !currentDeadline) {
@@ -295,6 +353,20 @@ export const RequestDetailsView = () => {
             const hasAcceptedOffer = offers.some((offer) => offer.status === 'accepted');
             if (!hasAcceptedOffer) {
                 return 'Нельзя закрыть заявку без оффера со статусом "Принят"';
+            }
+        }
+
+        if (currentStatus === 'closed') {
+            const acceptedOffer = offers.find((offer) => offer.status === 'accepted');
+            const acceptedOfferAmount = acceptedOffer?.offer_amount ?? null;
+            if (acceptedOfferAmount === null || acceptedOfferAmount === undefined) {
+                return 'Р”Р»СЏ Р·Р°РєСЂС‹С‚РёСЏ Р·Р°СЏРІРєРё Сѓ РїСЂРёРЅСЏС‚РѕРіРѕ РѕС„С„РµСЂР° РґРѕР»Р¶РЅР° Р±С‹С‚СЊ СѓРєР°Р·Р°РЅР° СЃСѓРјРјР°';
+            }
+            if (parsedFinalAmount === null) {
+                return 'Р”Р»СЏ Р·Р°РєСЂС‹С‚РёСЏ Р·Р°СЏРІРєРё СѓРєР°Р¶РёС‚Рµ final_amount';
+            }
+            if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOfferAmount) {
+                return 'final_amount РґРѕР»Р¶РЅР° СЃРѕРІРїР°РґР°С‚СЊ СЃ initial_amount РёР»Рё СЃ СЃСѓРјРјРѕР№ РїСЂРёРЅСЏС‚РѕРіРѕ РѕС„С„РµСЂР°';
             }
         }
 
@@ -317,7 +389,7 @@ export const RequestDetailsView = () => {
     };
 
     const effectiveDeadlineForValidation = status === 'review' ? todayDate : deadline;
-    const saveValidationError = getSaveValidationError(status, effectiveDeadlineForValidation);
+    const saveValidationError = getSaveValidationError(status, effectiveDeadlineForValidation, initialAmount, finalAmount);
 
     const acceptedOfferId = useMemo(
         () => offers.find((offer) => offer.status === 'accepted')?.offer_id ?? null,
@@ -332,13 +404,17 @@ export const RequestDetailsView = () => {
 
         const statusChanged = status !== baselineStatus;
         const ownerChanged = ownerUserId !== baselineOwnerUserId;
+        const parsedInitialAmount = parseAmountInput(initialAmount);
+        const parsedFinalAmount = parseAmountInput(finalAmount);
+        const initialAmountChanged = initialAmount !== baselineInitialAmount;
+        const finalAmountChanged = finalAmount !== baselineFinalAmount;
         let effectiveDeadline = deadline;
         if (status === 'review') {
             effectiveDeadline = todayDate;
         }
         const deadlineChanged = effectiveDeadline !== baselineDeadline;
 
-        const validationError = getSaveValidationError(status, effectiveDeadline);
+        const validationError = getSaveValidationError(status, effectiveDeadline, initialAmount, finalAmount);
         if (validationError) {
             setErrorMessage(validationError);
             setSuccessMessage(null);
@@ -353,7 +429,9 @@ export const RequestDetailsView = () => {
                 requestId: currentRequest.id,
                 status: statusChanged ? status : undefined,
                 deadline_at: deadlineChanged ? toDeadlineIso(effectiveDeadline) : undefined,
-                owner_user_id: ownerChanged ? ownerUserId : undefined
+                owner_user_id: ownerChanged ? ownerUserId : undefined,
+                initial_amount: initialAmountChanged && parsedInitialAmount !== null ? parsedInitialAmount : undefined,
+                final_amount: finalAmountChanged && parsedFinalAmount !== null ? parsedFinalAmount : undefined
             });
 
             await Promise.all(deletedFileIds.map((fileId) => deleteRequestFile(currentRequest.id, fileId)));
@@ -544,6 +622,34 @@ export const RequestDetailsView = () => {
         { id: 'closed', label: 'Закрыта', value: formatDate(requestDetails?.closed_at ?? null) },
         { id: 'offer', label: 'Номер КП', value: requestDetails?.id_offer ?? '-' },
         {
+            id: 'initialAmount',
+            label: 'Initial amount, руб.',
+            value: (
+                <TextField
+                    size="small"
+                    value={initialAmount}
+                    onChange={(event) => setInitialAmount(event.target.value)}
+                    disabled={!canEditRequest}
+                    inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                    sx={{ minWidth: 150 }}
+                />
+            )
+        },
+        {
+            id: 'finalAmount',
+            label: 'Final amount, руб.',
+            value: (
+                <TextField
+                    size="small"
+                    value={finalAmount}
+                    onChange={(event) => setFinalAmount(event.target.value)}
+                    disabled={!canEditRequest}
+                    inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                    sx={{ minWidth: 150 }}
+                />
+            )
+        },
+        {
             id: 'deadline',
             label: 'Дедлайн сбора КП',
             value: (
@@ -654,6 +760,11 @@ export const RequestDetailsView = () => {
                 <Typography color="warning.main" sx={{ mb: 2 }}>
                     Есть несохраненные изменения. При уходе со страницы они будут потеряны.
                 </Typography>
+            )}
+            {hasPendingChanges && saveValidationError && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                    {saveValidationError}
+                </Alert>
             )}
             {errorMessage && (
                 <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 2 }}>

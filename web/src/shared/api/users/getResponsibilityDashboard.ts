@@ -34,6 +34,24 @@ export type ResponsibilityDashboardRequest  = {
   owner_full_name: string | null;
 };
 
+export type ResponsibilitySavingsItem = {
+  request_id: number;
+  owner_user_id: string;
+  owner_full_name: string | null;
+  initial_amount: number;
+  offer_amount: number;
+  final_amount: number;
+  savings_amount: number;
+  closed_at: string | null;
+};
+
+export type ResponsibilitySavingsSummary = {
+  total_closed_requests: number;
+  total_with_savings: number;
+  total_savings_amount: number;
+  items: ResponsibilitySavingsItem[];
+};
+
 export type ResponsibilityUpcomingUnavailability = {
   user_id: string;
   full_name: string | null;
@@ -51,6 +69,7 @@ type ResponsibilityDashboardResponse = {
     assigned_requests: ResponsibilityDashboardRequest[];
     active_unavailability: ResponsibilityUpcomingUnavailability[];
     upcoming_unavailability: ResponsibilityUpcomingUnavailability[];
+    savings: ResponsibilitySavingsSummary;
   };
   _links?: {
     available_actions?: DashboardActionLink[];
@@ -65,6 +84,7 @@ export type ResponsibilityDashboardResult = {
   assignedRequests: ResponsibilityDashboardRequest[];
   activeUnavailability: ResponsibilityUpcomingUnavailability[];
   upcomingUnavailability: ResponsibilityUpcomingUnavailability[];
+  savings: ResponsibilitySavingsSummary;
   availableActions: DashboardActionLink[];
 };
 
@@ -82,6 +102,7 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
     assignedRequests: response.data.assigned_requests,
     activeUnavailability: response.data.active_unavailability,
     upcomingUnavailability: response.data.upcoming_unavailability,
+    savings: response.data.savings,
     availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
   };
 };

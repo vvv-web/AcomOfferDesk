@@ -17,12 +17,16 @@ export type CreatedOffer = {
   workspacePath: string;
 };
 
-export const createOfferForRequest = async (requestId: number, action?: AuthLink): Promise<CreatedOffer> => {
+export const createOfferForRequest = async (
+  requestId: number,
+  action?: AuthLink,
+  payload?: { offer_amount?: number }
+): Promise<CreatedOffer> => {
   const response = await fetchJson<ApiResponse>(
     action?.href ?? `/api/v1/requests/${requestId}/offers`,
     {
       method: action?.method ?? 'POST',
-      body: JSON.stringify({})
+      body: JSON.stringify(payload ?? {})
     },
     'Не удалось создать отклик'
   );

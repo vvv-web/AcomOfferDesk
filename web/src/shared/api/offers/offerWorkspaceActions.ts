@@ -45,6 +45,13 @@ type UploadResponse = {
   };
 };
 
+type UpdateOfferAmountResponse = {
+  data: {
+    offer_id: number;
+    offer_amount: number;
+  };
+};
+
 type MessageFileUploadResponse = {
   data: {
     offer_id: number;
@@ -71,7 +78,7 @@ export const getOfferMessages = async (offerId: number): Promise<OfferMessagesRe
   const response = await fetchJson<MessagesResponse>(
     `/api/v1/offers/${offerId}/messages`,
     { method: 'GET' },
-    'Ошибка загрузки сообщений'
+    'РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё СЃРѕРѕР±С‰РµРЅРёР№'
   );
 
   return {
@@ -93,7 +100,7 @@ export const sendOfferMessage = async (offerId: number, text: string): Promise<O
       method: 'POST',
       body: JSON.stringify({ text })
     },
-    'Не удалось отправить сообщение'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ'
   );
 
   return response.data;
@@ -112,7 +119,7 @@ export const sendOfferMessageWithAttachments = async (offerId: number, text: str
       method: 'POST',
       body: formData
     },
-    'Не удалось отправить сообщение с вложениями'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ СЃ РІР»РѕР¶РµРЅРёСЏРјРё'
   );
 
   return response.data;
@@ -129,7 +136,7 @@ export const markOfferMessagesReceived = async (offerId: number, messageIds: num
       method: 'PATCH',
       body: JSON.stringify({ message_ids: messageIds } satisfies MessageStatusPayload)
     },
-    'Не удалось обновить статус доставки сообщений'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ СЃС‚Р°С‚СѓСЃ РґРѕСЃС‚Р°РІРєРё СЃРѕРѕР±С‰РµРЅРёР№'
   );
 };
 
@@ -144,7 +151,7 @@ export const markOfferMessagesRead = async (offerId: number, messageIds: number[
       method: 'PATCH',
       body: JSON.stringify({ message_ids: messageIds } satisfies MessageStatusPayload)
     },
-    'Не удалось обновить статус прочтения сообщений'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ СЃС‚Р°С‚СѓСЃ РїСЂРѕС‡С‚РµРЅРёСЏ СЃРѕРѕР±С‰РµРЅРёР№'
   );
 };
 
@@ -158,7 +165,7 @@ export const uploadOfferFile = async (offerId: number, file: File) => {
       method: 'POST',
       body: formData
     },
-    'Не удалось загрузить файл'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р»'
   );
 
   return response.data;
@@ -174,7 +181,7 @@ export const uploadOfferMessageFile = async (offerId: number, file: File) => {
       method: 'POST',
       body: formData
     },
-    'Не удалось загрузить вложение для сообщения'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РІР»РѕР¶РµРЅРёРµ РґР»СЏ СЃРѕРѕР±С‰РµРЅРёСЏ'
   );
 
   return response.data;
@@ -184,6 +191,19 @@ export const deleteOfferFile = async (offerId: number, fileId: number) => {
   await fetchEmpty(
     `/api/v1/offers/${offerId}/files/${fileId}`,
     { method: 'DELETE' },
-    'Не удалось удалить файл'
+    'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ С„Р°Р№Р»'
   );
+};
+
+export const updateOfferAmount = async (offerId: number, offerAmount: number) => {
+  const response = await fetchJson<UpdateOfferAmountResponse>(
+    `/api/v1/offers/${offerId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ offer_amount: offerAmount })
+    },
+    'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЃСѓРјРјСѓ РѕС„С„РµСЂР°'
+  );
+
+  return response.data;
 };
