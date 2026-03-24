@@ -47,6 +47,7 @@ type ResponsibilityDashboardResponse = {
   data: {
     tree: ResponsibilityEmployeeNode[];
     unassigned_requests: ResponsibilityDashboardRequest[];
+    my_requests: ResponsibilityDashboardRequest[];
     assigned_requests: ResponsibilityDashboardRequest[];
     active_unavailability: ResponsibilityUpcomingUnavailability[];
     upcoming_unavailability: ResponsibilityUpcomingUnavailability[];
@@ -60,6 +61,7 @@ type ResponsibilityDashboardResponse = {
 export type ResponsibilityDashboardResult = {
   tree: ResponsibilityEmployeeNode[];
   unassignedRequests: ResponsibilityDashboardRequest[];
+  myRequests: ResponsibilityDashboardRequest[];
   assignedRequests: ResponsibilityDashboardRequest[];
   activeUnavailability: ResponsibilityUpcomingUnavailability[];
   upcomingUnavailability: ResponsibilityUpcomingUnavailability[];
@@ -76,6 +78,7 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
   return {
     tree: response.data.tree,
     unassignedRequests: response.data.unassigned_requests,
+    myRequests: response.data.my_requests,
     assignedRequests: response.data.assigned_requests,
     activeUnavailability: response.data.active_unavailability,
     upcomingUnavailability: response.data.upcoming_unavailability,

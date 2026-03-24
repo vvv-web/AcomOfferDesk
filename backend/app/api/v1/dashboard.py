@@ -39,6 +39,20 @@ def _map_node(node: DashboardEconomistNode) -> DashboardEconomistNodeSchema:
     )
 
 
+def _map_request_item(item) -> DashboardRequestItemSchema:
+    return DashboardRequestItemSchema(
+        request_id=item.request_id,
+        description=item.description,
+        status=item.status,
+        status_label=item.status_label,
+        deadline_at=item.deadline_at,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        owner_user_id=item.owner_user_id,
+        owner_full_name=item.owner_full_name,
+    )
+
+
 @router.get("/dashboard/responsibility", response_model=ResponsibilityDashboardResponse)
 async def get_responsibility_dashboard(
     current_user: CurrentUser = Depends(get_current_user),
@@ -51,34 +65,9 @@ async def get_responsibility_dashboard(
     return ResponsibilityDashboardResponse(
         data=ResponsibilityDashboardData(
             tree=[_map_node(node) for node in dashboard.tree],
-            unassigned_requests=[
-                DashboardRequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                )
-                for item in dashboard.unassigned_requests
-            ],
-            assigned_requests=[
-                DashboardRequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                )
-                for item in dashboard.assigned_requests
-            ],
+            unassigned_requests=[_map_request_item(item) for item in dashboard.unassigned_requests],
+            my_requests=[_map_request_item(item) for item in dashboard.my_requests],
+            assigned_requests=[_map_request_item(item) for item in dashboard.assigned_requests],
             active_unavailability=[
                 UpcomingUnavailabilityItemSchema(
                     user_id=item.user_id,

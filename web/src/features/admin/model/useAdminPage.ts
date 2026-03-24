@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import type { UserListItem } from '@entities/user';
 import { registerUser } from '@shared/api/auth/registerUser';
+import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { getUsers } from '@shared/api/users/getUsers';
 import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
@@ -139,31 +140,24 @@ export const useAdminPage = () => {
     }
   }, [canCreateUser, searchParams, setSearchParams]);
 
+  const loadManagers = useCallback(async () => {
+    const [economistManagersResult, leadEconomistManagersResult] = await Promise.allSettled([
+      getManagerCandidates(ROLE.ECONOMIST),
+      getManagerCandidates(ROLE.LEAD_ECONOMIST)
+    ]);
+
+    setEconomistAndLeadManagers(
+      economistManagersResult.status === 'fulfilled' ? economistManagersResult.value.items : []
+    );
+    setProjectManagerManagers(
+      leadEconomistManagersResult.status === 'fulfilled' ? leadEconomistManagersResult.value.items : []
+    );
+  }, []);
+
   useEffect(() => {
     if (!isDialogOpen) return;
-
-    const loadManagers = async () => {
-      const [leadEconomistsResult, economistsResult, projectManagersResult] = await Promise.allSettled([
-        getUsers(ROLE.LEAD_ECONOMIST),
-        getUsers(ROLE.ECONOMIST),
-        getUsers(ROLE.PROJECT_MANAGER)
-      ]);
-
-      const leadEconomists = leadEconomistsResult.status === 'fulfilled' ? leadEconomistsResult.value.items : [];
-      const economists = economistsResult.status === 'fulfilled' ? economistsResult.value.items : [];
-      const projectManagers = projectManagersResult.status === 'fulfilled' ? projectManagersResult.value.items : [];
-
-      const uniqueManagers = new Map<string, UserListItem>();
-      for (const manager of [...leadEconomists, ...economists]) {
-        uniqueManagers.set(manager.user_id, manager);
-      }
-
-      setEconomistAndLeadManagers(Array.from(uniqueManagers.values()));
-      setProjectManagerManagers(projectManagers);
-    };
-
     void loadManagers();
-  }, [isDialogOpen]);
+  }, [isDialogOpen, loadManagers]);
 
   useEffect(() => {
     if (!requiresParent) {
@@ -226,7 +220,7 @@ export const useAdminPage = () => {
       });
       setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
       resetForm();
-      await loadUsers();
+      await Promise.all([loadUsers(), loadManagers()]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать пользователя');
     }

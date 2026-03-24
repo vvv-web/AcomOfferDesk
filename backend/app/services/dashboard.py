@@ -47,6 +47,7 @@ class DashboardRequestItem:
 class ResponsibilityDashboard:
     tree: list[DashboardEconomistNode]
     unassigned_requests: list[DashboardRequestItem]
+    my_requests: list[DashboardRequestItem]
     assigned_requests: list[DashboardRequestItem]
     active_unavailability: list["UpcomingUnavailabilityItem"]
     upcoming_unavailability: list["UpcomingUnavailabilityItem"]
@@ -90,12 +91,15 @@ class DashboardService:
                 parent = by_id.get(cursor)
                 cursor = parent[0].id_parent if parent else None
 
+        staff_owner_ids = list(descendant_ids)
+        if current_user.role_id == settings.lead_economist_role_id and current_user.user_id in by_id:
+            staff_owner_ids = [current_user.user_id, *staff_owner_ids]
+
+        my_owner_ids = [current_user.user_id] if current_user.role_id == settings.lead_economist_role_id else []
         assigned_owner_ids = list(descendant_ids)
-        if current_user.role_id == settings.lead_economist_role_id:
-            assigned_owner_ids = [current_user.user_id, *list(descendant_ids)]
 
         request_counters = await self._requests.count_in_progress_requests_by_owner(
-            owner_ids=list(descendant_ids),
+            owner_ids=staff_owner_ids,
         )
 
         counters_by_user: dict[str, dict[str, int]] = {}
@@ -104,7 +108,7 @@ class DashboardService:
             owner_counters[status] = count
 
         nodes: dict[str, DashboardEconomistNode] = {}
-        for user_id in descendant_ids:
+        for user_id in staff_owner_ids:
             user, profile, role = by_id[user_id]
             status_counts = counters_by_user.get(user.id, {})
             statuses = [
@@ -153,6 +157,22 @@ class DashboardService:
             for request in unassigned_rows
         ]
 
+        my_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=my_owner_ids)
+        my_requests = [
+            DashboardRequestItem(
+                request_id=request.id,
+                description=request.description,
+                status=request.status,
+                status_label=format_request_status(request.status),
+                deadline_at=request.deadline_at,
+                created_at=request.created_at,
+                updated_at=request.updated_at,
+                owner_user_id=request.id_user,
+                owner_full_name=by_id[request.id_user][1].full_name if request.id_user in by_id and by_id[request.id_user][1] else None,
+            )
+            for request in my_rows
+        ]
+
         assigned_rows = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=assigned_owner_ids)
         assigned_requests = [
             DashboardRequestItem(
@@ -169,7 +189,7 @@ class DashboardService:
             for request in assigned_rows
         ]
 
-        active_periods_by_user = await self._user_status_periods.list_active_for_users(user_ids=list(descendant_ids))
+        active_periods_by_user = await self._user_status_periods.list_active_for_users(user_ids=staff_owner_ids)
         active_unavailability = [
             UpcomingUnavailabilityItem(
                 user_id=period.id_user,
@@ -183,7 +203,7 @@ class DashboardService:
             if period.id_user in by_id
         ]
 
-        soon_periods = await self._user_status_periods.list_next_for_users(user_ids=list(descendant_ids))
+        soon_periods = await self._user_status_periods.list_next_for_users(user_ids=staff_owner_ids)
 
         upcoming_unavailability = [
             UpcomingUnavailabilityItem(
@@ -201,6 +221,7 @@ class DashboardService:
         return ResponsibilityDashboard(
             tree=tree,
             unassigned_requests=unassigned_requests,
+            my_requests=my_requests,
             assigned_requests=assigned_requests,
             active_unavailability=active_unavailability,
             upcoming_unavailability=upcoming_unavailability,

@@ -101,14 +101,6 @@ class UserRegistrationService:
             parent_user = await self._users.get_by_id(id_parent)
             if parent_user is None:
                 raise NotFound("Parent user not found")
-            if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
-                is_available_parent = id_parent == current_user.user_id or await _is_descendant_user(
-                    self._users,
-                    ancestor_user_id=current_user.user_id,
-                    target_user_id=id_parent,
-                )
-                if not is_available_parent:
-                    raise Forbidden("Owner must be from current user's subordinates")
             parent_role = await self._users.get_role_by_id(parent_user.id_role)
             if parent_role is None or parent_role.role not in {ROLE_NAME_ECONOMIST, ROLE_NAME_LEAD_ECONOMIST}:
                 raise Conflict("Economist user can have only economist or lead economist manager")
@@ -437,6 +429,51 @@ class UserQueryService:
             )
             for user, profile in rows
         ]
+
+    async def list_manager_candidates(
+        self,
+        current_user: CurrentUser,
+        *,
+        target_role_id: int,
+    ) -> list[UserListItem]:
+        UserPolicy.can_register_user(current_user)
+
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id} and target_role_id != settings.economist_role_id:
+            raise Forbidden("Lead economist and project manager can create only economist users")
+
+        if target_role_id == settings.economist_role_id:
+            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+            )
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile, _ in rows
+            ]
+
+        if target_role_id == settings.lead_economist_role_id:
+            rows = await self._users.list_users_with_profiles(role_id=settings.project_manager_role_id)
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile in rows
+            ]
+
+        return []
     
     async def list_economists(self, current_user: CurrentUser) -> list[EconomistListItem]:
         UserPolicy.can_list_users(current_user)

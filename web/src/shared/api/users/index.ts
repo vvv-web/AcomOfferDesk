@@ -1,5 +1,6 @@
 export * from './getCurrentUserProfile';
 export * from './getEconomists';
+export * from './getManagerCandidates';
 export * from './getRequestContractors';
 export * from './getResponsibilityDashboard';
 export * from './getUsers';

@@ -24,7 +24,9 @@ import {
   type ResponsibilityDashboardRequest,
   type ResponsibilityUpcomingUnavailability
 } from '@shared/api/users/getResponsibilityDashboard';
+import { useAuth } from '@app/providers/AuthProvider';
 import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
+import { ROLE } from '@shared/constants/roles';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { formatUnavailabilityDate, getUnavailabilityStatusLabel, getUnavailabilityTooltip, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
@@ -668,15 +670,18 @@ const EmployeeNodeCard = ({
 };
 
 export const ProjectManagerDashboard = () => {
+  const { session } = useAuth();
   const theme = useTheme();
   const statusColors = useMemo<Record<string, string>>(() => ({
     open: theme.palette.dashboard.status.open,
     review: theme.palette.dashboard.status.review
   }), [theme]);
   const workloadColors = useMemo(() => theme.palette.dashboard.workload, [theme]);
+  const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
 
   const [tree, setTree] = useState<ResponsibilityEmployeeNode[]>([]);
   const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
+  const [myRequests, setMyRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [assignedRequests, setAssignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [activeUnavailability, setActiveUnavailability] = useState<ResponsibilityUpcomingUnavailability[]>([]);
   const [upcomingUnavailability, setUpcomingUnavailability] = useState<Array<{
@@ -687,7 +692,7 @@ export const ProjectManagerDashboard = () => {
     started_at: string;
     ended_at: string;
   }>>([]);
-  const [requestsTab, setRequestsTab] = useState<'unassigned' | 'assigned'>('unassigned');
+  const [requestsTab, setRequestsTab] = useState<'unassigned' | 'mine' | 'assigned'>('unassigned');
   const [assignmentState, setAssignmentState] = useState<AssignmentState>({});
   const [expandedNodes, setExpandedNodes] = useState<ExpandedState>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -703,6 +708,7 @@ export const ProjectManagerDashboard = () => {
       const response = await getResponsibilityDashboard();
       setTree(response.tree);
       setUnassignedRequests(response.unassignedRequests);
+      setMyRequests(response.myRequests);
       setAssignedRequests(response.assignedRequests);
       setActiveUnavailability(response.activeUnavailability);
       setUpcomingUnavailability(response.upcomingUnavailability);
@@ -725,6 +731,12 @@ export const ProjectManagerDashboard = () => {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (!isLeadEconomist && requestsTab === 'mine') {
+      setRequestsTab('unassigned');
+    }
+  }, [isLeadEconomist, requestsTab]);
 
   const allSubordinates = useMemo(() => flattenEmployees(tree), [tree]);
   const globalTotals = useMemo(() => collectGlobalTotals(tree), [tree]);
@@ -808,7 +820,15 @@ export const ProjectManagerDashboard = () => {
 
   const isWarningVisible = warningEntries.length > 0 && warningKey !== dismissedWarningKey;
 
-  const visibleRequests = requestsTab === 'unassigned' ? unassignedRequests : assignedRequests;
+  const visibleRequests = useMemo(() => {
+    if (requestsTab === 'unassigned') {
+      return unassignedRequests;
+    }
+    if (requestsTab === 'mine') {
+      return myRequests;
+    }
+    return assignedRequests;
+  }, [assignedRequests, myRequests, requestsTab, unassignedRequests]);
 
   const handleAssigneeChange = (requestId: number, ownerId: string) => {
     if (ownerId) {
@@ -923,7 +943,7 @@ export const ProjectManagerDashboard = () => {
         <Alert severity="warning" onClose={() => setDismissedWarningKey(warningKey)}>
           <Stack spacing={0.5}>
             <Typography variant="body2" fontWeight={600}>
-              Внимание: кто-то из подчиненных сейчас недоступен или скоро будет недоступен.
+              Внимание: кто-то из сотрудников сейчас недоступен или скоро будет недоступен.
             </Typography>
             {warningGroups.active.length > 0 ? (
               <Box>
@@ -993,24 +1013,42 @@ export const ProjectManagerDashboard = () => {
             <Typography variant="h6" sx={{ mb: 0, fontWeight: 700 }}>
               Заявки
             </Typography>
-            <Tabs
-              value={requestsTab}
-              onChange={(_, value: 'unassigned' | 'assigned') => setRequestsTab(value)}
-              sx={{ mb: 2 }}
-            >
-              <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
-              <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
-            </Tabs>
+            {isLeadEconomist ? (
+              <Tabs
+                value={requestsTab}
+                onChange={(_, value: 'unassigned' | 'mine' | 'assigned') => setRequestsTab(value)}
+                sx={{ mb: 2 }}
+              >
+                <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
+                <Tab value="mine" label={`Мои (${myRequests.length})`} />
+                <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
+              </Tabs>
+            ) : (
+              <Tabs
+                value={requestsTab}
+                onChange={(_, value: 'unassigned' | 'mine' | 'assigned') => setRequestsTab(value)}
+                sx={{ mb: 2 }}
+              >
+                <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
+                <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
+              </Tabs>
+            )}
             <Stack spacing={1.5}>
               {visibleRequests.length === 0 ? (
-                <Typography color="text.secondary">
-                  {requestsTab === 'unassigned'
-                    ? 'Все заявки уже распределены по ответственным'
-                    : 'Нет распределённых заявок в работе'}
-                </Typography>
+                requestsTab === 'mine' ? (
+                  <Typography color="text.secondary">
+                    Нет моих заявок в работе
+                  </Typography>
+                ) : (
+                  <Typography color="text.secondary">
+                    {requestsTab === 'unassigned'
+                      ? 'Все заявки уже распределены по ответственным'
+                      : 'Нет распределённых заявок в работе'}
+                  </Typography>
+                )
               ) : (
                 visibleRequests.map((request) => {
-                  const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'assigned' ? request.owner_user_id : '');
+                  const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'unassigned' ? '' : request.owner_user_id);
                   const requestOwnerActiveUnavailability = activeUnavailabilityByUser[request.owner_user_id] ?? null;
                   const requestOwnerUpcomingUnavailability = upcomingUnavailabilityByUser[request.owner_user_id] ?? null;
                   const requestOwnerWarningTooltip = getRequestOwnerWarningTooltip({
@@ -1041,7 +1079,7 @@ export const ProjectManagerDashboard = () => {
                             <Typography variant="caption" color="text.secondary">
                               Дедлайн: {formatDate(request.deadline_at)}
                             </Typography>
-                            {requestsTab === 'assigned' ? (
+                            {requestsTab !== 'unassigned' ? (
                               <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
                                 <Typography variant="caption" color="text.secondary">
                                   Ответственный: {request.owner_full_name || employeeNameById[request.owner_user_id] || request.owner_user_id}

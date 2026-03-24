@@ -48,6 +48,7 @@ class UpcomingUnavailabilityItemSchema(BaseModel):
 class ResponsibilityDashboardData(BaseModel):
     tree: list[DashboardEconomistNodeSchema]
     unassigned_requests: list[DashboardRequestItemSchema]
+    my_requests: list[DashboardRequestItemSchema]
     assigned_requests: list[DashboardRequestItemSchema]
     active_unavailability: list[UpcomingUnavailabilityItemSchema]
     upcoming_unavailability: list[UpcomingUnavailabilityItemSchema]
