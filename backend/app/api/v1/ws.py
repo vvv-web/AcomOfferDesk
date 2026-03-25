@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketState
 
 from app.core.session_tokens import AccessTokenClaims, decode_access_token
 from app.core.uow import UnitOfWork
+from app.domain.auth_context import build_current_user
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
@@ -31,7 +32,7 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
         if user is None:
             raise Unauthorized("Invalid credentials")
         UserPolicy.can_login(user.status)
-        return CurrentUser(user_id=user.id, role_id=user.id_role, status=user.status), claims
+        return build_current_user(user_id=user.id, role_id=user.id_role, status=user.status), claims
 
 
 async def _get_user_full_name(user_id: str) -> str | None:

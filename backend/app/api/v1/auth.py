@@ -5,12 +5,14 @@ import time
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
+from app.api.available_actions import build_auth_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.api.v1.tg import resolve_tg_id_from_auth_token
 from app.core.auth_cookies import clear_refresh_cookie, set_refresh_cookie
 from app.core.config import settings
 from app.core.session_tokens import build_refresh_fingerprint, decode_refresh_token
 from app.core.uow import UnitOfWork
+from app.domain.auth_context import build_current_user
 from app.domain.exceptions import Forbidden, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.schemas.auth import (
@@ -36,122 +38,19 @@ class EmailVerificationActionResponse(BaseModel):
     detail: str
 
 
-def _build_auth_links(*, role_id: int, self_href: str) -> LinkSet:
-    links = LinkSet(self=Link(href=self_href, method="POST"))
-    if role_id == settings.superadmin_role_id:
-        links.available_actions = [
-            Link(href="/api/v1/users/register", method="POST"),
-            Link(href="/api/v1/users", method="GET"),
-            Link(href="/api/v1/users/economists", method="GET"),
-            Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
-            Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
-            Link(href="/api/v1/requests", method="GET"),
-            Link(href="/api/v1/requests", method="POST"),
-            Link(href="/api/v1/requests/open", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-            Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-            Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-            Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-            Link(href="/api/v1/files/{file_id}/download", method="GET"),
-            Link(href="/api/v1/feedback", method="POST"),
-            Link(href="/api/v1/feedback", method="GET"),
-        ]
-    elif role_id == settings.admin_role_id:
-        links.available_actions = [
-            Link(href="/api/v1/users/register", method="POST"),
-            Link(href="/api/v1/users", method="GET"),
-            Link(href="/api/v1/users/economists", method="GET"),
-            Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
-            Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
-            Link(href="/api/v1/feedback", method="POST"),
-        ]
-    elif role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
-        links.available_actions = [
-            Link(href="/api/v1/users", method="GET"),
-            Link(href="/api/v1/users/economists", method="GET"),
-            Link(href="/api/v1/users/register", method="POST"),
-            Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
-            Link(href="/api/v1/requests", method="GET"),
-            Link(href="/api/v1/requests", method="POST"),
-            Link(href="/api/v1/requests/open", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-            Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-            Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-            Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-            Link(href="/api/v1/files/{file_id}/download", method="GET"),
-            Link(href="/api/v1/feedback", method="POST"),
-        ]
-        if role_id == settings.lead_economist_role_id:
-            links.available_actions.append(Link(href="/api/v1/normative-files/1", method="POST"))
-    elif role_id == settings.economist_role_id:
-        links.available_actions = [
-            Link(href="/api/v1/requests", method="GET"),
-            Link(href="/api/v1/requests", method="POST"),
-            Link(href="/api/v1/requests/open", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-            Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-            Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-            Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-            Link(href="/api/v1/files/{file_id}/download", method="GET"),
-            Link(href="/api/v1/feedback", method="POST"),
-        ]
-    elif role_id == settings.contractor_role_id:
-        links.available_actions = [
-            Link(href="/api/v1/requests/open", method="GET"),
-            Link(href="/api/v1/requests/offered", method="GET"),
-            Link(href="/api/v1/requests/{request_id}/contractor-view", method="GET"),
-            Link(href="/api/v1/requests/{request_id}/offers", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/files", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/files/{file_id}", method="DELETE"),
-            Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-            Link(href="/api/v1/files/{file_id}/download", method="GET"),
-            Link(href="/api/v1/feedback", method="POST"),
-        ]
-    elif role_id == settings.operator_role_id:
-        links.available_actions = [
-            Link(href="/api/v1/requests", method="GET"),
-            Link(href="/api/v1/requests", method="POST"),
-            Link(href="/api/v1/requests/{request_id}", method="GET"),
-            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-            Link(href="/api/v1/files/{file_id}/download", method="GET"),
-            Link(href="/api/v1/feedback", method="POST"),
-        ]
-    return links
+def _build_auth_links(*, current_user: CurrentUser, self_href: str) -> LinkSet:
+    return LinkSet(
+        self=Link(href=self_href, method="POST"),
+        available_actions=build_auth_available_actions(current_user),
+    )
 
 
 def _build_auth_response(*, session: AuthSessionBundle, self_href: str) -> LoginResponse:
+    current_user = build_current_user(
+        user_id=session.user_id,
+        role_id=session.role_id,
+        status=session.status,
+    )
     return LoginResponse(
         data={
             "access_token": session.access_token,
@@ -162,7 +61,7 @@ def _build_auth_response(*, session: AuthSessionBundle, self_href: str) -> Login
             "role_id": session.role_id,
             "status": session.status,
         },
-        _links=_build_auth_links(role_id=session.role_id, self_href=self_href),
+        _links=_build_auth_links(current_user=current_user, self_href=self_href),
     )
 
 

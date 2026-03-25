@@ -3,16 +3,20 @@ from __future__ import annotations
 import io
 import zipfile
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.api.available_actions import ApiAction, action, build_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
+from app.domain.authorization import has_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
-from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
+from app.domain.permissions import PermissionCodes
+from app.domain.policies import CurrentUser, RequestPolicy
 from app.schemas.links import Link, LinkSet
 from app.schemas.requests import (
     OfferItemSchema,
@@ -144,127 +148,90 @@ def _build_content_disposition(filename: str) -> str:
     return f"attachment; filename*=UTF-8''{quoted}"
 
 def _request_actions(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_view_requests(current_user)
-    except Forbidden:
-        return None
-    actions = [
-        Link(href="/api/v1/requests", method="GET"),
-        Link(href="/api/v1/requests/{request_id}", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-    try:
-        UserPolicy.can_create_request(current_user)
-        actions.append(Link(href="/api/v1/requests", method="POST"))
-    except Forbidden:
-        pass
-
-    try:
-        UserPolicy.can_manage_requests(current_user)
-    except Forbidden:
-        if current_user.role_id == settings.operator_role_id:
-            actions.extend(
-                [
-                    Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-                    Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-                    Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-                ]
-            )
-        return actions
-
-    actions.extend(
-        [
-            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-            Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-            Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-        ]
+    return build_available_actions(
+        current_user,
+        action(ApiAction.REQUESTS_LIST),
+        action(ApiAction.REQUESTS_GET),
+        action(ApiAction.OFFERS_WORKSPACE_GET),
+        action(ApiAction.OFFER_MESSAGES_LIST),
+        action(ApiAction.FILES_DOWNLOAD),
+        action(ApiAction.REQUESTS_CREATE),
+        action(ApiAction.REQUESTS_UPDATE),
+        action(ApiAction.REQUESTS_FILES_ADD),
+        action(ApiAction.REQUESTS_FILES_DELETE),
+        action(ApiAction.REQUESTS_DELETED_ALERTS_VIEWED),
     )
-
-    return actions
 
 def _open_request_actions(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_view_open_requests(current_user)
-    except Forbidden:
-        return None
-    actions = [
-        Link(href="/api/v1/requests/open", method="GET"),
-        Link(href="/api/v1/requests/offered", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-    try:
-        UserPolicy.can_create_offer(current_user)
-    except Forbidden:
-        return actions
-
-    actions.extend(
-        [
-            Link(href="/api/v1/requests/{request_id}/contractor-view", method="GET"),
-            Link(href="/api/v1/requests/{request_id}/offers", method="POST"),
-        ]
+    return build_available_actions(
+        current_user,
+        action(ApiAction.REQUESTS_OPEN_LIST),
+        action(ApiAction.REQUESTS_OFFERED_LIST),
+        action(ApiAction.FILES_DOWNLOAD),
+        action(ApiAction.REQUESTS_CONTRACTOR_VIEW),
+        action(ApiAction.OFFERS_CREATE),
     )
-    return actions
 
 def _offered_request_actions(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_view_offered_requests(current_user)
-    except Forbidden:
-        return None
-    return [
-        Link(href="/api/v1/requests/offered", method="GET"),
-        Link(href="/api/v1/requests/{request_id}/contractor-view", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
+    return build_available_actions(
+        current_user,
+        action(ApiAction.REQUESTS_OFFERED_LIST),
+        action(ApiAction.REQUESTS_CONTRACTOR_VIEW),
+        action(ApiAction.OFFERS_WORKSPACE_GET),
+        action(ApiAction.FILES_DOWNLOAD),
+    )
 
 
 def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner_user_id: str, status: str) -> list[Link] | None:
-    actions = [
-        Link(href="/api/v1/requests", method="GET"),
-        Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-
-    try:
-        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id)
-        actions.extend(
-            [
-                Link(href=f"/api/v1/requests/{request_id}", method="PATCH"),
-                Link(href=f"/api/v1/requests/{request_id}/email-notifications", method="POST"),
-                Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
-                Link(href=f"/api/v1/requests/{request_id}/files/{{file_id}}", method="DELETE"),
-            ]
-        )
-    except Forbidden:
-        return actions
-
-    if status != "open":
-        actions = [
-            action for action in actions
-            if not (action.href == f"/api/v1/requests/{request_id}/email-notifications" and action.method == "POST")
-        ]
-
-    try:
-        RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id)
-    except Forbidden:
-        return actions
-
-    actions.extend(
-        [
-            Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-        ]
+    return build_available_actions(
+        current_user,
+        action(ApiAction.REQUESTS_LIST),
+        action(ApiAction.REQUESTS_GET, params={"request_id": request_id}),
+        action(ApiAction.OFFERS_WORKSPACE_GET),
+        action(ApiAction.OFFER_MESSAGES_LIST),
+        action(ApiAction.FILES_DOWNLOAD),
+        action(
+            ApiAction.REQUESTS_UPDATE,
+            params={"request_id": request_id},
+            guard=lambda: RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
+            params={"request_id": request_id},
+            guard=lambda: RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id),
+            enabled=status == "open",
+        ),
+        action(
+            ApiAction.REQUESTS_FILES_ADD,
+            params={"request_id": request_id},
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.REQUESTS_FILES_DELETE,
+            params={"request_id": request_id},
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.OFFERS_STATUS_UPDATE,
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGES_CREATE,
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGE_ATTACHMENTS_CREATE,
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGES_RECEIVED,
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGES_READ,
+            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+        ),
     )
-
-    return actions
 
 
 @router.get("/requests", response_model=RequestListResponse)
@@ -739,19 +706,17 @@ async def download_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> StreamingResponse:
-    can_download = False
-    try:
-        UserPolicy.can_view_requests(current_user)
-        can_download = True
-    except Forbidden:
-        UserPolicy.can_create_offer(current_user)
+    if not has_permission(current_user, PermissionCodes.FILES_DOWNLOAD):
+        raise Forbidden("Insufficient permissions for file download")
+
+    can_download_without_scope_check = has_permission(current_user, PermissionCodes.REQUESTS_READ)
 
     async with uow:
         db_file = await uow.files.get_by_id(file_id)
         if db_file is None:
             raise NotFound("File not found")
 
-        if not can_download:
+        if not can_download_without_scope_check:
             linked_to_open_request = await uow.requests.is_file_linked_to_visible_open_request(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,

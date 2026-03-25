@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from app.api.available_actions import ApiAction, action, build_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
@@ -113,10 +114,11 @@ async def get_responsibility_dashboard(
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/dashboard/responsibility", method="GET"),
-            available_actions=[
-                Link(href="/api/v1/dashboard/responsibility", method="GET"),
-                Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-                Link(href="/api/v1/requests", method="GET"),
-            ],
+            available_actions=build_available_actions(
+                current_user,
+                action(ApiAction.DASHBOARD_RESPONSIBILITY),
+                action(ApiAction.REQUESTS_UPDATE),
+                action(ApiAction.REQUESTS_LIST),
+            ),
         ),
     )

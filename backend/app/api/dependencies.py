@@ -4,6 +4,7 @@ from fastapi import Depends, Header
 
 from app.core.session_tokens import decode_access_token
 from app.core.uow import UnitOfWork
+from app.domain.auth_context import build_current_user
 from app.domain.exceptions import Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.repositories.users import UserRepository
@@ -29,4 +30,4 @@ async def get_current_user(
         if not user:
             raise Unauthorized("Invalid credentials")
         UserPolicy.can_login(user.status)
-        return CurrentUser(user_id=user.id, role_id=user.id_role, status=user.status)
+        return build_current_user(user_id=user.id, role_id=user.id_role, status=user.status)

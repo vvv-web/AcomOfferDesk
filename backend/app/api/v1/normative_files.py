@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Path as PathParam, UploadFile
 
+from app.api.available_actions import ApiAction, action, build_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
@@ -41,6 +42,9 @@ async def upload_normative_file(
         data={"normative_id": result.normative_id, "file_id": result.file_id},
         _links=LinkSet(
             self=Link(href=f"/api/v1/normative-files/{normative_id}", method="POST"),
-            available_actions=[Link(href=f"/api/v1/normative-files/{normative_id}", method="POST")],
+            available_actions=build_available_actions(
+                current_user,
+                action(ApiAction.NORMATIVE_FILE_UPLOAD, params={"normative_id": normative_id}),
+            ),
         ),
     )

@@ -8,6 +8,7 @@ from uuid import uuid4
 import anyio
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, Query, UploadFile
 
+from app.api.available_actions import ApiAction, action, build_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
@@ -148,19 +149,38 @@ def _contractor_request_actions(
     *,
     request_id: int,
     workspace_offer_id: int | None,
+    current_user: CurrentUser,
     can_create_offer: bool,
 ) -> list[Link]:
-    actions = [
-        Link(href="/api/v1/requests/open", method="GET"),
-        Link(href="/api/v1/requests/offered", method="GET"),
-        Link(href=f"/api/v1/requests/{request_id}/contractor-view", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-    if workspace_offer_id is not None:
-        actions.append(Link(href=f"/api/v1/offers/{workspace_offer_id}/workspace", method="GET"))
-    if can_create_offer:
-        actions.append(Link(href=f"/api/v1/requests/{request_id}/offers", method="POST"))
-    return actions
+    return build_available_actions(
+        current_user,
+        action(ApiAction.REQUESTS_OPEN_LIST),
+        action(ApiAction.REQUESTS_OFFERED_LIST),
+        action(ApiAction.REQUESTS_CONTRACTOR_VIEW, params={"request_id": request_id}),
+        action(ApiAction.FILES_DOWNLOAD),
+        action(
+            ApiAction.OFFERS_WORKSPACE_GET,
+            params={"offer_id": workspace_offer_id},
+            enabled=workspace_offer_id is not None,
+        ),
+        action(
+            ApiAction.OFFERS_CREATE,
+            params={"request_id": request_id},
+            enabled=can_create_offer,
+        ),
+    ) or []
+
+
+def _ensure_offer_mutation_allowed(
+    current_user: CurrentUser,
+    *,
+    offer_owner_user_id: str,
+    request_owner_user_id: str,
+) -> None:
+    try:
+        RequestPolicy.can_edit(current_user, request_owner_user_id=request_owner_user_id)
+    except Forbidden:
+        OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id)
 
 
 def _offer_workspace_actions(
@@ -170,77 +190,86 @@ def _offer_workspace_actions(
     current_user: CurrentUser,
     offer_owner_user_id: str,
     request_owner_user_id: str,
-    offer_status: str,
     can_create_new_offer: bool,
     can_acknowledge_messages: bool,
 ) -> list[Link]:
-    actions = [
-        Link(href=f"/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href=f"/api/v1/offers/{offer_id}/messages", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-    if current_user.role_id == settings.contractor_role_id:
-        actions.append(Link(href="/api/v1/requests/offered", method="GET"))
-
-    try:
-        OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id)
-        actions.extend(
-            [
-                Link(href=f"/api/v1/offers/{offer_id}/files", method="POST"),
-                Link(href=f"/api/v1/offers/{offer_id}/files/{{file_id}}", method="DELETE"),
-            ]
-        )
-    except Forbidden:
-        pass
-
-    try:
-        RequestPolicy.can_edit(current_user, request_owner_user_id=request_owner_user_id)
-        actions.extend(
-            [
-                Link(href=f"/api/v1/offers/{offer_id}", method="PATCH"),
-                Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"),
-            ]
-        )
-    except Forbidden:
-        try:
-            OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id)
-            actions.extend(
-                [
-                    Link(href=f"/api/v1/offers/{offer_id}", method="PATCH"),
-                    Link(href=f"/api/v1/offers/{offer_id}/status", method="PATCH"),
-                ]
-            )
-        except Forbidden:
-            pass
-
-    try:
-        OfferPolicy.can_send_chat_message(
-            current_user,
-            offer_owner_user_id=offer_owner_user_id,
-            request_owner_user_id=request_owner_user_id,
-        )
-        actions.extend(
-            [
-                Link(href=f"/api/v1/offers/{offer_id}/messages", method="POST"),
-                Link(href=f"/api/v1/offers/{offer_id}/messages/files", method="POST"),
-                Link(href=f"/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            ]
-        )
-    except Forbidden:
-        pass
-
-    if can_acknowledge_messages:
-        actions.extend(
-            [
-                Link(href=f"/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-                Link(href=f"/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-            ]
-        )
-
-    if can_create_new_offer:
-        actions.append(Link(href=f"/api/v1/requests/{request_id}/offers", method="POST"))
-
-    return actions
+    return build_available_actions(
+        current_user,
+        action(ApiAction.OFFERS_WORKSPACE_GET, params={"offer_id": offer_id}),
+        action(ApiAction.OFFER_MESSAGES_LIST, params={"offer_id": offer_id}),
+        action(ApiAction.FILES_DOWNLOAD),
+        action(ApiAction.REQUESTS_OFFERED_LIST, enabled=current_user.role_id == settings.contractor_role_id),
+        action(
+            ApiAction.OFFERS_FILES_ADD,
+            params={"offer_id": offer_id},
+            guard=lambda: OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id),
+        ),
+        action(
+            ApiAction.OFFERS_FILES_DELETE,
+            params={"offer_id": offer_id},
+            guard=lambda: OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id),
+        ),
+        action(
+            ApiAction.OFFERS_UPDATE,
+            params={"offer_id": offer_id},
+            guard=lambda: _ensure_offer_mutation_allowed(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            ),
+        ),
+        action(
+            ApiAction.OFFERS_STATUS_UPDATE,
+            params={"offer_id": offer_id},
+            guard=lambda: _ensure_offer_mutation_allowed(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            ),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGES_CREATE,
+            params={"offer_id": offer_id},
+            guard=lambda: OfferPolicy.can_send_chat_message(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            ),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGE_FILES_UPLOAD,
+            params={"offer_id": offer_id},
+            guard=lambda: OfferPolicy.can_send_chat_message(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            ),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGE_ATTACHMENTS_CREATE,
+            params={"offer_id": offer_id},
+            guard=lambda: OfferPolicy.can_send_chat_message(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            ),
+        ),
+        action(
+            ApiAction.OFFER_MESSAGES_RECEIVED,
+            params={"offer_id": offer_id},
+            enabled=can_acknowledge_messages,
+        ),
+        action(
+            ApiAction.OFFER_MESSAGES_READ,
+            params={"offer_id": offer_id},
+            enabled=can_acknowledge_messages,
+        ),
+        action(
+            ApiAction.OFFERS_CREATE,
+            params={"request_id": request_id},
+            enabled=can_create_new_offer,
+        ),
+    ) or []
 
 
 async def _resolve_offer_action_links(
@@ -280,7 +309,6 @@ async def _resolve_offer_action_links(
         current_user=current_user,
         offer_owner_user_id=offer.id_user,
         request_owner_user_id=request.id_user,
-        offer_status=offer.status,
         can_create_new_offer=can_create_new_offer,
         can_acknowledge_messages=can_acknowledge_messages,
     )
@@ -314,12 +342,11 @@ async def get_contractor_info(
         },
         _links=LinkSet(
             self=Link(href=f"/api/v1/offers?id_user={contractor.user_id}", method="GET"),
-            available_actions=[
-                Link(href="/api/v1/requests/{request_id}", method="GET"),
-                Link(href="/api/v1/requests/offered", method="GET"),
-            ] if current_user.role_id == settings.contractor_role_id else [
-                Link(href="/api/v1/requests/{request_id}", method="GET"),
-            ],
+            available_actions=build_available_actions(
+                current_user,
+                action(ApiAction.REQUESTS_GET),
+                action(ApiAction.REQUESTS_OFFERED_LIST),
+            ),
         ),
     )
 
@@ -375,6 +402,7 @@ async def get_contractor_request_view(
             available_actions=_contractor_request_actions(
                 request_id=request_id,
                 workspace_offer_id=item.latest_offer_id,
+                current_user=current_user,
                 can_create_offer=item.status == "open" and item.existing_offer is None,
             ),
         ),

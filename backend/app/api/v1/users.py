@@ -4,11 +4,11 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Path, Query
 
+from app.api.available_actions import ApiAction, action, build_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
-from app.domain.exceptions import Forbidden
-from app.domain.policies import CurrentUser, UserPolicy
+from app.domain.policies import CurrentUser
 from app.schemas.links import Link, LinkSet
 from app.schemas.users import (
     EconomistListData,
@@ -121,74 +121,34 @@ def _subordinate_profile_data(item) -> SubordinateProfileData:
 
     return SubordinateProfileData(**data)
 
-def _status_management_links(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_update_user_status(current_user)
-    except Forbidden:
-        return None
-    return [
-        Link(href="/api/v1/users/{user_id}/status", method="PATCH"),
-    ]
-
-
-def _role_management_links(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_update_user_role(current_user)
-    except Forbidden:
-        return None
-    return [
-        Link(href="/api/v1/users/{user_id}/role", method="PATCH"),
-    ]
-
-
 def _list_users_actions(current_user: CurrentUser) -> list[Link] | None:
-    actions = [
-        Link(href="/api/v1/users", method="GET"),
-        Link(href="/api/v1/users/economists", method="GET"),
-    ]
-    try:
-        UserPolicy.can_register_user(current_user)
-        actions.append(Link(href="/api/v1/users/register", method="POST"))
-    except Forbidden:
-        pass
-
-    status_actions = _status_management_links(current_user)
-    if status_actions:
-        actions.extend(status_actions)
-
-    role_actions = _role_management_links(current_user)
-    if role_actions:
-        actions.extend(role_actions)
-
-    return actions
+    return build_available_actions(
+        current_user,
+        action(ApiAction.USERS_LIST),
+        action(ApiAction.USERS_ECONOMISTS_LIST),
+        action(ApiAction.USERS_REGISTER),
+        action(ApiAction.USERS_STATUS_UPDATE),
+        action(ApiAction.USERS_ROLE_UPDATE),
+    )
 
 
 def _my_profile_actions(current_user: CurrentUser) -> list[Link]:
-    actions = [
-        Link(href="/api/v1/users/me", method="GET"),
-        Link(href="/api/v1/users/me/credentials", method="PATCH"),
-        Link(href="/api/v1/users/me/profile", method="PATCH"),
-    ]
-    if current_user.role_id == settings.contractor_role_id:
-        actions.append(Link(href="/api/v1/users/me/company-contacts", method="PATCH"))
-    try:
-        UserPolicy.can_manage_own_unavailability(current_user)
-        actions.append(Link(href="/api/v1/users/me/unavailability-period", method="POST"))
-    except Forbidden:
-        pass
-    return actions
+    return build_available_actions(
+        current_user,
+        action(ApiAction.USERS_ME_GET),
+        action(ApiAction.USERS_ME_CREDENTIALS_UPDATE),
+        action(ApiAction.USERS_ME_PROFILE_UPDATE),
+        action(ApiAction.USERS_ME_COMPANY_CONTACTS_UPDATE),
+        action(ApiAction.USERS_ME_UNAVAILABILITY_SET),
+    ) or []
 
 
 def _subordinate_profile_actions(current_user: CurrentUser, *, user_id: str) -> list[Link]:
-    actions = [
-        Link(href=f"/api/v1/users/{user_id}/profile", method="GET"),
-    ]
-    try:
-        UserPolicy.can_manage_subordinate_unavailability(current_user)
-        actions.append(Link(href=f"/api/v1/users/{user_id}/unavailability-period", method="POST"))
-    except Forbidden:
-        pass
-    return actions
+    return build_available_actions(
+        current_user,
+        action(ApiAction.USERS_SUBORDINATE_PROFILE_GET, params={"user_id": user_id}),
+        action(ApiAction.USERS_SUBORDINATE_UNAVAILABILITY_SET, params={"user_id": user_id}),
+    ) or []
 
 
 @router.get("/users", response_model=UserListResponse)
@@ -494,26 +454,17 @@ async def list_request_economists(
         service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_request_economists(current_user=current_user)
 
-    actions = [
-        Link(href="/api/v1/requests", method="GET"),
-        Link(href="/api/v1/users/request-economists", method="GET"),
-    ]
-    try:
-        UserPolicy.can_register_user(current_user)
-        actions.append(Link(href="/api/v1/users/register", method="POST"))
-    except Forbidden:
-        pass
-    try:
-        UserPolicy.can_update_user_status(current_user)
-        actions.append(Link(href="/api/v1/users/{user_id}/status", method="PATCH"))
-    except Forbidden:
-        pass
-
     return RequestEconomistListResponse(
         data=RequestEconomistListData(items=[RequestEconomistItemSchema(**asdict(item)) for item in users]),
         _links=LinkSet(
             self=Link(href="/api/v1/users/request-economists", method="GET"),
-            available_actions=actions,
+            available_actions=build_available_actions(
+                current_user,
+                action(ApiAction.REQUESTS_LIST),
+                action(ApiAction.USERS_REQUEST_ECONOMISTS_LIST),
+                action(ApiAction.USERS_REGISTER),
+                action(ApiAction.USERS_STATUS_UPDATE),
+            ),
         ),
     )
 
@@ -543,10 +494,11 @@ async def list_request_contractors(
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/users/request-contractors", method="GET"),
-            available_actions=[
-                Link(href="/api/v1/users/request-contractors", method="GET"),
-                Link(href="/api/v1/requests", method="POST"),
-            ],
+            available_actions=build_available_actions(
+                current_user,
+                action(ApiAction.USERS_REQUEST_CONTRACTORS_LIST),
+                action(ApiAction.REQUESTS_CREATE),
+            ),
         ),
     )
 

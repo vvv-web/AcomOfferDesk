@@ -6,7 +6,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.core.config import settings
+from app.domain.authorization import require_permission
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
+from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
 from app.repositories.files import FileRepository
 from app.repositories.offers import OfferRepository
@@ -273,6 +275,11 @@ class RequestService:
         request_id: int,
         additional_emails: list[str] | None,
     ) -> RequestEmailNotificationResult:
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
+            message="Insufficient permissions to send request email notifications",
+        )
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -478,6 +485,11 @@ class RequestService:
             raise Conflict("Final amount must match initial amount or accepted offer amount")
     
     async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: int) -> DeletedAlertViewedResult:
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED,
+            message="Insufficient permissions to update deleted request alerts",
+        )
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -501,6 +513,11 @@ class RequestService:
         request_id: int,
         file_data: RequestFileCreateInput,
     ) -> int:
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_FILES_UPLOAD,
+            message="Insufficient permissions to upload request files",
+        )
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -526,6 +543,11 @@ class RequestService:
         request_id: int,
         file_id: int,
     ) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_FILES_DELETE,
+            message="Insufficient permissions to delete request files",
+        )
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")

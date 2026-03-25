@@ -6,7 +6,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.core.config import settings
+from app.domain.authorization import require_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPolicy
 from app.repositories.chats import ChatRepository, ChatState
 from app.repositories.company_contacts import CompanyContactRepository
@@ -401,6 +403,11 @@ class OfferService:
         offer_id: int,
         upload: AttachmentFileInput,
     ) -> int:
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_FILES_UPLOAD,
+            message="Insufficient permissions to upload offer files",
+        )
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
@@ -423,6 +430,11 @@ class OfferService:
         return db_file.id
 
     async def remove_file(self, *, current_user: CurrentUser, offer_id: int, file_id: int) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_FILES_DELETE,
+            message="Insufficient permissions to delete offer files",
+        )
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
@@ -436,6 +448,11 @@ class OfferService:
         await self._file_service.delete_file(file_id=file_id)
 
     async def update_status(self, *, current_user: CurrentUser, offer_id: int, status: str) -> str:
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_STATUS_UPDATE,
+            message="Insufficient permissions to update offer status",
+        )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
 
         if status not in EDITABLE_OFFER_STATUSES:
@@ -464,6 +481,11 @@ class OfferService:
         return offer.status
 
     async def update_amount(self, *, current_user: CurrentUser, offer_id: int, offer_amount: float) -> float:
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_UPDATE,
+            message="Insufficient permissions to update offer",
+        )
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         self._validate_offer_amount(offer_amount)
 
@@ -544,6 +566,11 @@ class OfferService:
         offer_id: int,
         upload: AttachmentFileInput,
     ) -> UploadedMessageAttachment:
+        require_permission(
+            current_user,
+            PermissionCodes.CHAT_MESSAGE_ATTACH,
+            message="Insufficient permissions to attach files to chat messages",
+        )
         await self._require_chat_context(current_user=current_user, offer_id=offer_id, require_send=True)
         prepared = await self._file_service.prepare_bytes(
             original_name=upload.original_name,
@@ -574,6 +601,12 @@ class OfferService:
         normalized_text = text.strip()
         new_attachments = attachments or []
         stored_file_refs = existing_file_refs or []
+        if new_attachments or stored_file_refs:
+            require_permission(
+                current_user,
+                PermissionCodes.CHAT_MESSAGE_ATTACH,
+                message="Insufficient permissions to attach files to chat messages",
+            )
         if not normalized_text and not new_attachments and not stored_file_refs:
             raise Conflict("Message text cannot be empty")
 
@@ -627,6 +660,11 @@ class OfferService:
         message_ids: list[int] | None = None,
         up_to_message_id: int | None = None,
     ) -> OfferMessageAckResult:
+        require_permission(
+            current_user,
+            PermissionCodes.CHAT_RECEIPTS_MARK_RECEIVED,
+            message="Insufficient permissions to acknowledge delivered chat messages",
+        )
         _, _, chat, _ = await self._require_chat_context(
             current_user=current_user,
             offer_id=offer_id,
@@ -652,6 +690,11 @@ class OfferService:
         message_ids: list[int] | None = None,
         up_to_message_id: int | None = None,
     ) -> OfferMessageAckResult:
+        require_permission(
+            current_user,
+            PermissionCodes.CHAT_RECEIPTS_MARK_READ,
+            message="Insufficient permissions to mark chat messages as read",
+        )
         _, _, chat, _ = await self._require_chat_context(
             current_user=current_user,
             offer_id=offer_id,

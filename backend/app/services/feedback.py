@@ -21,7 +21,7 @@ class FeedBackService:
         self._feedback = feedback
 
     async def create_feedback(self, *, current_user: CurrentUser, text: str) -> FeedBackCreateResult:
-        _ = current_user
+        UserPolicy.can_create_feedback(current_user)
         item = await self._feedback.create(text=text)
         return FeedBackCreateResult(feedback_id=item.id)
 
