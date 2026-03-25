@@ -39,6 +39,27 @@ class OfferRepository:
         result = await self._session.execute(stmt)
         return result.scalars().first()
 
+    async def list_latest_contractor_offers_by_request_ids(
+        self,
+        *,
+        contractor_user_id: str,
+        request_ids: Sequence[int],
+    ) -> list[Offer]:
+        if not request_ids:
+            return []
+
+        stmt: Select[tuple[Offer]] = (
+            select(Offer)
+            .where(Offer.id_request.in_(request_ids), Offer.id_user == contractor_user_id)
+            .order_by(Offer.id_request.asc(), Offer.created_at.desc(), Offer.id.desc())
+        )
+        result = await self._session.execute(stmt)
+
+        latest_by_request_id: dict[int, Offer] = {}
+        for offer in result.scalars().all():
+            latest_by_request_id.setdefault(offer.id_request, offer)
+        return list(latest_by_request_id.values())
+
     async def list_by_request(self, *, request_id: int) -> list[Offer]:
         stmt: Select[tuple[Offer]] = (
             select(Offer)

@@ -1,11 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { AuthLink, AuthSessionResponse, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
+import type { AuthSessionResponse, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
 import { exchangeTgSession, loginWebUser, logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
 import { setAuthRuntime, setAuthToken } from '@shared/api/client';
 
 type AuthStatus = 'bootstrapping' | 'authenticated' | 'anonymous' | 'refreshing';
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
+
+const roleById: Record<number, string> = {
+  1: 'superadmin',
+  2: 'admin',
+  3: 'contractor',
+  4: 'project_manager',
+  5: 'lead_economist',
+  6: 'economist',
+  7: 'operator'
+};
 
 export type AuthSession = {
   token: string;
@@ -14,8 +24,9 @@ export type AuthSession = {
   userId: string;
   login: string;
   roleId: number;
+  role: string;
   status: string;
-  availableActions: AuthLink[];
+  permissions: string[];
 };
 
 type AuthContextValue = {
@@ -39,8 +50,9 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   userId: response.data.user_id,
   login: response.data.login,
   roleId: response.data.role_id,
+  role: roleById[response.data.role_id] ?? `role_${response.data.role_id}`,
   status: response.data.status,
-  availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
+  permissions: response.data.permissions ?? []
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {

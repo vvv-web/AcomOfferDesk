@@ -29,5 +29,5 @@ async def get_current_user(
         user = await repo.get_by_id(claims.subject)
         if not user:
             raise Unauthorized("Invalid credentials")
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         return build_current_user(user_id=user.id, role_id=user.id_role, status=user.status)

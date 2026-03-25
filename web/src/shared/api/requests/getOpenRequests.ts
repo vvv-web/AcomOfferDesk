@@ -1,6 +1,7 @@
 import { fetchJson } from '../client';
 import type { GetRequestsResponse } from './getRequests';
 import type { FileEntity } from '@entities/request';
+import { normalizeRequestActions } from '../mappers';
 
 type ApiResponse = {
   data: {
@@ -17,6 +18,17 @@ type ApiResponse = {
       owner_full_name?: string | null;
       chosen_offer_id: number | null;
       files: FileEntity[];
+      actions?: {
+        can_view_details?: boolean;
+        can_open_contractor_view?: boolean;
+        can_edit?: boolean;
+        can_change_owner?: boolean;
+        can_upload_files?: boolean;
+        can_delete_files?: boolean;
+        can_send_email_notifications?: boolean;
+        can_mark_deleted_alert_viewed?: boolean;
+        can_create_offer?: boolean;
+      };
     }>;
   };
 };
@@ -45,7 +57,8 @@ export const getOpenRequests = async (): Promise<GetRequestsResponse> => {
       count_deleted_alert: 0,
       count_accepted_total: 0,
       count_rejected_total: 0,
-      files: item.files
+      files: item.files,
+      actions: normalizeRequestActions(item.actions)
     }))
   };
 };

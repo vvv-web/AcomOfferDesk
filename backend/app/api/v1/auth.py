@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from app.api.available_actions import build_auth_available_actions
+from app.api.action_flags import serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.api.v1.tg import resolve_tg_id_from_auth_token
 from app.core.auth_cookies import clear_refresh_cookie, set_refresh_cookie
@@ -41,7 +41,6 @@ class EmailVerificationActionResponse(BaseModel):
 def _build_auth_links(*, current_user: CurrentUser, self_href: str) -> LinkSet:
     return LinkSet(
         self=Link(href=self_href, method="POST"),
-        available_actions=build_auth_available_actions(current_user),
     )
 
 
@@ -60,6 +59,7 @@ def _build_auth_response(*, session: AuthSessionBundle, self_href: str) -> Login
             "login": session.login,
             "role_id": session.role_id,
             "status": session.status,
+            "permissions": serialize_permissions(current_user),
         },
         _links=_build_auth_links(current_user=current_user, self_href=self_href),
     )
@@ -169,7 +169,7 @@ async def register_user(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RegisterUserResponse:
-    UserPolicy.can_register_user(current_user)
+    UserPolicy.ensure_can_register_user(current_user)
     async with uow:
         service = UserRegistrationService(uow.users)
         user = await service.register_user(
@@ -190,9 +190,5 @@ async def register_user(
         },
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{user.id}", method="GET"),
-            available_actions=[
-                Link(href="/api/v1/auth/login", method="POST"),
-                Link(href="/api/v1/users", method="GET"),
-            ],
         ),
     )

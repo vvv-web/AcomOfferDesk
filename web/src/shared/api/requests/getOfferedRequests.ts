@@ -1,12 +1,23 @@
 import { fetchJson } from '../client';
-import type { ContractorRequestOffer, GetRequestsResponse } from './getRequests';
+import { mapContractorOfferSummary, type GetRequestsResponse } from './getRequests';
 import type { FileEntity } from '@entities/request';
+import { normalizeRequestActions } from '../mappers';
 
 type ApiContractorRequestOffer = {
   id?: number;
   offer_id?: number;
   status: string;
   unread_messages_count: number;
+  actions?: {
+    can_open_workspace?: boolean;
+    can_view_contractor_info?: boolean;
+    can_edit_amount?: boolean;
+    can_accept?: boolean;
+    can_reject?: boolean;
+    can_delete?: boolean;
+    can_upload_files?: boolean;
+    can_delete_files?: boolean;
+  };
 };
 
 type ApiResponse = {
@@ -25,15 +36,20 @@ type ApiResponse = {
       chosen_offer_id: number | null;
       files: FileEntity[];
       offers: ApiContractorRequestOffer[];
+      actions?: {
+        can_view_details?: boolean;
+        can_open_contractor_view?: boolean;
+        can_edit?: boolean;
+        can_change_owner?: boolean;
+        can_upload_files?: boolean;
+        can_delete_files?: boolean;
+        can_send_email_notifications?: boolean;
+        can_mark_deleted_alert_viewed?: boolean;
+        can_create_offer?: boolean;
+      };
     }>;
   };
 };
-
-const mapContractorOffer = (offer: ApiContractorRequestOffer): ContractorRequestOffer => ({
-  id: offer.id ?? offer.offer_id ?? 0,
-  status: offer.status,
-  unread_messages_count: offer.unread_messages_count
-});
 
 
 export const getOfferedRequests = async (): Promise<GetRequestsResponse> => {
@@ -57,7 +73,8 @@ export const getOfferedRequests = async (): Promise<GetRequestsResponse> => {
       created_at: item.created_at,
       updated_at: item.updated_at,
       files: item.files,
-      offers: item.offers.map(mapContractorOffer)
+      actions: normalizeRequestActions(item.actions),
+      offers: item.offers.map(mapContractorOfferSummary)
     }))
   };
 };

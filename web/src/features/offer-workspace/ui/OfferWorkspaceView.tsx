@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import { DataTable } from '@shared/components/DataTable';
 import { downloadFile } from '@shared/api/fileDownload';
-import { findAvailableAction } from '@shared/auth/availableActions';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { useOfferWorkspace } from '../model/useOfferWorkspace';
@@ -186,27 +185,7 @@ export const OfferWorkspaceView = () => {
     { id: 'updated', label: 'Последнее изменение', value: formatDate(workspace?.request.updated_at ?? null) }
   ];
 
-  const createOfferAction = useMemo(() => {
-    const requestId = workspace?.request.request_id ?? 0;
-    const createOfferHref = `/api/v1/requests/${requestId}/offers`;
-
-    const actionSources = [
-      workspace?.availableActions ?? [],
-      selectedOffer?.availableActions ?? [],
-      ...(workspace?.offers ?? []).map((item) => item.availableActions ?? [])
-    ];
-
-    for (const source of actionSources) {
-      const action = findAvailableAction({ availableActions: source }, createOfferHref, 'POST');
-      if (action) {
-        return action;
-      }
-    }
-
-    return null;
-  }, [selectedOffer?.availableActions, workspace?.availableActions, workspace?.offers, workspace?.request.request_id]);
-
-  const canCreateNewOffer = Boolean(createOfferAction);
+  const canCreateNewOffer = Boolean(workspace?.request.actions.create_offer);
 
   if (isLoading) {
     return <Typography>Загрузка...</Typography>;

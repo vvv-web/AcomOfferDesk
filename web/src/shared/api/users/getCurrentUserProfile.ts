@@ -1,9 +1,5 @@
 import { fetchJson } from '../client';
-
-type UserActionLink = {
-  href: string;
-  method: string;
-};
+import { normalizeUserActions, type UserActions } from '../mappers';
 
 type ProfilePayload = {
   user_id?: string;
@@ -22,6 +18,13 @@ type ProfilePayload = {
   mail_company?: string | null;
   address?: string | null;
   note?: string | null;
+  permissions?: string[];
+  actions?: {
+    can_manage_own_profile?: boolean;
+    can_manage_credentials?: boolean;
+    can_manage_company_contacts?: boolean;
+    can_manage_own_unavailability?: boolean;
+  };
   unavailable_period?: {
     id: number;
     status: string;
@@ -56,16 +59,8 @@ type ProfilePayload = {
   };
 };
 
-type LinkContainer = {
-  available_actions?: UserActionLink[];
-  available_action?: UserActionLink[];
-  availableActions?: UserActionLink[];
-};
-
 type CurrentUserResponse = {
   data?: ProfilePayload;
-  _links?: LinkContainer;
-  links?: LinkContainer;
 };
 
 export type CurrentUserProfile = {
@@ -95,7 +90,8 @@ export type CurrentUserProfile = {
     startedAt: string;
     endedAt: string;
   }>;
-  availableActions: UserActionLink[];
+  permissions: string[];
+  actions: UserActions;
 };
 
 type UpdateCredentialsPayload = {
@@ -129,7 +125,6 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
   const users = data.users;
   const profiles = data.profiles;
   const companyContacts = data.company_contacts;
-  const links = response._links ?? response.links;
 
   return {
     userId: data.user_id ?? data.id ?? users?.user_id ?? users?.id ?? '',
@@ -160,7 +155,8 @@ const mapCurrentUserProfile = (response: CurrentUserResponse): CurrentUserProfil
       startedAt: period.started_at,
       endedAt: period.ended_at
     })),
-    availableActions: links?.available_actions ?? links?.available_action ?? links?.availableActions ?? []
+    permissions: data.permissions ?? [],
+    actions: normalizeUserActions(data.actions)
   };
 };
 

@@ -25,7 +25,7 @@ class NormativeFileService:
         upload: PreparedUpload,
         normative_id: int = 1,
     ) -> NormativeFileUpsertResult:
-        UserPolicy.can_manage_normative_files(current_user)
+        UserPolicy.ensure_can_manage_normative_files(current_user)
 
         new_file = await self._file_service.create_normative_file(upload=upload)
         old_file_id = await self._files.get_normative_file_id(normative_id=normative_id)

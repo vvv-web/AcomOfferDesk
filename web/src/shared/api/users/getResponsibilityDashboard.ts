@@ -1,10 +1,5 @@
 import { fetchJson } from '../client';
 
-type DashboardActionLink = {
-  href: string;
-  method: string;
-};
-
 export type ResponsibilityStatusCounter = {
   status: string;
   status_label: string;
@@ -70,10 +65,7 @@ type ResponsibilityDashboardResponse = {
     active_unavailability: ResponsibilityUpcomingUnavailability[];
     upcoming_unavailability: ResponsibilityUpcomingUnavailability[];
     savings: ResponsibilitySavingsSummary;
-  };
-  _links?: {
-    available_actions?: DashboardActionLink[];
-    availableActions?: DashboardActionLink[];
+    permissions?: string[];
   };
 };
 
@@ -85,7 +77,7 @@ export type ResponsibilityDashboardResult = {
   activeUnavailability: ResponsibilityUpcomingUnavailability[];
   upcomingUnavailability: ResponsibilityUpcomingUnavailability[];
   savings: ResponsibilitySavingsSummary;
-  availableActions: DashboardActionLink[];
+  permissions: string[];
 };
 
 export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashboardResult> => {
@@ -103,6 +95,6 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
     activeUnavailability: response.data.active_unavailability,
     upcomingUnavailability: response.data.upcoming_unavailability,
     savings: response.data.savings,
-    availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
+    permissions: response.data.permissions ?? []
   };
 };

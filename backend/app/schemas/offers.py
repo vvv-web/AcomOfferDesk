@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.actions import ChatActionsSchema, OfferActionsSchema, RequestActionsSchema
 from app.schemas.links import LinkSet
 from app.schemas.requests import RequestFileSchema
 
@@ -52,6 +53,7 @@ class ExistingOfferPreviewSchema(BaseModel):
     status: str
     status_label: str
     files: list[RequestFileSchema]
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 
 class ContractorRequestViewSchema(BaseModel):
@@ -64,6 +66,7 @@ class ContractorRequestViewSchema(BaseModel):
     files: list[RequestFileSchema]
     owner_full_name: str | None
     existing_offer: ExistingOfferPreviewSchema | None
+    actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
 
 
 class ContractorRequestViewResponse(BaseModel):
@@ -87,6 +90,7 @@ class OfferWorkspaceRequestSchema(BaseModel):
     updated_at: datetime
     closed_at: datetime | None
     files: list[RequestFileSchema]
+    actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
 
 
 class OfferWorkspaceOfferSchema(BaseModel):
@@ -97,6 +101,7 @@ class OfferWorkspaceOfferSchema(BaseModel):
     created_at: datetime
     updated_at: datetime
     files: list[RequestFileSchema]
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 
 class OfferWorkspaceOfferListItemSchema(BaseModel):
@@ -107,7 +112,7 @@ class OfferWorkspaceOfferListItemSchema(BaseModel):
     created_at: datetime
     updated_at: datetime
     files: list[RequestFileSchema]
-    links: LinkSet = Field(alias="_links")
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 
 class OfferWorkspaceSchema(BaseModel):
@@ -115,6 +120,7 @@ class OfferWorkspaceSchema(BaseModel):
     offer: OfferWorkspaceOfferSchema
     offers: list[OfferWorkspaceOfferListItemSchema]
     contractor: ContractorInfoSchema
+    chat_actions: ChatActionsSchema = Field(default_factory=ChatActionsSchema)
 
 
 class OfferWorkspaceResponse(BaseModel):
@@ -151,6 +157,7 @@ class OfferFileMutationResponse(BaseModel):
 class OfferMessageListData(BaseModel):
     offer_id: int
     items: list[OfferMessageSchema]
+    actions: ChatActionsSchema = Field(default_factory=ChatActionsSchema)
 
 
 class OfferMessageListResponse(BaseModel):

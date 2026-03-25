@@ -8,10 +8,10 @@ import type { UserListItem } from '@entities/user';
 import { registerUser } from '@shared/api/auth/registerUser';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { getUsers } from '@shared/api/users/getUsers';
-import { hasAvailableAction } from '@shared/auth/availableActions';
+import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { addUserButtonSx, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
-import { canPatchUserRole, canPatchUserStatus, resolveUserTabFromParam } from './helpers';
+import { resolveUserTabFromParam } from './helpers';
 
 const schema = z
   .object({
@@ -87,7 +87,7 @@ export const useAdminPage = () => {
     return tabOptions.filter((tab) => tab.value === 'contractors' || tab.value === 'economists' || tab.value === 'admins');
   }, [isLeadLike, session?.roleId]);
 
-  const canCreateUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
+  const canCreateUser = hasPermission(session, 'users.create');
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
 
   const form = useForm<AdminUserFormValues>({
@@ -171,8 +171,8 @@ export const useAdminPage = () => {
     try {
       const response = await getUsers(roleByTab[activeTab]);
       setUsers(response.items);
-      setCanUpdateStatus(response.availableActions.some((action) => canPatchUserStatus(action.href, action.method)));
-      setCanUpdateRole(response.availableActions.some((action) => canPatchUserRole(action.href, action.method)));
+      setCanUpdateStatus(response.permissions.includes('users.status.update'));
+      setCanUpdateRole(response.permissions.includes('users.role.update'));
     } catch (error) {
       setUsersError(error instanceof Error ? error.message : 'Не удалось загрузить список пользователей');
       setCanUpdateStatus(false);

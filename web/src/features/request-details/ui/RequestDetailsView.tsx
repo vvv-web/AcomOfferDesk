@@ -10,7 +10,6 @@ import {
     TextField,
     Typography
 } from '@mui/material';
-import { useAuth } from '@app/providers/AuthProvider';
 import { OffersTable } from './OffersTable';
 import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
 import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
@@ -21,8 +20,6 @@ import { markDeletedAlertViewed } from '@shared/api/offers/markDeletedAlertViewe
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
 import { downloadFile } from '@shared/api/fileDownload';
-import { hasAvailableAction } from '@shared/auth/availableActions';
-import { ROLE } from '@shared/constants/roles';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { DataTable } from '@shared/components/DataTable';
@@ -129,7 +126,6 @@ const toDeadlineIso = (date: string) => `${date}T23:59:59`;
 
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
-    const { session } = useAuth();
 
     const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
     const [status, setStatus] = useState<RequestStatus>('open');
@@ -181,39 +177,36 @@ export const RequestDetailsView = () => {
         hasPendingChangesRef.current = hasPendingChanges;
     }, [hasPendingChanges]);
 
-    const canEditRequest = useMemo(
-        () =>
-            hasAvailableAction(
-                { availableActions: requestDetails?.availableActions ?? [] },
-                `/api/v1/requests/${requestId}`,
-                'PATCH'
-            ),
-        [requestDetails?.availableActions, requestId]
-    );
+    const canEditRequest = useMemo(() => Boolean(requestDetails?.actions.edit), [requestDetails?.actions.edit]);
     const canEditOwner = useMemo(
-        () => canEditRequest && (session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER),
-        [canEditRequest, session?.roleId]
+        () => Boolean(requestDetails?.actions.change_owner),
+        [requestDetails?.actions.change_owner]
     );
 
     const canChangeOfferStatus = useMemo(
-        () =>
-            hasAvailableAction(
-                { availableActions: requestDetails?.availableActions ?? [] },
-                '/api/v1/offers/{offer_id}/status',
-                'PATCH'
-            ),
-        [requestDetails?.availableActions]
+        () => (requestDetails?.offers ?? []).some((offer) => offer.actions.accept || offer.actions.reject),
+        [requestDetails?.offers]
     );
     const canSendAdditionalEmails = useMemo(
-        () =>
-            status === 'open' &&
-            hasAvailableAction(
-                { availableActions: requestDetails?.availableActions ?? [] },
-                `/api/v1/requests/${requestId}/email-notifications`,
-                'POST'
-            ),
-        [requestDetails?.availableActions, requestId, status]
+        () => status === 'open' && Boolean(requestDetails?.actions.send_email_notifications),
+        [requestDetails?.actions.send_email_notifications, status]
     );
+    const canUploadRequestFiles = useMemo(() => Boolean(requestDetails?.actions.upload_file), [requestDetails?.actions.upload_file]);
+    const canDeleteRequestFiles = useMemo(() => Boolean(requestDetails?.actions.delete_file), [requestDetails?.actions.delete_file]);
+    const canMarkDeletedAlertViewed = useMemo(
+        () => Boolean(requestDetails?.actions.mark_deleted_alert_viewed),
+        [requestDetails?.actions.mark_deleted_alert_viewed]
+    );
+    const hasEditableFieldChanges =
+        status !== baselineStatus ||
+        deadline !== baselineDeadline ||
+        ownerUserId !== baselineOwnerUserId ||
+        initialAmount !== baselineInitialAmount ||
+        finalAmount !== baselineFinalAmount;
+    const canSaveRequestChanges =
+        (hasEditableFieldChanges && canEditRequest)
+        || (deletedFileIds.length > 0 && canDeleteRequestFiles)
+        || (Boolean(newFile) && canUploadRequestFiles);
 
     const todayDate = useMemo(() => {
         const now = new Date();
@@ -412,7 +405,7 @@ export const RequestDetailsView = () => {
 
     const handleSave = async () => {
         const currentRequest = requestDetails;
-        if (!currentRequest || !canEditRequest) {
+        if (!currentRequest || !canSaveRequestChanges) {
             return;
         }
 
@@ -464,7 +457,8 @@ export const RequestDetailsView = () => {
     };
 
     const handleOfferStatusChange = async (offerId: number, value: OfferDecisionStatus) => {
-        if (!canChangeOfferStatus) {
+        const targetOffer = offers.find((offer) => offer.offer_id === offerId);
+        if (!targetOffer || (!targetOffer.actions.accept && !targetOffer.actions.reject)) {
             return;
         }
         
@@ -765,7 +759,7 @@ export const RequestDetailsView = () => {
                     variant="contained"
                     sx={{ paddingX: 4, boxShadow: 'none', whiteSpace: 'nowrap', '&:hover': { boxShadow: 'none' } }}
                     onClick={() => void handleSave()}
-                    disabled={isSaving || !canEditRequest || !hasPendingChanges || Boolean(saveValidationError)}
+                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
                 >
                     {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
                 </Button>
@@ -823,7 +817,7 @@ export const RequestDetailsView = () => {
                                         label={file.name}
                                         variant="outlined"
                                         onClick={() => void handleDownload(file.download_url, file.name)}
-                                        onDelete={canEditRequest ? () => handleRemoveExistingFile(file.id) : undefined}
+                                        onDelete={canDeleteRequestFiles ? () => handleRemoveExistingFile(file.id) : undefined}
                                     />
                                 ))}
                             </Box>
@@ -831,7 +825,7 @@ export const RequestDetailsView = () => {
                             <Typography variant="body2">Файлы не прикреплены</Typography>
                         )}
 
-                        {canEditRequest && (
+                        {canUploadRequestFiles && (
                             <>
                                 <Button variant="outlined" component="label" sx={{ width: 'fit-content' }}>
                                     Прикрепить новые файлы
@@ -875,7 +869,7 @@ export const RequestDetailsView = () => {
                             </Button>
                         </Stack>
                     )}
-                    {hasDeletedAlert && (
+                    {hasDeletedAlert && canMarkDeletedAlertViewed && (
                         <Button
                             variant="contained"
                             sx={(theme) => ({

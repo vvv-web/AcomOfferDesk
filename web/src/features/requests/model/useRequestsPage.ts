@@ -6,7 +6,7 @@ import { getOpenRequests } from '@shared/api/requests/getOpenRequests';
 import { getRequestEconomists } from '@shared/api/requests/getRequestEconomists';
 import { getRequests, type RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
-import { hasAvailableAction } from '@shared/auth/availableActions';
+import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
@@ -63,12 +63,12 @@ export const useRequestsPage = () => {
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
 
   const canLoadOpenRequests = useMemo(
-    () => hasAvailableAction(session, '/api/v1/requests/open', 'GET'),
+    () => hasPermission(session, 'requests.open.read'),
     [session]
   );
 
   const canLoadMyRequests = useMemo(
-    () => hasAvailableAction(session, '/api/v1/requests/offered', 'GET'),
+    () => hasPermission(session, 'requests.offered.read'),
     [session]
   );
 
@@ -77,8 +77,8 @@ export const useRequestsPage = () => {
   const shouldLoadOpenRequests = shouldLoadOnlyOpenRequests || (canUseContractorTabs && contractorTab === 'open');
 
   const canEditOwner = useMemo(
-    () => session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER,
-    [session?.roleId]
+    () => hasPermission(session, 'requests.owner.change'),
+    [session]
   );
 
   const fetchRequests = useCallback(
@@ -176,7 +176,7 @@ export const useRequestsPage = () => {
 
   const handleOwnerChange = useCallback(
     async (request: RequestWithOfferStats, ownerUserId: string) => {
-      if (!canEditOwner || ownerUserId === request.id_user) {
+      if (!canEditOwner || !request.actions.change_owner || ownerUserId === request.id_user) {
         return;
       }
 

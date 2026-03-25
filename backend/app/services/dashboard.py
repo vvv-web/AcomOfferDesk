@@ -92,7 +92,7 @@ class DashboardService:
         self._user_status_periods = user_status_periods
 
     async def get_responsibility_dashboard(self, *, current_user: CurrentUser) -> ResponsibilityDashboard:
-        UserPolicy.can_view_responsibility_dashboard(current_user)
+        UserPolicy.ensure_can_view_responsibility_dashboard(current_user)
 
         staff_rows = await self._users.list_staff_with_profiles_and_roles_for_dashboard(
             role_ids=[settings.lead_economist_role_id, settings.economist_role_id],

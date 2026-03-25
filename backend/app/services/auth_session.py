@@ -33,7 +33,7 @@ class AuthSessionService:
             raise NotFound("User not found")
         if not await verify_password(password, user.password_hash):
             raise Forbidden("Invalid credentials")
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         return await self.build_session_bundle(user=user)
 
     async def build_session_bundle(
@@ -42,7 +42,7 @@ class AuthSessionService:
         user: User,
         refresh_max_expires_at: int | None = None,
     ) -> AuthSessionBundle:
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         access_token, access_token_expires_at = await create_access_token(user_id=user.id)
         refresh_token, refresh_token_expires_at, refresh_token_max_expires_at = await create_refresh_token(
             user_id=user.id,
@@ -65,5 +65,5 @@ class AuthSessionService:
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise Unauthorized("Invalid credentials")
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         return user

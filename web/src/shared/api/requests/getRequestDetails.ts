@@ -1,6 +1,5 @@
 import { fetchJson } from '../client';
-import type { AuthLink } from '../auth/loginWebUser';
-import { resolveAvailableActions } from '../mappers';
+import { normalizeOfferActions, normalizeRequestActions, type OfferActions, type RequestActions } from '../mappers';
 import type { FileEntity, RequestEntity } from '@entities/request';
 
 export type RequestDetailsFile = FileEntity;
@@ -32,6 +31,7 @@ export type RequestDetailsOffer = {
     updated_at?: string | null;
   } | null;
   files: RequestDetailsFile[];
+  actions: OfferActions;
 };
 
 export type RequestDetails = {
@@ -54,24 +54,43 @@ export type RequestDetails = {
   count_rejected_total: number;
   files: RequestDetailsFile[];
   offers: RequestDetailsOffer[];
-  availableActions: AuthLink[];
+  actions: RequestActions;
 };
 
 type ApiRequestItem = RequestEntity & {
+  actions?: {
+    can_view_details?: boolean;
+    can_open_contractor_view?: boolean;
+    can_edit?: boolean;
+    can_change_owner?: boolean;
+    can_upload_files?: boolean;
+    can_delete_files?: boolean;
+    can_send_email_notifications?: boolean;
+    can_mark_deleted_alert_viewed?: boolean;
+    can_create_offer?: boolean;
+  };
   initial_amount?: number | null;
   final_amount?: number | null;
   files: RequestDetailsFile[];
-  offers?: RequestDetailsOffer[];
+  offers?: Array<
+    Omit<RequestDetailsOffer, 'actions'> & {
+      actions?: {
+        can_open_workspace?: boolean;
+        can_view_contractor_info?: boolean;
+        can_edit_amount?: boolean;
+        can_accept?: boolean;
+        can_reject?: boolean;
+        can_delete?: boolean;
+        can_upload_files?: boolean;
+        can_delete_files?: boolean;
+      };
+    }
+  >;
 };
 
 type ApiResponse = {
   data: {
     item: ApiRequestItem;
-  };
-  _links?: {
-    available_action?: AuthLink[];
-    available_actions?: AuthLink[];
-    availableActions?: AuthLink[];
   };
 };
 
@@ -103,7 +122,10 @@ export const getRequestDetails = async (requestId: number): Promise<RequestDetai
     count_accepted_total: item.stats?.count_accepted_total ?? 0,
     count_rejected_total: item.stats?.count_rejected_total ?? 0,
     files: item.files ?? [],
-    offers: item.offers ?? [],
-    availableActions: resolveAvailableActions(response)
+    offers: (item.offers ?? []).map((offer) => ({
+      ...offer,
+      actions: normalizeOfferActions(offer.actions)
+    })),
+    actions: normalizeRequestActions(item.actions)
   };
 };

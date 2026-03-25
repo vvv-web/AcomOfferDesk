@@ -4,7 +4,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from app.api.available_actions import ApiAction, action, build_available_actions
+from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
@@ -16,12 +16,12 @@ from app.schemas.users import (
     EconomistListResponse,
     MeData,
     MeResponse,
-    RequestEconomistItemSchema,
-    RequestEconomistListData,
-    RequestEconomistListResponse,
     RequestContractorItemSchema,
     RequestContractorListData,
     RequestContractorListResponse,
+    RequestEconomistItemSchema,
+    RequestEconomistListData,
+    RequestEconomistListResponse,
     SetMyUnavailabilityPeriodRequest,
     SetMyUnavailabilityPeriodResponse,
     SetSubordinateUnavailabilityPeriodRequest,
@@ -83,20 +83,30 @@ def _ru_tg_status(status: str | None) -> str | None:
     return TG_STATUS_RU.get(status, status)
 
 
-def _user_list_schema(item) -> UserListItemSchema:
+def _user_list_schema(current_user: CurrentUser, item) -> UserListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     data["tg_status"] = _ru_tg_status(data.get("tg_status"))
+    data["actions"] = UserActionBuilder.build_list_item(
+        current_user,
+        target_user_id=item.user_id,
+        target_role_id=item.role_id,
+    )
     return UserListItemSchema(**data)
 
 
-def _economist_list_schema(item) -> EconomistListItemSchema:
+def _economist_list_schema(current_user: CurrentUser, item) -> EconomistListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
+    data["actions"] = UserActionBuilder.build_list_item(
+        current_user,
+        target_user_id=item.user_id,
+        target_role_id=settings.economist_role_id,
+    )
     return EconomistListItemSchema(**data)
 
 
-def _me_data(item) -> MeData:
+def _me_data(current_user: CurrentUser, item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     unavailable_period = data.get("unavailable_period")
@@ -106,9 +116,13 @@ def _me_data(item) -> MeData:
     unavailable_periods = data.get("unavailable_periods") or []
     for period in unavailable_periods:
         period["status"] = _ru_unavailability_status(period["status"])
+
+    data["permissions"] = serialize_permissions(current_user)
+    data["actions"] = UserActionBuilder.build_me(current_user)
     return MeData(**data)
 
-def _subordinate_profile_data(item) -> SubordinateProfileData:
+
+def _subordinate_profile_data(current_user: CurrentUser, item) -> SubordinateProfileData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     unavailable_period = data.get("unavailable_period")
@@ -119,36 +133,8 @@ def _subordinate_profile_data(item) -> SubordinateProfileData:
     for period in unavailable_periods:
         period["status"] = _ru_unavailability_status(period["status"])
 
+    data["actions"] = UserActionBuilder.build_subordinate_profile(current_user)
     return SubordinateProfileData(**data)
-
-def _list_users_actions(current_user: CurrentUser) -> list[Link] | None:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.USERS_LIST),
-        action(ApiAction.USERS_ECONOMISTS_LIST),
-        action(ApiAction.USERS_REGISTER),
-        action(ApiAction.USERS_STATUS_UPDATE),
-        action(ApiAction.USERS_ROLE_UPDATE),
-    )
-
-
-def _my_profile_actions(current_user: CurrentUser) -> list[Link]:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.USERS_ME_GET),
-        action(ApiAction.USERS_ME_CREDENTIALS_UPDATE),
-        action(ApiAction.USERS_ME_PROFILE_UPDATE),
-        action(ApiAction.USERS_ME_COMPANY_CONTACTS_UPDATE),
-        action(ApiAction.USERS_ME_UNAVAILABILITY_SET),
-    ) or []
-
-
-def _subordinate_profile_actions(current_user: CurrentUser, *, user_id: str) -> list[Link]:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.USERS_SUBORDINATE_PROFILE_GET, params={"user_id": user_id}),
-        action(ApiAction.USERS_SUBORDINATE_UNAVAILABILITY_SET, params={"user_id": user_id}),
-    ) or []
 
 
 @router.get("/users", response_model=UserListResponse)
@@ -161,12 +147,14 @@ async def list_users(
     async with uow:
         service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_users(current_user=current_user, role_id=role_id)
-    available_actions = _list_users_actions(current_user)
+
     return UserListResponse(
-        data=UserListData(items=[_user_list_schema(item) for item in users]),
+        data=UserListData(
+            items=[_user_list_schema(current_user, item) for item in users],
+            permissions=serialize_permissions(current_user),
+        ),
         _links=LinkSet(
             self=Link(href="/api/v1/users", method="GET"),
-            available_actions=available_actions,
         ),
     )
 
@@ -183,10 +171,12 @@ async def list_manager_candidates(
         users = await service.list_manager_candidates(current_user=current_user, target_role_id=target_role_id)
 
     return UserListResponse(
-        data=UserListData(items=[_user_list_schema(item) for item in users]),
+        data=UserListData(
+            items=[_user_list_schema(current_user, item) for item in users],
+            permissions=serialize_permissions(current_user),
+        ),
         _links=LinkSet(
             self=Link(href="/api/v1/users/manager-candidates", method="GET"),
-            available_actions=_list_users_actions(current_user),
         ),
     )
 
@@ -202,10 +192,12 @@ async def list_economists(
         economists = await service.list_economists(current_user=current_user)
 
     return EconomistListResponse(
-        data=EconomistListData(items=[_economist_list_schema(item) for item in economists]),
+        data=EconomistListData(
+            items=[_economist_list_schema(current_user, item) for item in economists],
+            permissions=serialize_permissions(current_user),
+        ),
         _links=LinkSet(
             self=Link(href="/api/v1/users/economists", method="GET"),
-            available_actions=_list_users_actions(current_user),
         ),
     )
 
@@ -234,10 +226,9 @@ async def get_me(
         )
 
     return MeResponse(
-        data=_me_data(me),
+        data=_me_data(current_user, me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me", method="GET"),
-            available_actions=_my_profile_actions(current_user),
         ),
     )
 
@@ -273,10 +264,9 @@ async def update_my_credentials(
         )
 
     return MeResponse(
-        data=_me_data(me),
+        data=_me_data(current_user, me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/credentials", method="PATCH"),
-            available_actions=_my_profile_actions(current_user),
         ),
     )
 
@@ -313,10 +303,9 @@ async def update_my_profile(
         )
 
     return MeResponse(
-        data=_me_data(me),
+        data=_me_data(current_user, me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/profile", method="PATCH"),
-            available_actions=_my_profile_actions(current_user),
         ),
     )
 
@@ -343,13 +332,11 @@ async def update_my_company_contacts(
         me = await query_service.get_me(current_user)
 
     return MeResponse(
-        data=_me_data(me),
+        data=_me_data(current_user, me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/company-contacts", method="PATCH"),
-            available_actions=_my_profile_actions(current_user),
         ),
     )
-
 
 
 @router.post("/users/me/unavailability-period", response_model=SetMyUnavailabilityPeriodResponse)
@@ -384,12 +371,12 @@ async def set_my_unavailability_period(
         )
 
     return SetMyUnavailabilityPeriodResponse(
-        data=_me_data(me),
+        data=_me_data(current_user, me),
         _links=LinkSet(
             self=Link(href="/api/v1/users/me/unavailability-period", method="POST"),
-            available_actions=_my_profile_actions(current_user),
         ),
     )
+
 
 @router.get("/users/{user_id}/profile", response_model=SubordinateProfileResponse)
 async def get_subordinate_profile(
@@ -405,10 +392,9 @@ async def get_subordinate_profile(
         )
 
     return SubordinateProfileResponse(
-        data=_subordinate_profile_data(profile),
+        data=_subordinate_profile_data(current_user, profile),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{user_id}/profile", method="GET"),
-            available_actions=_subordinate_profile_actions(current_user, user_id=user_id),
         ),
     )
 
@@ -437,12 +423,12 @@ async def set_subordinate_unavailability_period(
         )
 
     return SetSubordinateUnavailabilityPeriodResponse(
-        data=_subordinate_profile_data(profile),
+        data=_subordinate_profile_data(current_user, profile),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{user_id}/unavailability-period", method="POST"),
-            available_actions=_subordinate_profile_actions(current_user, user_id=user_id),
         ),
     )
+
 
 @router.get("/users/request-economists", response_model=RequestEconomistListResponse)
 @router.get("/users/request-economists/", response_model=RequestEconomistListResponse, include_in_schema=False)
@@ -455,16 +441,12 @@ async def list_request_economists(
         users = await service.list_request_economists(current_user=current_user)
 
     return RequestEconomistListResponse(
-        data=RequestEconomistListData(items=[RequestEconomistItemSchema(**asdict(item)) for item in users]),
+        data=RequestEconomistListData(
+            items=[RequestEconomistItemSchema(**asdict(item)) for item in users],
+            permissions=serialize_permissions(current_user),
+        ),
         _links=LinkSet(
             self=Link(href="/api/v1/users/request-economists", method="GET"),
-            available_actions=build_available_actions(
-                current_user,
-                action(ApiAction.REQUESTS_LIST),
-                action(ApiAction.USERS_REQUEST_ECONOMISTS_LIST),
-                action(ApiAction.USERS_REGISTER),
-                action(ApiAction.USERS_STATUS_UPDATE),
-            ),
         ),
     )
 
@@ -490,15 +472,11 @@ async def list_request_contractors(
                     company_mail=item.company_mail,
                 )
                 for item in users
-            ]
+            ],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/users/request-contractors", method="GET"),
-            available_actions=build_available_actions(
-                current_user,
-                action(ApiAction.USERS_REQUEST_CONTRACTORS_LIST),
-                action(ApiAction.REQUESTS_CREATE),
-            ),
         ),
     )
 
@@ -528,7 +506,6 @@ async def update_user_status(
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/status", method="PATCH"),
-            available_actions=_list_users_actions(current_user),
         ),
     )
 
@@ -552,6 +529,5 @@ async def update_user_role(
         data=UserRoleUpdateData(user_id=result.user_id, role_id=result.role_id),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/role", method="PATCH"),
-            available_actions=_list_users_actions(current_user),
         ),
     )

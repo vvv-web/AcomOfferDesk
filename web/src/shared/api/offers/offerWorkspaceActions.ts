@@ -1,6 +1,5 @@
 import { fetchEmpty, fetchJson } from '../client';
-import type { AuthLink } from '../auth/loginWebUser';
-import { resolveAvailableActions } from '../mappers';
+import { normalizeChatActions, type ChatActions } from '../mappers';
 import type { OfferMessageEntity } from '@entities/offer';
 import type { FileEntity } from '@entities/request';
 
@@ -16,18 +15,20 @@ export type OfferWorkspaceMessage = OfferMessageEntity & {
 export type OfferMessagesResult = {
   offerId: number;
   items: OfferWorkspaceMessage[];
-  availableActions: AuthLink[];
+  actions: ChatActions;
 };
 
 type MessagesResponse = {
   data: {
     offer_id: number;
     items: Array<OfferWorkspaceMessage & { attachments?: OfferMessageAttachment[] }>;
-  };
-  _links?: {
-    available_action?: AuthLink[];
-    available_actions?: AuthLink[];
-    availableActions?: AuthLink[];
+    actions?: {
+      can_view_messages?: boolean;
+      can_send_message?: boolean;
+      can_attach_files?: boolean;
+      can_mark_messages_received?: boolean;
+      can_mark_messages_read?: boolean;
+    };
   };
 };
 
@@ -90,7 +91,7 @@ export const getOfferMessages = async (offerId: number): Promise<OfferMessagesRe
       read_by: message.read_by ?? [],
       attachments: message.attachments ?? []
     })),
-    availableActions: resolveAvailableActions(response)
+    actions: normalizeChatActions(response.data.actions)
   };
 };
 

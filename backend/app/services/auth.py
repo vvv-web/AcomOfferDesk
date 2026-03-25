@@ -16,6 +16,6 @@ class AuthService:
             raise NotFound("User not found")
         if not await verify_password(password, user.password_hash):
             raise Forbidden("Invalid credentials")
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         token = await create_access_token(subject=user.id, role_id=user.id_role)
         return token, user.id_role

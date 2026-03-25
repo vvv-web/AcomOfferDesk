@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import zipfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -9,16 +8,18 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.api.available_actions import ApiAction, action, build_available_actions
+from app.api.action_flags import OfferActionBuilder, RequestActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.authorization import has_permission
-from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.domain.exceptions import Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
-from app.domain.policies import CurrentUser, RequestPolicy
+from app.domain.policies import CurrentUser
 from app.schemas.links import Link, LinkSet
 from app.schemas.requests import (
+    DeletedAlertViewed,
+    DeletedAlertViewedResponse,
     OfferItemSchema,
     OfferedRequestOfferSchema,
     OpenRequestItemSchema,
@@ -28,11 +29,9 @@ from app.schemas.requests import (
     RequestDetailsResponse,
     RequestDetailsResponseData,
     RequestDetailsSchema,
-    DeletedAlertViewed,
-    DeletedAlertViewedResponse,
+    RequestEditPayload,
     RequestEmailNotificationPayload,
     RequestEmailNotificationResponse,
-    RequestEditPayload,
     RequestFileMutationResponse,
     RequestFileSchema,
     RequestItemSchema,
@@ -42,194 +41,97 @@ from app.schemas.requests import (
     RequestOfferStatsSchema,
     RequestStatsSchema,
 )
+from app.services.email_notifications import EmailNotificationService
 from app.services.files import FileService
 from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
-from app.services.email_notifications import EmailNotificationService
 
 router = APIRouter()
 
-_ALLOWED_EXTENSIONS = {
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".txt",
-    ".md",
-    ".doc",
-    ".docx",
-    ".docs",
-    ".xls",
-    ".xlsx",
-    ".exl",
-    ".csv",
-    ".ods",
-}
-_DANGEROUS_EXTENSIONS = {".exe", ".sh", ".bat", ".cmd", ".ps1", ".js", ".msi", ".dll", ".so", ".jar"}
-_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
-
-def _is_zip_based_office_document(*, content: bytes, required_entry: str) -> bool:
-    if not content.startswith(b"PK\x03\x04"):
-        return False
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            names = set(archive.namelist())
-            return required_entry in names
-    except zipfile.BadZipFile:
-        return False
-
-
-def _magic_signature_matches(*, extension: str, content: bytes) -> bool:
-    if extension == ".pdf":
-        return content.startswith(b"%PDF-")
-    if extension == ".png":
-        return content.startswith(b"\x89PNG\r\n\x1a\n")
-    if extension in {".jpg", ".jpeg"}:
-        return content.startswith(b"\xff\xd8\xff")
-    if extension in {".txt", ".md", ".csv"}:
-        try:
-            content.decode("utf-8")
-        except UnicodeDecodeError:
-            return False
-        return True
-    if extension in {".doc", ".docs", ".xls", ".exl"}:
-        return content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
-    if extension == ".docx":
-        return _is_zip_based_office_document(content=content, required_entry="word/document.xml")
-    if extension == ".xlsx":
-        return _is_zip_based_office_document(content=content, required_entry="xl/workbook.xml")
-    if extension == ".ods":
-        if not content.startswith(b"PK\x03\x04"):
-            return False
-        try:
-            with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                names = set(archive.namelist())
-                if "mimetype" in names:
-                    mimetype = archive.read("mimetype")
-                    if mimetype == b"application/vnd.oasis.opendocument.spreadsheet":
-                        return True
-                return "content.xml" in names
-        except (zipfile.BadZipFile, KeyError):
-            return False
-    return False
-
-
-def _sanitize_filename(filename: str) -> str:
-    basename = Path(filename).name.strip()
-    if not basename:
-        raise Conflict("File name is required")
-    if basename != filename.strip():
-        raise Conflict("Unsafe file name")
-    return basename
-
-
-async def _validate_upload(file: UploadFile) -> tuple[str, bytes]:
-    filename = _sanitize_filename(file.filename or "")
-    extension = Path(filename).suffix.lower()
-
-    if extension in _DANGEROUS_EXTENSIONS:
-        raise Conflict("Forbidden file type")
-    if extension not in _ALLOWED_EXTENSIONS:
-        raise Conflict("Unsupported file extension")
-
-    content = await file.read()
-    if not content:
-        raise Conflict("File cannot be empty")
-    if len(content) > _MAX_FILE_SIZE_BYTES:
-        raise Conflict("File too large")
-    if not _magic_signature_matches(extension=extension, content=content):
-        raise Conflict("File content does not match extension")
-
-    return filename, content
-
-
-def _build_content_disposition(filename: str) -> str:
-    quoted = quote(filename, safe="")
-    return f"attachment; filename*=UTF-8''{quoted}"
-
-def _request_actions(current_user: CurrentUser) -> list[Link] | None:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.REQUESTS_LIST),
-        action(ApiAction.REQUESTS_GET),
-        action(ApiAction.OFFERS_WORKSPACE_GET),
-        action(ApiAction.OFFER_MESSAGES_LIST),
-        action(ApiAction.FILES_DOWNLOAD),
-        action(ApiAction.REQUESTS_CREATE),
-        action(ApiAction.REQUESTS_UPDATE),
-        action(ApiAction.REQUESTS_FILES_ADD),
-        action(ApiAction.REQUESTS_FILES_DELETE),
-        action(ApiAction.REQUESTS_DELETED_ALERTS_VIEWED),
-    )
-
-def _open_request_actions(current_user: CurrentUser) -> list[Link] | None:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.REQUESTS_OPEN_LIST),
-        action(ApiAction.REQUESTS_OFFERED_LIST),
-        action(ApiAction.FILES_DOWNLOAD),
-        action(ApiAction.REQUESTS_CONTRACTOR_VIEW),
-        action(ApiAction.OFFERS_CREATE),
-    )
-
-def _offered_request_actions(current_user: CurrentUser) -> list[Link] | None:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.REQUESTS_OFFERED_LIST),
-        action(ApiAction.REQUESTS_CONTRACTOR_VIEW),
-        action(ApiAction.OFFERS_WORKSPACE_GET),
-        action(ApiAction.FILES_DOWNLOAD),
+def _request_file_schema(file_item) -> RequestFileSchema:
+    return RequestFileSchema(
+        id=file_item.id,
+        path=file_item.path,
+        name=file_item.name,
+        download_url=f"/api/v1/files/{file_item.id}/download",
     )
 
 
-def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner_user_id: str, status: str) -> list[Link] | None:
-    return build_available_actions(
-        current_user,
-        action(ApiAction.REQUESTS_LIST),
-        action(ApiAction.REQUESTS_GET, params={"request_id": request_id}),
-        action(ApiAction.OFFERS_WORKSPACE_GET),
-        action(ApiAction.OFFER_MESSAGES_LIST),
-        action(ApiAction.FILES_DOWNLOAD),
-        action(
-            ApiAction.REQUESTS_UPDATE,
-            params={"request_id": request_id},
-            guard=lambda: RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id),
+def _request_stats_schema(item) -> RequestStatsSchema:
+    return RequestStatsSchema(
+        count_submitted=item.count_submitted,
+        count_deleted_alert=item.count_deleted_alert,
+        count_accepted_total=item.count_accepted_total,
+        count_rejected_total=item.count_rejected_total,
+    )
+
+
+def _request_item_schema(current_user: CurrentUser, item) -> RequestItemSchema:
+    return RequestItemSchema(
+        request_id=item.request_id,
+        description=item.description,
+        status=item.status,
+        status_label=item.status_label,
+        initial_amount=None,
+        final_amount=None,
+        deadline_at=item.deadline_at,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        closed_at=item.closed_at,
+        owner_user_id=item.owner_user_id,
+        owner_full_name=item.owner_full_name,
+        chosen_offer_id=item.chosen_offer_id,
+        stats=_request_stats_schema(item),
+        unread_messages_count=item.unread_messages_count,
+        files=[_request_file_schema(file_item) for file_item in item.files],
+        actions=RequestActionBuilder.build(
+            current_user,
+            owner_user_id=item.owner_user_id,
+            status=item.status,
+            deleted_alert_count=item.count_deleted_alert,
         ),
-        action(
-            ApiAction.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
-            params={"request_id": request_id},
-            guard=lambda: RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id),
-            enabled=status == "open",
-        ),
-        action(
-            ApiAction.REQUESTS_FILES_ADD,
-            params={"request_id": request_id},
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
-        ),
-        action(
-            ApiAction.REQUESTS_FILES_DELETE,
-            params={"request_id": request_id},
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
-        ),
-        action(
-            ApiAction.OFFERS_STATUS_UPDATE,
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
-        ),
-        action(
-            ApiAction.OFFER_MESSAGES_CREATE,
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
-        ),
-        action(
-            ApiAction.OFFER_MESSAGE_ATTACHMENTS_CREATE,
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
-        ),
-        action(
-            ApiAction.OFFER_MESSAGES_RECEIVED,
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
-        ),
-        action(
-            ApiAction.OFFER_MESSAGES_READ,
-            guard=lambda: RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id),
+    )
+
+
+def _open_request_item_schema(current_user: CurrentUser, item) -> OpenRequestItemSchema:
+    can_create_offer = (
+        current_user.role_id == settings.contractor_role_id
+        and item.status == "open"
+        and item.latest_offer_status in {None, "deleted"}
+    )
+    return OpenRequestItemSchema(
+        request_id=item.request_id,
+        description=item.description,
+        status=item.status,
+        status_label=item.status_label,
+        deadline_at=item.deadline_at,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        closed_at=item.closed_at,
+        owner_user_id=item.owner_user_id,
+        owner_full_name=item.owner_full_name,
+        chosen_offer_id=(None if current_user.role_id == settings.contractor_role_id else item.chosen_offer_id),
+        files=[_request_file_schema(file_item) for file_item in item.files],
+        offers=[
+            OfferedRequestOfferSchema(
+                offer_id=offer.offer_id,
+                status=offer.status,
+                unread_messages_count=offer.unread_messages_count,
+                actions=OfferActionBuilder.build(
+                    current_user,
+                    offer_owner_user_id=current_user.user_id,
+                    request_owner_user_id=item.owner_user_id,
+                    contractor_user_id=current_user.user_id,
+                    offer_status=offer.status,
+                ),
+            )
+            for offer in item.offers
+        ],
+        actions=RequestActionBuilder.build(
+            current_user,
+            owner_user_id=item.owner_user_id,
+            status=item.status,
+            can_create_offer=can_create_offer,
         ),
     )
 
@@ -246,46 +148,14 @@ async def list_requests(
 
     return RequestListResponse(
         data=RequestListData(
-            items=[
-                RequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    initial_amount=None,
-                    final_amount=None,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    closed_at=item.closed_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                    chosen_offer_id=item.chosen_offer_id,
-                    stats=RequestStatsSchema(
-                        count_submitted=item.count_submitted,
-                        count_deleted_alert=item.count_deleted_alert,
-                        count_accepted_total=item.count_accepted_total,
-                        count_rejected_total=item.count_rejected_total,
-                    ),
-                    unread_messages_count=item.unread_messages_count,
-                    files=[
-                        RequestFileSchema(
-                            id=f.id,
-                            path=f.path,
-                            name=f.name,
-                            download_url=f"/api/v1/files/{f.id}/download",
-                        )
-                        for f in item.files
-                    ],
-                )
-                for item in items
-            ]
+            items=[_request_item_schema(current_user, item) for item in items],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/requests", method="GET"),
-            available_actions=_request_actions(current_user),
         ),
     )
+
 
 @router.get("/requests/open", response_model=OpenRequestListResponse)
 @router.get("/requests/open/", response_model=OpenRequestListResponse, include_in_schema=False)
@@ -302,37 +172,14 @@ async def list_open_requests(
 
     return OpenRequestListResponse(
         data=OpenRequestListData(
-            items=[
-                OpenRequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    closed_at=item.closed_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                    chosen_offer_id=(None if current_user.role_id == settings.contractor_role_id else item.chosen_offer_id),
-                    files=[
-                        RequestFileSchema(
-                            id=f.id,
-                            path=f.path,
-                            name=f.name,
-                            download_url=f"/api/v1/files/{f.id}/download",
-                        )
-                        for f in item.files
-                    ],
-                )
-                for item in items
-            ]
+            items=[_open_request_item_schema(current_user, item) for item in items],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/requests/open", method="GET"),
-            available_actions=_open_request_actions(current_user),
         ),
     )
+
 
 @router.get("/requests/offered", response_model=OpenRequestListResponse)
 @router.get("/requests/offered/", response_model=OpenRequestListResponse, include_in_schema=False)
@@ -346,45 +193,14 @@ async def list_offered_requests(
 
     return OpenRequestListResponse(
         data=OpenRequestListData(
-            items=[
-                OpenRequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    closed_at=item.closed_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                    chosen_offer_id=None,
-                    files=[
-                        RequestFileSchema(
-                            id=f.id,
-                            path=f.path,
-                            name=f.name,
-                            download_url=f"/api/v1/files/{f.id}/download",
-                        )
-                        for f in item.files
-                    ],
-                    offers=[
-                        OfferedRequestOfferSchema(
-                            offer_id=offer.offer_id,
-                            status=offer.status,
-                            unread_messages_count=offer.unread_messages_count,
-                        )
-                        for offer in item.offers
-                    ],
-                )
-                for item in items
-            ]
+            items=[_open_request_item_schema(current_user, item) for item in items],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/requests/offered", method="GET"),
-            available_actions=_offered_request_actions(current_user),
         ),
     )
+
 
 @router.get("/requests/{request_id}", response_model=RequestDetailsResponse)
 @router.get("/requests/{request_id}/", response_model=RequestDetailsResponse, include_in_schema=False)
@@ -413,22 +229,15 @@ async def get_request_details(
                 owner_user_id=item.owner_user_id,
                 owner_full_name=item.owner_full_name,
                 chosen_offer_id=item.chosen_offer_id,
-                stats=RequestStatsSchema(
-                    count_submitted=item.count_submitted,
-                    count_deleted_alert=item.count_deleted_alert,
-                    count_accepted_total=item.count_accepted_total,
-                    count_rejected_total=item.count_rejected_total,
-                ),
+                stats=_request_stats_schema(item),
                 unread_messages_count=item.unread_messages_count,
-                files=[
-                    RequestFileSchema(
-                        id=f.id,
-                        path=f.path,
-                        name=f.name,
-                        download_url=f"/api/v1/files/{f.id}/download",
-                    )
-                    for f in item.files
-                ],
+                files=[_request_file_schema(file_item) for file_item in item.files],
+                actions=RequestActionBuilder.build(
+                    current_user,
+                    owner_user_id=item.owner_user_id,
+                    status=item.status,
+                    deleted_alert_count=item.count_deleted_alert,
+                ),
                 offers=[
                     OfferItemSchema(
                         offer_id=offer.offer_id,
@@ -439,7 +248,7 @@ async def get_request_details(
                         created_at=offer.created_at,
                         updated_at=offer.updated_at,
                         offer_workspace_url=offer.offer_workspace_url,
-                        contractor_full_name=offer.contractor_full_name,                        
+                        contractor_full_name=offer.contractor_full_name,
                         contractor_phone=offer.contractor_phone,
                         contractor_mail=offer.contractor_mail,
                         contractor_inn=offer.contractor_inn,
@@ -450,29 +259,23 @@ async def get_request_details(
                         contractor_contact_mail=offer.contractor_contact_mail,
                         contractor_address=offer.contractor_address,
                         contractor_note=offer.contractor_note,
-                        files=[
-                            RequestFileSchema(
-                                id=f.id,
-                                path=f.path,
-                                name=f.name,
-                                download_url=f"/api/v1/files/{f.id}/download",
-                            )
-                            for f in offer.files
-                        ],
+                        files=[_request_file_schema(file_item) for file_item in offer.files],
                         unread_messages_count=offer.unread_messages_count,
+                        actions=OfferActionBuilder.build(
+                            current_user,
+                            offer_owner_user_id=offer.contractor_user_id,
+                            request_owner_user_id=item.owner_user_id,
+                            contractor_user_id=offer.contractor_user_id,
+                            offer_status=offer.status,
+                        ),
                     )
                     for offer in item.offers
                 ],
-            )
+            ),
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_detail_actions(
-                current_user,
-                request_id=request_id,
-                owner_user_id=item.owner_user_id,
-                status=item.status,
-            ),
         ),
     )
 
@@ -488,9 +291,6 @@ async def create_request(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestCreateResponse:
-    if not files:
-        raise Conflict("At least one file is required")
-
     validator = FileService()
     file_inputs: list[RequestFileCreateInput] = []
     for file in files:
@@ -535,7 +335,6 @@ async def create_request(
         data={"request_id": request_id, "file_ids": file_ids},
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
         ),
     )
 
@@ -565,7 +364,6 @@ async def update_request(
         data={"request_id": request_id},
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
         ),
     )
 
@@ -596,8 +394,7 @@ async def send_request_email_notifications(
     return RequestEmailNotificationResponse(
         data={"request_id": result.request_id, "sent_to": result.sent_to},
         _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
+            self=Link(href=f"/api/v1/requests/{request_id}/email-notifications", method="POST"),
         ),
     )
 
@@ -640,8 +437,7 @@ async def add_request_file(
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
         _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
+            self=Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
         ),
     )
 
@@ -664,8 +460,7 @@ async def delete_request_file(
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
         _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
+            self=Link(href=f"/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
         ),
     )
 
@@ -694,9 +489,13 @@ async def mark_deleted_alert_viewed(
         },
         _links=LinkSet(
             self=Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-            available_actions=_request_actions(current_user),
         ),
     )
+
+
+def _build_content_disposition(filename: str) -> str:
+    quoted = quote(Path(filename).name, safe="")
+    return f"attachment; filename*=UTF-8''{quoted}"
 
 
 @router.get("/files/{file_id}/download")
@@ -731,6 +530,7 @@ async def download_file(
             )
             if not linked_to_open_request and not linked_to_own_offer and not linked_to_own_message:
                 raise Forbidden("Insufficient permissions for file download")
+
     file_service = FileService()
     content = await file_service.read_bytes(db_file=db_file)
     media_type = db_file.mime_type or "application/octet-stream"

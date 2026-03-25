@@ -1,5 +1,5 @@
 import { fetchJson } from '../client';
-import type { AuthLink } from '../auth/loginWebUser';
+import { normalizeOfferActions, normalizeRequestActions, type OfferActions, type RequestActions } from '../mappers';
 
 export type ContractorRequestViewFile = {
   id: number;
@@ -13,6 +13,7 @@ export type ContractorExistingOffer = {
   status: string;
   status_label: string;
   files: ContractorRequestViewFile[];
+  actions: OfferActions;
 };
 
 export type ContractorRequestView = {
@@ -25,7 +26,7 @@ export type ContractorRequestView = {
   owner_full_name?: string | null;
   files: ContractorRequestViewFile[];
   existing_offer: ContractorExistingOffer | null;
-  availableActions: AuthLink[];
+  actions: RequestActions;
 };
 
 type ApiResponse = {
@@ -38,12 +39,33 @@ type ApiResponse = {
     owner_user_id: string;
     owner_full_name?: string | null;
     files: ContractorRequestViewFile[];
-    existing_offer: ContractorExistingOffer | null;
-  };
-  _links?: {
-    available_action?: AuthLink[];
-    available_actions?: AuthLink[];
-    availableActions?: AuthLink[];
+    existing_offer: {
+      offer_id: number;
+      status: string;
+      status_label: string;
+      files: ContractorRequestViewFile[];
+      actions?: {
+        can_open_workspace?: boolean;
+        can_view_contractor_info?: boolean;
+        can_edit_amount?: boolean;
+        can_accept?: boolean;
+        can_reject?: boolean;
+        can_delete?: boolean;
+        can_upload_files?: boolean;
+        can_delete_files?: boolean;
+      };
+    } | null;
+    actions?: {
+      can_view_details?: boolean;
+      can_open_contractor_view?: boolean;
+      can_edit?: boolean;
+      can_change_owner?: boolean;
+      can_upload_files?: boolean;
+      can_delete_files?: boolean;
+      can_send_email_notifications?: boolean;
+      can_mark_deleted_alert_viewed?: boolean;
+      can_create_offer?: boolean;
+    };
   };
 };
 
@@ -63,11 +85,12 @@ export const getContractorRequestView = async (requestId: number): Promise<Contr
     owner_user_id: response.data.owner_user_id,
     owner_full_name: response.data.owner_full_name ?? null,
     files: response.data.files ?? [],
-    existing_offer: response.data.existing_offer,
-    availableActions:
-      response._links?.available_action ??
-      response._links?.available_actions ??
-      response._links?.availableActions ??
-      []
+    existing_offer: response.data.existing_offer
+      ? {
+          ...response.data.existing_offer,
+          actions: normalizeOfferActions(response.data.existing_offer.actions)
+        }
+      : null,
+    actions: normalizeRequestActions(response.data.actions)
   };
 };

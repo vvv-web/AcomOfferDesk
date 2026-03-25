@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.actions import UserActionsSchema
 from app.schemas.links import LinkSet
 
 
@@ -21,10 +22,12 @@ class UserListItemSchema(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class UserListData(BaseModel):
     items: list[UserListItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class UserListResponse(BaseModel):
@@ -40,10 +43,12 @@ class EconomistListItemSchema(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class EconomistListData(BaseModel):
     items: list[EconomistListItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class EconomistListResponse(BaseModel):
@@ -97,6 +102,7 @@ class RequestEconomistItemSchema(BaseModel):
 
 class RequestEconomistListData(BaseModel):
     items: list[RequestEconomistItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestEconomistListResponse(BaseModel):
@@ -116,6 +122,7 @@ class RequestContractorItemSchema(BaseModel):
 
 class RequestContractorListData(BaseModel):
     items: list[RequestContractorItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestContractorListResponse(BaseModel):
@@ -148,6 +155,8 @@ class MeData(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class MeResponse(BaseModel):
@@ -166,6 +175,7 @@ class SubordinateProfileData(BaseModel):
     mail: str | None = None
     unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
     unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class SubordinateProfileResponse(BaseModel):

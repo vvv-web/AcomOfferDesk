@@ -1,7 +1,8 @@
 import { fetchJson } from '../client';
-import type { UserActionLink, UserListItem } from '@entities/user';
+import type { UserListItem } from '@entities/user';
+import { normalizeUserActions } from '../mappers';
 
-export type { UserActionLink, UserListItem } from '@entities/user';
+export type { UserListItem } from '@entities/user';
 
 type UsersRow = {
   id?: string;
@@ -21,6 +22,10 @@ type UsersRow = {
   address?: string | null;
   note?: string | null;
   tg_status?: string | null;
+  actions?: {
+    can_update_status?: boolean;
+    can_update_role?: boolean;
+  };
   users?: {
     id?: string;
     id_role?: number;
@@ -52,16 +57,13 @@ type UsersRow = {
 type UserListResponse = {
   data: {
     items: UsersRow[];
-  };
-  _links?: {
-    available_actions?: UserActionLink[];
-    availableActions?: UserActionLink[];
+    permissions?: string[];
   };
 };
 
 export type GetUsersResult = {
   items: UserListItem[];
-  availableActions: UserActionLink[];
+  permissions: string[];
 };
 
 const normalizeUserItem = (item: UsersRow): UserListItem => {
@@ -90,7 +92,8 @@ const normalizeUserItem = (item: UsersRow): UserListItem => {
     company_phone: companyPhone,
     company_mail: companyMail,
     address: item.address ?? company?.address ?? null,
-    note: item.note ?? company?.note ?? null
+    note: item.note ?? company?.note ?? null,
+    actions: normalizeUserActions(item.actions)
   };
 };
 
@@ -102,10 +105,8 @@ export const getUsers = async (roleId?: number): Promise<GetUsersResult> => {
     'Ошибка загрузки пользователей'
   );
 
-  const availableActions = response._links?.available_actions ?? response._links?.availableActions ?? [];
-
   return {
     items: response.data.items.map(normalizeUserItem),
-    availableActions
+    permissions: response.data.permissions ?? []
   };
 };

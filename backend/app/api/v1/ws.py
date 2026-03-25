@@ -31,7 +31,7 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
         user = await repo.get_by_id(claims.subject)
         if user is None:
             raise Unauthorized("Invalid credentials")
-        UserPolicy.can_login(user.status)
+        UserPolicy.ensure_can_login(user.status)
         return build_current_user(user_id=user.id, role_id=user.id_role, status=user.status), claims
 
 

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.actions import OfferActionsSchema, RequestActionsSchema
 from app.schemas.links import LinkSet
 
 
@@ -43,6 +44,7 @@ class OfferItemSchema(BaseModel):
     contractor_note: str | None
     files: list[RequestFileSchema]
     unread_messages_count: int
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 
 class RequestItemSchema(BaseModel):
@@ -62,6 +64,7 @@ class RequestItemSchema(BaseModel):
     stats: RequestStatsSchema
     unread_messages_count: int
     files: list[RequestFileSchema]
+    actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
 
 
 class RequestDetailsSchema(RequestItemSchema):
@@ -72,6 +75,7 @@ class OfferedRequestOfferSchema(BaseModel):
     id: int = Field(alias="offer_id")
     status: str
     unread_messages_count: int
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 class OpenRequestItemSchema(BaseModel):
     request_id: int
@@ -87,18 +91,22 @@ class OpenRequestItemSchema(BaseModel):
     chosen_offer_id: int | None
     files: list[RequestFileSchema]
     offers: list[OfferedRequestOfferSchema] = Field(default_factory=list)
+    actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
 
 
 class OpenRequestListData(BaseModel):
     items: list[OpenRequestItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestListData(BaseModel):
     items: list[RequestItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestDetailsResponseData(BaseModel):
     item: RequestDetailsSchema
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestListResponse(BaseModel):

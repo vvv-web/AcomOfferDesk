@@ -97,7 +97,7 @@ class ProfileRepository:
         recipients: list[ActiveContractorEmailRecipient] = []
         for user_id, tg_id, mail in result.all():
             normalized_mail = mail.strip()
-            if not normalized_mail or normalized_mail.lower() in {"РЅРµ СѓРєР°Р·Р°РЅРѕ", "none", "null"}:
+            if not normalized_mail or normalized_mail.lower() in {"не указано", "none", "null"}:
                 continue
             recipients.append(
                 ActiveContractorEmailRecipient(

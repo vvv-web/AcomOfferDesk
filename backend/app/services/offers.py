@@ -22,13 +22,18 @@ from app.services.files import FileService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
-DEFAULT_PARTNER_CARD_PATH = "uploads/РљРђР РўРђ_РџРђР РўРќР•Р Рђ_01_04_2023_РђРљРўРЈРђР›Р¬РќРђРЇ_1_4_2.pdf"
-DEFAULT_PARTNER_CARD_NAME = "РљРђР РўРђ_РџРђР РўРќР•Р Рђ_01_04_2023_РђРљРўРЈРђР›Р¬РќРђРЇ_1_4_2.pdf"
+DEFAULT_PARTNER_CARD_PATH = (
+    "uploads/"
+    "КАРТА_ПАРТНЕРА_"
+    "01_04_2023_"
+    "АКТУАЛЬНАЯ_1_4_2.pdf"
+)
+DEFAULT_PARTNER_CARD_NAME = (
+    "КАРТА_ПАРТНЕРА_"
+    "01_04_2023_"
+    "АКТУАЛЬНАЯ_1_4_2.pdf"
+)
 EDITABLE_OFFER_STATUSES = {"submitted", "accepted", "rejected", "deleted"}
-
-DEFAULT_PARTNER_CARD_PATH = "uploads/КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
-DEFAULT_PARTNER_CARD_NAME = "КАРТА_ПАРТНЕРА_01_04_2023_АКТУАЛЬНАЯ_1_4_2.pdf"
-
 
 @dataclass(frozen=True)
 class AttachmentFileInput:
@@ -216,13 +221,13 @@ class OfferService:
     ):
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         if require_send:
-            OfferPolicy.can_send_chat_message(
+            OfferPolicy.ensure_can_send_chat_message(
                 current_user,
                 offer_owner_user_id=offer.id_user,
                 request_owner_user_id=request.id_user,
             )
         else:
-            OfferPolicy.can_view_chat(current_user, offer_owner_user_id=offer.id_user)
+            OfferPolicy.ensure_can_view_chat(current_user, offer_owner_user_id=offer.id_user)
 
         chat = await self._offers.get_chat(offer_id=offer.id)
         if chat is None:
@@ -235,7 +240,7 @@ class OfferService:
         return offer, request, chat, chat_state
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
-        UserPolicy.can_create_offer(current_user)
+        UserPolicy.ensure_can_create_offer(current_user)
 
         request = await self._requests.get_visible_by_id_for_contractor(
             request_id=request_id,
@@ -281,7 +286,7 @@ class OfferService:
         request_id: int,
         offer_amount: float | None = None,
     ) -> int:
-        UserPolicy.can_create_offer(current_user)
+        UserPolicy.ensure_can_create_offer(current_user)
         self._validate_offer_amount(offer_amount)
 
         request = await self._requests.get_visible_open_by_id_for_contractor(
@@ -307,7 +312,7 @@ class OfferService:
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
-        OfferPolicy.can_access_offer_workspace(current_user, offer_owner_user_id=offer.id_user)
+        OfferPolicy.ensure_can_access_offer_workspace(current_user, offer_owner_user_id=offer.id_user)
 
         profile = await self._profiles.get_by_id(offer.id_user)
         company = await self._company_contacts.get_by_id(offer.id_user)
@@ -376,7 +381,7 @@ class OfferService:
         )
 
     async def get_contractor_info(self, *, current_user: CurrentUser, contractor_user_id: str) -> ContractorInfo:
-        OfferPolicy.can_view_contractor_info(current_user, contractor_user_id=contractor_user_id)
+        OfferPolicy.ensure_can_view_contractor_info(current_user, contractor_user_id=contractor_user_id)
 
         profile = await self._profiles.get_by_id(contractor_user_id)
         company = await self._company_contacts.get_by_id(contractor_user_id)
@@ -412,7 +417,7 @@ class OfferService:
         if offer is None:
             raise NotFound("Offer not found")
         await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
-        OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
+        OfferPolicy.ensure_can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
 
         if offer.status in {"accepted", "rejected"}:
             raise Conflict("Cannot edit files for finalized offer")
@@ -439,7 +444,7 @@ class OfferService:
         if offer is None:
             raise NotFound("Offer not found")
         await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
-        OfferPolicy.can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
+        OfferPolicy.ensure_can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
 
         detached = await self._offers.detach_file(offer_id=offer.id, file_id=file_id)
         if not detached:
@@ -465,7 +470,7 @@ class OfferService:
         )
 
         if not is_contractor_deleting_own_offer:
-            RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+            RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
 
         status_changed = offer.status != status
         await self._offers.update_status(offer=offer, status=status)
@@ -498,7 +503,7 @@ class OfferService:
             if offer.status in {"accepted", "rejected"}:
                 raise Conflict("Cannot edit amount for finalized offer")
         else:
-            RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+            RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
 
         await self._offers.update_amount(offer=offer, offer_amount=offer_amount)
         return float(Decimal(str(offer.offer_amount)))

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { hasAvailableAction } from '@shared/auth/availableActions';
+import { hasPermission } from '@shared/auth/permissions';
 import { buildHeaderConfig } from './buildHeaderConfig';
 
 export const useHeaderConfig = () => {
@@ -17,11 +17,11 @@ export const useHeaderConfig = () => {
   const adminUsersTab: 'contractors' | 'economists' | 'admins' =
     adminUsersTabParam === 'economists' || adminUsersTabParam === 'admins' ? adminUsersTabParam : 'contractors';
 
-  const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
-  const canLoadOpenRequests = hasAvailableAction(session, '/api/v1/requests/open', 'GET');
-  const canLoadOfferedRequests = hasAvailableAction(session, '/api/v1/requests/offered', 'GET');
-  const canOpenUsersPage = hasAvailableAction(session, '/api/v1/users', 'GET');
-  const canRegisterUser = hasAvailableAction(session, '/api/v1/users/register', 'POST');
+  const canCreateRequest = hasPermission(session, 'requests.create');
+  const canLoadOpenRequests = hasPermission(session, 'requests.open.read');
+  const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
+  const canOpenUsersPage = hasPermission(session, 'users.read');
+  const canRegisterUser = hasPermission(session, 'users.create');
 
   return useMemo(
     () =>

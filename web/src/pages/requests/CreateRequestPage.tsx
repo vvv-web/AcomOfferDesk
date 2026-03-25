@@ -25,7 +25,7 @@ import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { createRequest } from '@shared/api/requests/createRequest';
 import { getRequestContractors, type RequestContractorItem } from '@shared/api/users/getRequestContractors';
-import { hasAvailableAction } from '@shared/auth/availableActions';
+import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
 
@@ -140,7 +140,7 @@ const OptionSection = ({ title, checked, onChange, description, children }: Opti
 export const CreateRequestPage = () => {
   const { session } = useAuth();
   const navigate = useNavigate();
-  const canCreateRequest = hasAvailableAction(session, '/api/v1/requests', 'POST');
+  const canCreateRequest = hasPermission(session, 'requests.create');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
   const todayDate = useMemo(() => {

@@ -23,11 +23,10 @@ export type AuthSessionResponse = {
     login: string;
     role_id: number;
     status: string;
+    permissions?: string[];
   };
   _links?: {
     self: AuthLink;
-    available_actions?: AuthLink[];
-    availableActions?: AuthLink[];
   };
 };
 

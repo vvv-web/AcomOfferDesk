@@ -19,7 +19,6 @@ export type RegisterUserResponse = {
   };
   _links: {
     self: AuthLink;
-    available_actions?: AuthLink[];
   };
 };
 

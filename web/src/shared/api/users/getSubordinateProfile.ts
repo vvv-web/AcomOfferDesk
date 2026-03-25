@@ -1,11 +1,15 @@
 import { fetchJson } from '../client';
-import type { UserActionLink } from '@entities/user';
 import type { UnavailabilityPeriodView } from '@entities/unavailability';
+import { normalizeUserActions, type UserActions } from '../mappers';
 
 type SubordinatePayload = {
   user_id: string;
   role_id: number;
   status: string;
+  actions?: {
+    can_view_profile?: boolean;
+    can_manage_subordinate_unavailability?: boolean;
+  };
   full_name?: string | null;
   phone?: string | null;
   mail?: string | null;
@@ -23,16 +27,8 @@ type SubordinatePayload = {
   }>;
 };
 
-type LinkContainer = {
-  available_actions?: UserActionLink[];
-  availableActions?: UserActionLink[];
-  available_action?: UserActionLink[];
-};
-
 type SubordinateResponse = {
   data: SubordinatePayload;
-  _links?: LinkContainer;
-  links?: LinkContainer;
 };
 
 export type SubordinateProfile = {
@@ -44,7 +40,7 @@ export type SubordinateProfile = {
   mail: string | null;
   unavailablePeriod: UnavailabilityPeriodView | null;
   unavailablePeriods: UnavailabilityPeriodView[];
-  availableActions: UserActionLink[];
+  actions: UserActions;
 };
 
 type SetSubordinateUnavailabilityPayload = {
@@ -53,10 +49,7 @@ type SetSubordinateUnavailabilityPayload = {
   ended_at: string;
 };
 
-const mapSubordinateProfile = (response: SubordinateResponse): SubordinateProfile => {
-  const links = response._links ?? response.links;
-
-  return ({
+const mapSubordinateProfile = (response: SubordinateResponse): SubordinateProfile => ({
   userId: response.data.user_id,
   roleId: response.data.role_id,
   status: response.data.status,
@@ -77,15 +70,14 @@ const mapSubordinateProfile = (response: SubordinateResponse): SubordinateProfil
     startedAt: period.started_at,
     endedAt: period.ended_at
   })),
-  availableActions: links?.available_actions ?? links?.availableActions ?? links?.available_action ?? []
-  });
-};
+  actions: normalizeUserActions(response.data.actions)
+});
 
 export const getSubordinateProfile = async (userId: string): Promise<SubordinateProfile> => {
   const response = await fetchJson<SubordinateResponse>(
     `/api/v1/users/${userId}/profile`,
     { method: 'GET' },
-    'Ошибка загрузки профиля подчиненного'
+    'Ошибка загрузки профиля подчинённого'
   );
 
   return mapSubordinateProfile(response);
@@ -98,7 +90,7 @@ export const setSubordinateUnavailabilityPeriod = async (
   const response = await fetchJson<SubordinateResponse>(
     `/api/v1/users/${userId}/unavailability-period`,
     { method: 'POST', body: JSON.stringify(payload) },
-    'Ошибка обновления нерабочего статуса подчиненного'
+    'Ошибка обновления нерабочего статуса подчинённого'
   );
 
   return mapSubordinateProfile(response);

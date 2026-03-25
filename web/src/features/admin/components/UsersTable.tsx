@@ -24,8 +24,6 @@ import {
   setSubordinateUnavailabilityPeriod,
   type SubordinateProfile
 } from '@shared/api/users/getSubordinateProfile';
-import { hasAvailableAction } from '@shared/auth/availableActions';
-import { ROLE } from '@shared/constants/roles';
 
 const contractorColumns = [
   { key: 'login', label: 'Логин', minWidth: 170, fraction: 1.1 },
@@ -349,13 +347,10 @@ export const UsersTable = ({
 
   const canEditUserStatus = (userId: string) => {
     const user = users.find((item) => item.user_id === userId);
-    if (!canUpdateStatus || !user) {
+    if (!canUpdateStatus || !user || !user.actions.update_status) {
       return false;
     }
-    if (isContractorsTab) {
-      return true;
-    }
-    return user.role_id === ROLE.ECONOMIST;
+    return true;
   };
 
   const handleStatusSubmit = async (values: StatusFormValues) => {
@@ -443,7 +438,7 @@ export const UsersTable = ({
                   select
                   size="small"
                   value={row.id_role}
-                  disabled={!canUpdateRole || updatingUserId === row.id}
+                  disabled={!canUpdateRole || updatingUserId === row.id || !users.find((item) => item.user_id === row.id)?.actions.update_role}
                   onChange={(event) => {
                     event.stopPropagation();
                     const nextRoleId = Number(event.target.value);
@@ -562,11 +557,7 @@ export const UsersTable = ({
                     <UnavailabilityManagementSection
                       currentPeriod={subordinateProfile.unavailablePeriod}
                       periods={subordinateProfile.unavailablePeriods}
-                      canEdit={hasAvailableAction(
-                        { availableActions: subordinateProfile.availableActions },
-                        `/api/v1/users/${subordinateProfile.userId}/unavailability-period`,
-                        'POST'
-                      )}
+                      canEdit={subordinateProfile.actions.manage_subordinate_unavailability}
                       isDialogOpen={openSubordinateUnavailability}
                       onOpenDialog={() => setOpenSubordinateUnavailability(true)}
                       onCloseDialog={() => setOpenSubordinateUnavailability(false)}

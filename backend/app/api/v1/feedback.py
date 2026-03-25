@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.api.available_actions import ApiAction, action, build_available_actions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
@@ -28,10 +27,6 @@ async def create_feedback(
         data={"feedback_id": result.feedback_id},
         _links=LinkSet(
             self=Link(href="/api/v1/feedback", method="POST"),
-            available_actions=build_available_actions(
-                current_user,
-                action(ApiAction.FEEDBACK_CREATE),
-            ),
         ),
     )
 
@@ -50,9 +45,5 @@ async def list_feedback(
         data={"items": serialized_items},
         _links=LinkSet(
             self=Link(href="/api/v1/feedback", method="GET"),
-            available_actions=build_available_actions(
-                current_user,
-                action(ApiAction.FEEDBACK_LIST),
-            ),
         ),
     )

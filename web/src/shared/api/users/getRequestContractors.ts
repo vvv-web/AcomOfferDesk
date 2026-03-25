@@ -8,24 +8,16 @@ export type RequestContractorItem = {
   company_mail: string | null;
 };
 
-type UserActionLink = {
-  href: string;
-  method: string;
-};
-
 type RequestContractorListResponse = {
   data: {
     items: RequestContractorItem[];
-  };
-  _links?: {
-    available_actions?: UserActionLink[];
-    availableActions?: UserActionLink[];
+    permissions?: string[];
   };
 };
 
 export type GetRequestContractorsResult = {
   items: RequestContractorItem[];
-  availableActions: UserActionLink[];
+  permissions: string[];
 };
 
 export const getRequestContractors = async (): Promise<GetRequestContractorsResult> => {
@@ -43,6 +35,6 @@ export const getRequestContractors = async (): Promise<GetRequestContractorsResu
       mail: item.mail ?? null,
       company_mail: item.company_mail ?? null
     })),
-    availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
+    permissions: response.data.permissions ?? []
   };
 };

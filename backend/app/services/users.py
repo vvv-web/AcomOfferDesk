@@ -64,7 +64,7 @@ class UserRegistrationService:
         phone: str | None,
         mail: str | None,
     ) -> User:
-        UserPolicy.can_register_user(current_user)
+        UserPolicy.ensure_can_register_user(current_user)
         target_role = await self._users.get_role_by_id(role_id)
         if target_role is None:
             raise Conflict("Role is not allowed for creation")
@@ -322,7 +322,7 @@ class UserQueryService:
         )
 
     async def list_users(self, current_user: CurrentUser, role_id: int | None = None) -> list[UserListItem]:
-        UserPolicy.can_list_users(current_user)
+        UserPolicy.ensure_can_list_users(current_user)
 
         if current_user.role_id in {
             settings.lead_economist_role_id,
@@ -436,7 +436,7 @@ class UserQueryService:
         *,
         target_role_id: int,
     ) -> list[UserListItem]:
-        UserPolicy.can_register_user(current_user)
+        UserPolicy.ensure_can_register_user(current_user)
 
         if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id} and target_role_id != settings.economist_role_id:
             raise Forbidden("Lead economist and project manager can create only economist users")
@@ -476,7 +476,7 @@ class UserQueryService:
         return []
     
     async def list_economists(self, current_user: CurrentUser) -> list[EconomistListItem]:
-        UserPolicy.can_list_users(current_user)
+        UserPolicy.ensure_can_list_users(current_user)
 
         rows = await self._users.list_users_with_profiles(role_id=settings.economist_role_id)
         return [
@@ -491,7 +491,7 @@ class UserQueryService:
         ]
     
     async def list_request_economists(self, current_user: CurrentUser) -> list[RequestEconomistListItem]:
-        UserPolicy.can_manage_requests(current_user)
+        UserPolicy.ensure_can_manage_requests(current_user)
 
         rows = await self._users.list_by_role_ids_with_profiles_and_roles(
             role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
@@ -523,7 +523,7 @@ class UserQueryService:
         ]
 
     async def list_request_contractors(self, current_user: CurrentUser) -> list[RequestContractorListItem]:
-        UserPolicy.can_create_request(current_user)
+        UserPolicy.ensure_can_create_request(current_user)
 
         rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
         return [
@@ -552,7 +552,7 @@ class UserQueryService:
         current_user: CurrentUser,
         subordinate_user_id: str,
     ) -> SubordinateProfileResult:
-        UserPolicy.can_manage_subordinate_unavailability(current_user)
+        UserPolicy.ensure_can_manage_subordinate_unavailability(current_user)
 
         subordinate = await self._users.get_by_id(subordinate_user_id)
         if subordinate is None:
@@ -598,7 +598,7 @@ class UserQueryService:
         )
     
     async def get_me(self, current_user: CurrentUser) -> MeResult:
-        UserPolicy.can_manage_own_profile(current_user)
+        UserPolicy.ensure_can_manage_own_profile(current_user)
 
         row = await self._users.get_with_profile_and_company_contacts(user_id=current_user.user_id)
         if row is None:
@@ -643,7 +643,7 @@ class UserRoleService:
         user_id: str,
         role_id: int,
     ) -> UserRoleUpdateResult:
-        UserPolicy.can_update_user_role(current_user)
+        UserPolicy.ensure_can_update_user_role(current_user)
 
         if role_id not in {settings.admin_role_id, settings.economist_role_id}:
             raise Conflict("Only admin and economist roles are allowed for update")
@@ -675,7 +675,7 @@ class UserStatusService:
         user_status: str,
         tg_status: str | None,
     ) -> UserStatusUpdateResult:
-        UserPolicy.can_update_user_status(current_user)
+        UserPolicy.ensure_can_update_user_status(current_user)
 
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Unsupported users.status value")
@@ -784,7 +784,7 @@ class UserSelfService:
         current_password: str,
         new_password: str,
     ) -> None:
-        UserPolicy.can_manage_own_profile(current_user)
+        UserPolicy.ensure_can_manage_own_profile(current_user)
 
         user = await self._users.get_by_id(current_user.user_id)
         if user is None:
@@ -804,7 +804,7 @@ class UserSelfService:
         phone: str | None,
         mail: str | None,
     ) -> None:
-        UserPolicy.can_manage_own_profile(current_user)
+        UserPolicy.ensure_can_manage_own_profile(current_user)
 
         profile = await self._profiles.get_by_id(current_user.user_id)
         if profile is None:
@@ -836,7 +836,7 @@ class UserSelfService:
         address: str | None,
         note: str | None,
     ) -> None:
-        UserPolicy.can_manage_own_company_contacts(current_user)
+        UserPolicy.ensure_can_manage_own_company_contacts(current_user)
 
         company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
         if company_contacts is None:
@@ -864,7 +864,7 @@ class UserSelfService:
         started_at: datetime,
         ended_at: datetime,
     ) -> None:
-        UserPolicy.can_manage_subordinate_unavailability(current_user)
+        UserPolicy.ensure_can_manage_subordinate_unavailability(current_user)
 
         if status not in self.VALID_UNAVAILABILITY_STATUSES:
             raise Conflict("Unsupported user_status_periods.status value")
@@ -918,7 +918,7 @@ class UserSelfService:
         started_at: datetime,
         ended_at: datetime,
     ) -> None:
-        UserPolicy.can_manage_own_unavailability(current_user)
+        UserPolicy.ensure_can_manage_own_unavailability(current_user)
 
         if status not in self.VALID_UNAVAILABILITY_STATUSES:
             raise Conflict("Unsupported user_status_periods.status value")

@@ -7,8 +7,7 @@ import {
   type OfferWorkspaceMessage,
   uploadOfferMessageFile
 } from '@shared/api/offers/offerWorkspaceActions';
-import { hasAvailableAction } from '@shared/auth/availableActions';
-import type { AuthLink } from '@shared/api/auth/loginWebUser';
+import type { ChatActions } from '@shared/api/mappers';
 import { getErrorMessage } from '@shared/lib/errors';
 import type { ChatRealtimeEnvelope, RealtimeConnectionState } from '@shared/ws/chatSocket';
 
@@ -125,7 +124,13 @@ export const useOfferMessages = ({
   realtimeClient
 }: UseOfferMessagesParams) => {
   const [messages, setMessages] = useState<OfferWorkspaceMessage[]>([]);
-  const [chatActions, setChatActions] = useState<AuthLink[]>([]);
+  const [chatActions, setChatActions] = useState<ChatActions>({
+    view_messages: false,
+    send_message: false,
+    attach_file: false,
+    mark_messages_received: false,
+    mark_messages_read: false
+  });
   const [isSending, setIsSending] = useState(false);
   const [chatErrorMessage, setChatErrorMessage] = useState<string | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
@@ -151,17 +156,13 @@ export const useOfferMessages = ({
       new Map<number, OfferMessagesResult>([[offerId, messagesResponse]])
     );
     setMessages(merged);
-    setChatActions(messagesResponse.availableActions);
+    setChatActions(messagesResponse.actions);
 
     if (!syncStatuses || !sessionLogin) {
       return;
     }
 
-    const canSetReceived = hasAvailableAction(
-      { availableActions: messagesResponse.availableActions },
-      `/api/v1/offers/${offerId}/messages/received`,
-      'PATCH'
-    );
+    const canSetReceived = messagesResponse.actions.mark_messages_received;
 
     const incomingSendIds = messagesResponse.items.filter((item) => item.user_id !== sessionLogin && item.status === 'send').map((item) => item.id);
     if (canSetReceived && incomingSendIds.length > 0) {
@@ -175,7 +176,7 @@ export const useOfferMessages = ({
           new Map<number, OfferMessagesResult>([[offerId, refreshed]])
         );
         setMessages(merged);
-        setChatActions(refreshed.availableActions);
+        setChatActions(refreshed.actions);
       }
     }
   }, [connectionState, realtimeClient, sessionLogin]);

@@ -1,5 +1,6 @@
 import { fetchJson } from '../client';
-import type { UserActionLink, UserListItem } from '@entities/user';
+import type { UserListItem } from '@entities/user';
+import { normalizeUserActions } from '../mappers';
 
 type UsersRow = {
   user_id?: string;
@@ -9,21 +10,22 @@ type UsersRow = {
   full_name?: string | null;
   phone?: string | null;
   mail?: string | null;
+  actions?: {
+    can_update_status?: boolean;
+    can_update_role?: boolean;
+  };
 };
 
 type UserListResponse = {
   data: {
     items: UsersRow[];
-  };
-  _links?: {
-    available_actions?: UserActionLink[];
-    availableActions?: UserActionLink[];
+    permissions?: string[];
   };
 };
 
 export type GetManagerCandidatesResult = {
   items: UserListItem[];
-  availableActions: UserActionLink[];
+  permissions: string[];
 };
 
 const normalizeUserItem = (item: UsersRow): UserListItem => ({
@@ -41,7 +43,8 @@ const normalizeUserItem = (item: UsersRow): UserListItem => ({
   company_phone: null,
   company_mail: null,
   address: null,
-  note: null
+  note: null,
+  actions: normalizeUserActions(item.actions)
 });
 
 export const getManagerCandidates = async (targetRoleId: number): Promise<GetManagerCandidatesResult> => {
@@ -53,6 +56,6 @@ export const getManagerCandidates = async (targetRoleId: number): Promise<GetMan
 
   return {
     items: response.data.items.map(normalizeUserItem),
-    availableActions: response._links?.available_actions ?? response._links?.availableActions ?? []
+    permissions: response.data.permissions ?? []
   };
 };

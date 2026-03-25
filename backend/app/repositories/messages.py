@@ -13,9 +13,18 @@ from app.models.orm_models import ChatParticipant, File, Message, MessageFile, M
 
 
 EMAIL_MESSAGE_ID_MARKER = "[email_message_id:"
-AUTO_EMAIL_MESSAGE_PREFIX = "РЎРѕРѕР±С‰РµРЅРёРµ СЃС„РѕСЂРјРёСЂРѕРІР°РЅРѕ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёР· РїРёСЃСЊРјР°"
-AUTO_EMAIL_OFFER_CREATED_TEXT = "РћС„С„РµСЂ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёР· РїРёСЃСЊРјР°"
-
+AUTO_EMAIL_MESSAGE_PREFIX = (
+    "Сообщение "
+    "сформировано "
+    "автоматически "
+    "из письма"
+)
+AUTO_EMAIL_OFFER_CREATED_TEXT = (
+    "Оффер "
+    "сформирован "
+    "автоматически "
+    "из письма"
+)
 
 def strip_email_message_marker(text: str) -> str:
     normalized = text.strip()

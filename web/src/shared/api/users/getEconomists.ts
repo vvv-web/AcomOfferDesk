@@ -1,11 +1,7 @@
 import { fetchJson } from '../client';
 import type { UserListItem } from './getUsers';
 import { ROLE } from '@shared/constants/roles';
-
-type UserActionLink = {
-  href: string;
-  method: string;
-};
+import { normalizeUserActions } from '../mappers';
 
 type EconomistRow = {
   user_id: string;
@@ -13,21 +9,22 @@ type EconomistRow = {
   full_name?: string | null;
   phone?: string | null;
   mail?: string | null;
+  actions?: {
+    can_update_status?: boolean;
+    can_update_role?: boolean;
+  };
 };
 
 type EconomistListResponse = {
   data: {
     items: EconomistRow[];
-  };
-  _links?: {
-    available_actions?: UserActionLink[];
-    availableActions?: UserActionLink[];
+    permissions?: string[];
   };
 };
 
 export type GetEconomistsResult = {
   items: UserListItem[];
-  availableActions: UserActionLink[];
+  permissions: string[];
 };
 
 export const getEconomists = async (): Promise<GetEconomistsResult> => {
@@ -36,8 +33,6 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
     { method: 'GET' },
     'Ошибка загрузки экономистов'
   );
-
-  const availableActions = response._links?.available_actions ?? response._links?.availableActions ?? [];
 
   return {
     items: response.data.items.map((item) => ({
@@ -55,8 +50,9 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
       company_phone: null,
       company_mail: null,
       address: null,
-      note: null
+      note: null,
+      actions: normalizeUserActions(item.actions)
     })),
-    availableActions
+    permissions: response.data.permissions ?? []
   };
 };

@@ -1,7 +1,6 @@
 import { fetchJson } from '../client';
-import type { AuthLink } from '../auth/loginWebUser';
 import type { ContractorRequestViewFile } from '../requests/getContractorRequestView';
-import { resolveAvailableActions } from '../mappers';
+import { normalizeChatActions, normalizeOfferActions, normalizeRequestActions, type ChatActions, type OfferActions, type RequestActions } from '../mappers';
 
 export type WorkspaceOfferItem = {
   offer_id: number;
@@ -12,7 +11,7 @@ export type WorkspaceOfferItem = {
   created_at: string | null;
   updated_at: string | null;
   files: ContractorRequestViewFile[];
-  availableActions: AuthLink[];
+  actions: OfferActions;
   selfHref?: string;
 };
 
@@ -33,6 +32,7 @@ export type OfferWorkspace = {
     updated_at: string | null;
     closed_at: string | null;
     files: ContractorRequestViewFile[];
+    actions: RequestActions;
   };
   offer: WorkspaceOfferItem;
   offers: WorkspaceOfferItem[];
@@ -49,24 +49,52 @@ export type OfferWorkspace = {
     address: string;
     note: string;
   } | null;
-  availableActions: AuthLink[];
+  chatActions: ChatActions;
 };
 
-type ApiOfferItem = Omit<WorkspaceOfferItem, 'availableActions' | 'selfHref' | 'files'> & {
+type ApiOfferItem = Omit<WorkspaceOfferItem, 'actions' | 'selfHref' | 'files'> & {
+  actions?: {
+    can_open_workspace?: boolean;
+    can_view_contractor_info?: boolean;
+    can_edit_amount?: boolean;
+    can_accept?: boolean;
+    can_reject?: boolean;
+    can_delete?: boolean;
+    can_upload_files?: boolean;
+    can_delete_files?: boolean;
+  };
   files?: ContractorRequestViewFile[];
   _links?: {
-    self?: AuthLink;
-    available_action?: AuthLink[];
-    available_actions?: AuthLink[];
-    availableActions?: AuthLink[];
+    self?: {
+      href: string;
+    };
   };
 };
 
 type ApiResponse = {
   data: {
-    request: OfferWorkspace['request'];
+    request: Omit<OfferWorkspace['request'], 'actions'> & {
+      actions?: {
+        can_view_details?: boolean;
+        can_open_contractor_view?: boolean;
+        can_edit?: boolean;
+        can_change_owner?: boolean;
+        can_upload_files?: boolean;
+        can_delete_files?: boolean;
+        can_send_email_notifications?: boolean;
+        can_mark_deleted_alert_viewed?: boolean;
+        can_create_offer?: boolean;
+      };
+    };
     offer: ApiOfferItem;
     offers?: ApiOfferItem[];
+    chat_actions?: {
+      can_view_messages?: boolean;
+      can_send_message?: boolean;
+      can_attach_files?: boolean;
+      can_mark_messages_received?: boolean;
+      can_mark_messages_read?: boolean;
+    };
     contractor?: {
       user_id: string;
       full_name: string | null;
@@ -80,11 +108,6 @@ type ApiResponse = {
       note: string | null;
     };
   };
-  _links?: {
-    available_action?: AuthLink[];
-    available_actions?: AuthLink[];
-    availableActions?: AuthLink[];
-  };
 };
 
 const mapOfferItem = (offer: ApiOfferItem, contractorUserId?: string): WorkspaceOfferItem => ({
@@ -96,7 +119,7 @@ const mapOfferItem = (offer: ApiOfferItem, contractorUserId?: string): Workspace
   created_at: offer.created_at,
   updated_at: offer.updated_at,
   files: offer.files ?? [],
-  availableActions: resolveAvailableActions(offer),
+  actions: normalizeOfferActions(offer.actions),
   selfHref: offer._links?.self?.href
 });
 
@@ -107,16 +130,15 @@ export const getOfferWorkspace = async (offerId: number): Promise<OfferWorkspace
     'Ошибка загрузки workspace оффера'
   );
 
-  const availableActions = resolveAvailableActions(response);
   const contractorUserId = response.data.contractor?.user_id;
-
   const normalizedCurrentOffer = mapOfferItem(response.data.offer, contractorUserId);
   const normalizedOffers = (response.data.offers ?? []).map((offer) => mapOfferItem(offer, contractorUserId));
 
   return {
     request: {
       ...response.data.request,
-      files: response.data.request.files ?? []
+      files: response.data.request.files ?? [],
+      actions: normalizeRequestActions(response.data.request.actions)
     },
     offer: normalizedCurrentOffer,
     offers: normalizedOffers.length > 0 ? normalizedOffers : [normalizedCurrentOffer],
@@ -137,6 +159,6 @@ export const getOfferWorkspace = async (offerId: number): Promise<OfferWorkspace
           note: response.data.contractor.note ?? ''
         }
       : null,
-    availableActions
+    chatActions: normalizeChatActions(response.data.chat_actions)
   };
 };

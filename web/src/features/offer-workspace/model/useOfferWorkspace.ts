@@ -10,7 +10,6 @@ import type { OfferContractorInfo } from '@shared/api/offers/getOfferContractorI
 import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
 import { deleteOfferFile, updateOfferAmount, uploadOfferFile } from '@shared/api/offers/offerWorkspaceActions';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
-import { findAvailableAction, hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
 import { getErrorMessage } from '@shared/lib/errors';
 import { useOfferMessages } from './useOfferMessages';
@@ -43,8 +42,7 @@ const buildWorkspaceSignature = (workspace: OfferWorkspace | null) => {
       updated_at: offer.updated_at,
       amount: offer.offer_amount,
       files: offer.files.map((file) => [file.id, file.name])
-    })),
-    available_actions: workspace.availableActions.map((action) => [action.href, action.method])
+    }))
   });
 };
 
@@ -265,25 +263,18 @@ export const useOfferWorkspace = () => {
     return () => window.clearInterval(interval);
   }, [connectionState, loadMessages, refreshWorkspace, selectedOfferId]);
 
-  const availableActions = useMemo(() => {
-    if (chatActions.length > 0) return chatActions;
-    return (workspace?.offers ?? []).find((item) => item.offer_id === selectedOfferId)?.availableActions ?? workspace?.availableActions ?? [];
-  }, [chatActions, selectedOfferId, workspace]);
-
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER || session?.roleId === ROLE.ECONOMIST;
   const isSelectedOfferSubmitted = selectedOffer?.status === 'submitted';
-  const offerEditActions = selectedOffer?.availableActions ?? workspace?.availableActions ?? [];
-  const canUpload = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files`, 'POST') && (!isContractor || isSelectedOfferSubmitted);
-  const canDeleteFile = (hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files/{file_id}`, 'DELETE') || hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/files/1`, 'DELETE')) && (!isContractor || isSelectedOfferSubmitted);
-  const canSendMessage = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages`, 'POST');
-  const canSendMessageWithAttachments = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/files`, 'POST') || hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/attachments`, 'POST') || canSendMessage;
-  const canSetReadMessages = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/read`, 'PATCH');
-  const canSetReceivedMessages = hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}/messages/received`, 'PATCH');
-  const canEditOfferStatus = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER;
-  const canEditOfferAmount = Boolean(selectedOffer)
-    && hasAvailableAction({ availableActions: offerEditActions }, `/api/v1/offers/${selectedOfferId}`, 'PATCH');
-  const canDeleteOwnOffer = isContractor && hasAvailableAction({ availableActions }, `/api/v1/offers/${selectedOfferId}`, 'PATCH');
+  const canUpload = Boolean(selectedOffer?.actions.upload_file) && (!isContractor || isSelectedOfferSubmitted);
+  const canDeleteFile = Boolean(selectedOffer?.actions.delete_file) && (!isContractor || isSelectedOfferSubmitted);
+  const canSendMessage = chatActions.send_message;
+  const canSendMessageWithAttachments = chatActions.attach_file || canSendMessage;
+  const canSetReadMessages = chatActions.mark_messages_read;
+  const canSetReceivedMessages = chatActions.mark_messages_received;
+  const canEditOfferStatus = !isContractor && Boolean(selectedOffer && (selectedOffer.actions.accept || selectedOffer.actions.reject));
+  const canEditOfferAmount = Boolean(selectedOffer?.actions.edit_amount);
+  const canDeleteOwnOffer = isContractor && Boolean(selectedOffer?.actions.delete);
 
   const acceptedOfferId = sortedOffers.find((item) => item.status === 'accepted')?.offer_id ?? null;
 
@@ -377,13 +368,11 @@ export const useOfferWorkspace = () => {
   };
 
   const handleCreateNewOffer = async () => {
-    if (!workspace) return;
-    const createOfferAction = findAvailableAction({ availableActions: workspace.availableActions ?? [] }, `/api/v1/requests/${workspace.request.request_id}/offers`, 'POST');
-    if (!createOfferAction) return;
+    if (!workspace || !workspace.request.actions.create_offer) return;
     if (!window.confirm('Создать новый отклик для этой заявки? Предыдущие удалённые отклики останутся в истории.')) return;
     setIsUpdatingOfferStatus(true);
     try {
-      const createdOffer = await createOfferForRequest(workspace.request.request_id, createOfferAction);
+      const createdOffer = await createOfferForRequest(workspace.request.request_id);
       const refreshedWorkspace = await getOfferWorkspace(createdOffer.offerId);
       setWorkspace(refreshedWorkspace);
       setSelectedOfferId(createdOffer.offerId);

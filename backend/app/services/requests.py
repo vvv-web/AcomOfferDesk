@@ -109,6 +109,8 @@ class OpenRequestListItem:
     chosen_offer_id: int | None
     files: list[RequestFileItem] = field(default_factory=list)
     offers: list[OfferedRequestOfferItem] = field(default_factory=list)
+    latest_offer_id: int | None = None
+    latest_offer_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -211,7 +213,7 @@ class RequestService:
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
     ) -> tuple[int, list[int]]:
-        UserPolicy.can_create_request(current_user)
+        UserPolicy.ensure_can_create_request(current_user)
         if deadline_at < datetime.utcnow():
             raise Conflict("Deadline cannot be in the past")
         if not files:
@@ -284,7 +286,7 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
+        RequestPolicy.ensure_can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
 
         if request.status != "open":
             raise Conflict("Only open request can be emailed manually")
@@ -354,7 +356,7 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
+        RequestPolicy.ensure_can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
 
         if data.initial_amount is not None:
             self._validate_amount(value=data.initial_amount, field_name="Initial amount")
@@ -401,7 +403,7 @@ class RequestService:
             await self._requests.update_deadline(request=request, deadline_at=data.deadline_at)
 
         if data.owner_user_id is not None:
-            RequestPolicy.can_change_owner(current_user, request_owner_user_id=request.id_user)
+            RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request.id_user)
             owner = await self._users.get_by_id(data.owner_user_id)
             if owner is None:
                 raise NotFound("Owner user not found")
@@ -494,7 +496,7 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
 
         updated_stats = await self._requests.decrement_deleted_alert(request_id=request_id)
         if updated_stats is None:
@@ -522,7 +524,7 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
 
         prepared = await self._file_service.prepare_bytes(
             original_name=file_data.original_name,
@@ -552,7 +554,7 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.can_edit(current_user, request_owner_user_id=request.id_user)
+        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
 
         detached = await self._requests.detach_file(request_id=request_id, file_id=file_id)
         if not detached:
@@ -574,7 +576,7 @@ class RequestService:
 
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
-        UserPolicy.can_view_requests(current_user)
+        UserPolicy.ensure_can_view_requests(current_user)
         rows = await self._requests.list_with_stats_and_files(current_user_id=current_user.user_id)
 
         return [
@@ -602,8 +604,15 @@ class RequestService:
 
 
     async def list_open_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
-        UserPolicy.can_view_open_requests(current_user)
+        UserPolicy.ensure_can_view_open_requests(current_user)
         rows = await self._requests.list_open_with_files_for_contractor(contractor_user_id=current_user.user_id)
+        latest_offers_by_request_id = {
+            offer.id_request: offer
+            for offer in await self._offers.list_latest_contractor_offers_by_request_ids(
+                contractor_user_id=current_user.user_id,
+                request_ids=[request.id for request, _ in rows],
+            )
+        }
 
         return [
             OpenRequestListItem(
@@ -619,13 +628,15 @@ class RequestService:
                 owner_full_name=profile.full_name if profile else None,
                 chosen_offer_id=request.id_offer,
                 files=[],
+                latest_offer_id=latest_offers_by_request_id.get(request.id).id if request.id in latest_offers_by_request_id else None,
+                latest_offer_status=latest_offers_by_request_id.get(request.id).status if request.id in latest_offers_by_request_id else None,
             )
             for request, profile in rows
         ]
 
 
     async def list_offered_requests_for_contractor(self, *, current_user: CurrentUser) -> list[OpenRequestListItem]:
-        UserPolicy.can_view_offered_requests(current_user)
+        UserPolicy.ensure_can_view_offered_requests(current_user)
         rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
 
         grouped: dict[int, OpenRequestListItem] = {}
@@ -648,6 +659,8 @@ class RequestService:
                     chosen_offer_id=None,
                     files=[],
                     offers=[],
+                    latest_offer_id=offer.id,
+                    latest_offer_status=offer.status,
                 )
                 grouped[request.id] = existing
                 request_offer_ids[request.id] = set()
@@ -667,7 +680,7 @@ class RequestService:
     
     
     async def list_open_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
-        UserPolicy.can_view_open_requests(current_user)
+        UserPolicy.ensure_can_view_open_requests(current_user)
         rows = await self._requests.list_open_with_stats_and_files()
 
         return [
@@ -695,7 +708,7 @@ class RequestService:
 
 
     async def get_request_details(self, *, current_user: CurrentUser, request_id: int) -> RequestDetailItem:
-        UserPolicy.can_view_requests(current_user)
+        UserPolicy.ensure_can_view_requests(current_user)
 
         request_row = await self._requests.get_with_stats(request_id=request_id)
         if request_row is None:

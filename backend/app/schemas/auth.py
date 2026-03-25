@@ -23,6 +23,7 @@ class AuthSessionData(BaseModel):
     login: str
     role_id: int
     status: str
+    permissions: list[str] = Field(default_factory=list)
 
 
 class AuthSessionResponse(BaseModel):

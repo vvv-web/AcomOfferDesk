@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -24,7 +24,6 @@ import {
   updateMyProfile
 } from '@shared/api/users/getCurrentUserProfile';
 import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile';
-import { hasAvailableAction } from '@shared/auth/availableActions';
 import { ROLE } from '@shared/constants/roles';
 import { requestEmailVerification } from '@shared/api/auth/emailVerification';
 
@@ -221,12 +220,11 @@ export const ProfileButton = () => {
     await loadProfile();
   };
 
-  const availableActions = useMemo(() => ({ availableActions: profile?.availableActions ?? [] }), [profile?.availableActions]);
   const showCompanyInfo = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
-  const canEditCredentials = hasAvailableAction(availableActions, '/api/v1/users/me/credentials', 'PATCH');
-  const canEditProfile = hasAvailableAction(availableActions, '/api/v1/users/me/profile', 'PATCH');
-  const canEditCompany = hasAvailableAction(availableActions, '/api/v1/users/me/company-contacts', 'PATCH');
-  const canSetUnavailability = hasAvailableAction(availableActions, '/api/v1/users/me/unavailability-period', 'POST');
+  const canEditCredentials = Boolean(profile?.actions.manage_credentials);
+  const canEditProfile = Boolean(profile?.actions.manage_own_profile);
+  const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
+  const canSetUnavailability = Boolean(profile?.actions.manage_own_unavailability);
 
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);

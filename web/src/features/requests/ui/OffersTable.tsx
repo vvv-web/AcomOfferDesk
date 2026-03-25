@@ -288,7 +288,7 @@ export const OffersTable = ({
                         displayEmpty
                         onChange={(event) => onStatusChange(offer.offer_id, event.target.value as OfferDecisionStatus)}
                         onClick={(event) => event.stopPropagation()}
-                        disabled={!canChangeStatus || offer.status === 'deleted'}
+                        disabled={!canChangeStatus || offer.status === 'deleted' || (!offer.actions.accept && !offer.actions.reject)}
                         sx={{ minWidth: 140 }}
                     >
                         <MenuItem value="">
@@ -297,9 +297,12 @@ export const OffersTable = ({
                             </Typography>
                         </MenuItem>
                         {statusOptions.map((option) => {
-                            const isAcceptedBlocked = option.value === 'accepted' && Boolean(acceptedOfferId) && acceptedOfferId !== offer.offer_id;
+                            const isAcceptedBlocked =
+                                option.value === 'accepted'
+                                && (Boolean(acceptedOfferId) && acceptedOfferId !== offer.offer_id || !offer.actions.accept);
+                            const isRejectedBlocked = option.value === 'rejected' && !offer.actions.reject;
                             return (
-                                <MenuItem key={option.value} value={option.value} disabled={isAcceptedBlocked}>
+                                <MenuItem key={option.value} value={option.value} disabled={isAcceptedBlocked || isRejectedBlocked}>
                                     {option.label}
                                 </MenuItem>
                             );

@@ -1,7 +1,4 @@
-export type UserActionLink = {
-  href: string;
-  method: string;
-};
+import type { UserActions } from '@shared/api/mappers';
 
 export type UserListItem = {
   user_id: string;
@@ -19,4 +16,5 @@ export type UserListItem = {
   company_mail: string | null;
   address: string | null;
   note: string | null;
+  actions: UserActions;
 };
