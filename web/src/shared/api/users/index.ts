@@ -5,4 +5,5 @@ export * from './getRequestContractors';
 export * from './getResponsibilityDashboard';
 export * from './getUsers';
 export * from './updateUserRole';
+export * from './updateUserManager';
 export * from './updateUserStatus';

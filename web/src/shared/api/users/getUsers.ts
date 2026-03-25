@@ -23,8 +23,11 @@ type UsersRow = {
   note?: string | null;
   tg_status?: string | null;
   actions?: {
+    can_view_profile?: boolean;
     can_update_status?: boolean;
     can_update_role?: boolean;
+    can_update_manager?: boolean;
+    can_manage_subordinate_unavailability?: boolean;
   };
   users?: {
     id?: string;

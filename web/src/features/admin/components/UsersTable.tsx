@@ -17,7 +17,9 @@ import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
 import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
+import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
+import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { DataTable } from '@shared/components/DataTable';
 import {
   getSubordinateProfile,
@@ -288,6 +290,10 @@ export const UsersTable = ({
   const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
   const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
   const [subordinateError, setSubordinateError] = useState<string | null>(null);
+  const [managerOptions, setManagerOptions] = useState<UserListItem[]>([]);
+  const [managerError, setManagerError] = useState<string | null>(null);
+  const [managerUserId, setManagerUserId] = useState('');
+  const [isUpdatingManager, setIsUpdatingManager] = useState(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
 
   const {
@@ -332,6 +338,35 @@ export const UsersTable = ({
       ended_at: ''
     });
   }, [subordinateProfile, resetSubordinateUnavailability]);
+
+  useEffect(() => {
+    setManagerUserId(selectedUser?.id_parent ?? '');
+  }, [selectedUser?.id_parent]);
+
+  useEffect(() => {
+    if (!selectedUser?.actions.update_manager) {
+      setManagerOptions([]);
+      return;
+    }
+
+    let isCancelled = false;
+    setManagerError(null);
+    void getManagerCandidates(selectedUser.role_id)
+      .then((result) => {
+        if (!isCancelled) {
+          setManagerOptions(result.items);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setManagerError(error instanceof Error ? error.message : 'Не удалось загрузить список руководителей');
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
 
   const rows: UserRow[] = useMemo(
     () =>
@@ -402,6 +437,25 @@ export const UsersTable = ({
     }
   };
 
+  const handleManagerUpdate = async () => {
+    if (!selectedUser || !managerUserId || managerUserId === selectedUser.id_parent) {
+      return;
+    }
+
+    setManagerError(null);
+    setIsUpdatingManager(true);
+    try {
+      await updateUserManager(selectedUser.user_id, { manager_user_id: managerUserId });
+      await onStatusUpdated();
+      setSelectedUser(null);
+      setSubordinateProfile(null);
+    } catch (error) {
+      setManagerError(error instanceof Error ? error.message : 'Не удалось обновить руководителя');
+    } finally {
+      setIsUpdatingManager(false);
+    }
+  };
+
   if (!isContractorsTab) {
     return (
       <>
@@ -421,6 +475,9 @@ export const UsersTable = ({
                 setSelectedUser(clickedUser);
                 setSubordinateProfile(null);
                 setSubordinateError(null);
+                setManagerOptions([]);
+                setManagerError(null);
+                setManagerUserId(clickedUser.id_parent ?? '');
                 setOpenSubordinateUnavailability(false);
                 void getSubordinateProfile(clickedUser.user_id)
                   .then((profile) => setSubordinateProfile(profile))
@@ -615,6 +672,59 @@ export const UsersTable = ({
                   </Stack>
                 ) : subordinateError ? (
                   <Alert severity="info">{subordinateError}</Alert>
+                ) : null}
+
+                {selectedUser.actions.update_manager ? (
+                  <Stack
+                    spacing={1.2}
+                    sx={{
+                      border: '1px solid #d6dfef',
+                      borderRadius: 2,
+                      p: { xs: 1.4, sm: 1.8 },
+                      backgroundColor: '#ffffff'
+                    }}
+                  >
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1f2a44' }}>
+                      Смена руководителя
+                    </Typography>
+                    {managerError ? <Alert severity="warning">{managerError}</Alert> : null}
+                    <TextField
+                      select
+                      size="small"
+                      label="Новый руководитель"
+                      value={managerUserId}
+                      onChange={(event) => setManagerUserId(event.target.value)}
+                      disabled={isUpdatingManager || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0}
+                      helperText={
+                        managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length
+                          ? ''
+                          : 'Нет доступных руководителей'
+                      }
+                    >
+                      {managerOptions
+                        .filter((manager) => manager.user_id !== selectedUser.user_id)
+                        .map((manager) => (
+                        <MenuItem key={manager.user_id} value={manager.user_id}>
+                          {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <Stack direction="row" justifyContent="flex-end">
+                      <Button
+                        variant="outlined"
+                        onClick={() => void handleManagerUpdate()}
+                        disabled={
+                          !managerUserId
+                          || managerUserId === selectedUser.id_parent
+                          || isUpdatingManager
+                          || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
+                        }
+                        sx={{ borderRadius: 999, textTransform: 'none' }}
+                      >
+                        {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
+                      </Button>
+                    </Stack>
+                  </Stack>
                 ) : null}
 
 

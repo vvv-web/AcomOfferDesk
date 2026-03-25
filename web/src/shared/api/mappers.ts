@@ -36,6 +36,7 @@ type BackendUserActionFlags = {
   can_view_profile?: boolean;
   can_update_status?: boolean;
   can_update_role?: boolean;
+  can_update_manager?: boolean;
   can_manage_own_profile?: boolean;
   can_manage_credentials?: boolean;
   can_manage_company_contacts?: boolean;
@@ -78,6 +79,7 @@ export type UserActions = {
   view_profile: boolean;
   update_status: boolean;
   update_role: boolean;
+  update_manager: boolean;
   manage_own_profile: boolean;
   manage_credentials: boolean;
   manage_company_contacts: boolean;
@@ -120,6 +122,7 @@ export const normalizeUserActions = (actions?: BackendUserActionFlags): UserActi
   view_profile: Boolean(actions?.can_view_profile),
   update_status: Boolean(actions?.can_update_status),
   update_role: Boolean(actions?.can_update_role),
+  update_manager: Boolean(actions?.can_update_manager),
   manage_own_profile: Boolean(actions?.can_manage_own_profile),
   manage_credentials: Boolean(actions?.can_manage_credentials),
   manage_company_contacts: Boolean(actions?.can_manage_company_contacts),

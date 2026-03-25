@@ -356,7 +356,20 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.ensure_can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
+        has_request_edit_changes = any(
+            value is not None
+            for value in (
+                data.initial_amount,
+                data.final_amount,
+                data.status,
+                data.deadline_at,
+            )
+        )
+        if has_request_edit_changes:
+            RequestPolicy.ensure_can_edit_owned_unassigned(
+                current_user,
+                request_owner_user_id=request.id_user,
+            )
 
         if data.initial_amount is not None:
             self._validate_amount(value=data.initial_amount, field_name="Initial amount")
@@ -407,14 +420,6 @@ class RequestService:
             owner = await self._users.get_by_id(data.owner_user_id)
             if owner is None:
                 raise NotFound("Owner user not found")
-
-            if current_user.role_id == settings.lead_economist_role_id:
-                current_owner = await self._users.get_by_id(request.id_user)
-                if current_owner is None:
-                    raise NotFound("Owner user not found")
-                can_delegate = request.id_user == current_user.user_id or current_owner.id_role == settings.operator_role_id
-                if not can_delegate:
-                    raise Forbidden("Lead economist can change owner only for own or unassigned requests")
             
             if current_user.role_id in {
                 settings.project_manager_role_id,

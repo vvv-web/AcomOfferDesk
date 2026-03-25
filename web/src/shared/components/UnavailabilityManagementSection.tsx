@@ -1,5 +1,6 @@
 import { Button, Dialog, DialogContent, Stack, Typography } from '@mui/material';
 import type { FormEventHandler, ReactNode } from 'react';
+import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 import {
   UnavailabilityStatusSection,
   type UnavailabilityPeriodView
@@ -32,45 +33,52 @@ export const UnavailabilityManagementSection = ({
   isSubmitting = false,
   editor,
   dialogNotice,
-  triggerLabel = 'Установить нерабочий период',
-  dialogTitle = 'Установить нерабочий период',
-  submitLabel = 'Сохранить'
-}: UnavailabilityManagementSectionProps) => (
-  <Stack spacing={1.5}>
-    <UnavailabilityStatusSection currentPeriod={currentPeriod} periods={periods} />
+  triggerLabel = 'РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РЅРµСЂР°Р±РѕС‡РёР№ РїРµСЂРёРѕРґ',
+  dialogTitle = 'РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РЅРµСЂР°Р±РѕС‡РёР№ РїРµСЂРёРѕРґ',
+  submitLabel = 'РЎРѕС…СЂР°РЅРёС‚СЊ'
+}: UnavailabilityManagementSectionProps) => {
+  const handleOpenDialog = () => {
+    blurActiveElement();
+    onOpenDialog?.();
+  };
 
-    {canEdit ? (
-      <>
-        <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={onOpenDialog}>
-          {triggerLabel}
-        </Button>
+  return (
+    <Stack spacing={1.5}>
+      <UnavailabilityStatusSection currentPeriod={currentPeriod} periods={periods} />
 
-        <Dialog
-          open={isDialogOpen}
-          onClose={onCloseDialog}
-          fullWidth
-          maxWidth="xs"
-          PaperProps={{
-            sx: {
-              borderRadius: 4,
-              maxWidth: 560
-            }
-          }}
-        >
-          <DialogContent sx={{ p: 3.5, backgroundColor: '#d9d9d9' }}>
-            <Stack spacing={2} component="form" onSubmit={onSubmit}>
-              <Typography variant="h5" fontWeight={700}>
-                {dialogTitle}
-              </Typography>
-              {dialogNotice}
-              {editor}
-              <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmitting}>
-                {submitLabel}
-              </Button>
-            </Stack>
-          </DialogContent>
-        </Dialog>
-      </>
-    ) : null}
-  </Stack>
-);
+      {canEdit ? (
+        <>
+          <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={handleOpenDialog}>
+            {triggerLabel}
+          </Button>
+
+          <Dialog
+            open={isDialogOpen}
+            onClose={onCloseDialog}
+            fullWidth
+            maxWidth="xs"
+            PaperProps={{
+              sx: {
+                borderRadius: 4,
+                maxWidth: 560
+              }
+            }}
+          >
+            <DialogContent sx={{ p: 3.5, backgroundColor: '#d9d9d9' }}>
+              <Stack spacing={2} component="form" onSubmit={onSubmit}>
+                <Typography variant="h5" fontWeight={700}>
+                  {dialogTitle}
+                </Typography>
+                {dialogNotice}
+                {editor}
+                <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmitting}>
+                  {submitLabel}
+                </Button>
+              </Stack>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
+    </Stack>
+  );
+};

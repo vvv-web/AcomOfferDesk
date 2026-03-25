@@ -33,6 +33,9 @@ from app.schemas.users import (
     UpdateMyProfileRequest,
     UserListData,
     UserListItemSchema,
+    UserManagerUpdateData,
+    UserManagerUpdateRequest,
+    UserManagerUpdateResponse,
     UserListResponse,
     UserRoleUpdateData,
     UserRoleUpdateRequest,
@@ -41,7 +44,7 @@ from app.schemas.users import (
     UserStatusUpdateRequest,
     UserStatusUpdateResponse,
 )
-from app.services.users import UserQueryService, UserRoleService, UserSelfService, UserStatusService
+from app.services.users import UserManagerService, UserQueryService, UserRoleService, UserSelfService, UserStatusService
 
 router = APIRouter()
 
@@ -53,15 +56,6 @@ USER_STATUS_RU = {
     "blacklist": "В черном списке",
 }
 
-UNAVAILABILITY_STATUS_RU = {
-    "sick": "Больничный",
-    "vacation": "Отпуск",
-    "fired": "Уволен",
-    "maternity": "Декрет",
-    "business_trip": "Командировка",
-    "unavailable": "Недоступен",
-}
-
 TG_STATUS_RU = {
     "approved": "Одобрен",
     "disapproved": "Не одобрен",
@@ -71,10 +65,6 @@ TG_STATUS_RU = {
 
 def _ru_user_status(status: str) -> str:
     return USER_STATUS_RU.get(status, status)
-
-
-def _ru_unavailability_status(status: str) -> str:
-    return UNAVAILABILITY_STATUS_RU.get(status, status)
 
 
 def _ru_tg_status(status: str | None) -> str | None:
@@ -109,14 +99,6 @@ def _economist_list_schema(current_user: CurrentUser, item) -> EconomistListItem
 def _me_data(current_user: CurrentUser, item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
-    unavailable_period = data.get("unavailable_period")
-    if unavailable_period is not None:
-        unavailable_period["status"] = _ru_unavailability_status(unavailable_period["status"])
-
-    unavailable_periods = data.get("unavailable_periods") or []
-    for period in unavailable_periods:
-        period["status"] = _ru_unavailability_status(period["status"])
-
     data["permissions"] = serialize_permissions(current_user)
     data["actions"] = UserActionBuilder.build_me(current_user)
     return MeData(**data)
@@ -125,15 +107,10 @@ def _me_data(current_user: CurrentUser, item) -> MeData:
 def _subordinate_profile_data(current_user: CurrentUser, item) -> SubordinateProfileData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
-    unavailable_period = data.get("unavailable_period")
-    if unavailable_period is not None:
-        unavailable_period["status"] = _ru_unavailability_status(unavailable_period["status"])
-
-    unavailable_periods = data.get("unavailable_periods") or []
-    for period in unavailable_periods:
-        period["status"] = _ru_unavailability_status(period["status"])
-
-    data["actions"] = UserActionBuilder.build_subordinate_profile(current_user)
+    data["actions"] = UserActionBuilder.build_subordinate_profile(
+        current_user,
+        target_role_id=item.role_id,
+    )
     return SubordinateProfileData(**data)
 
 
@@ -529,5 +506,28 @@ async def update_user_role(
         data=UserRoleUpdateData(user_id=result.user_id, role_id=result.role_id),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/role", method="PATCH"),
+        ),
+    )
+
+
+@router.patch("/users/{user_id}/manager", response_model=UserManagerUpdateResponse)
+async def update_user_manager(
+    payload: UserManagerUpdateRequest,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserManagerUpdateResponse:
+    async with uow:
+        service = UserManagerService(uow.users)
+        result = await service.update_manager(
+            current_user=current_user,
+            user_id=user_id,
+            manager_user_id=payload.manager_user_id,
+        )
+
+    return UserManagerUpdateResponse(
+        data=UserManagerUpdateData(user_id=result.user_id, manager_user_id=result.manager_user_id),
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/users/{result.user_id}/manager", method="PATCH"),
         ),
     )

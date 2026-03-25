@@ -190,6 +190,18 @@ class OfferService:
         self._users = users
         self._file_service = file_service or FileService(files)
 
+    def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
+        return ChatState(
+            chat_id=chat_id,
+            last_message_id=last_message_id,
+            last_message_at=last_message_at,
+            participant_user_id="",
+            last_read_message_id=None,
+            last_read_at=last_message_at,
+            is_muted=False,
+            is_archived=False,
+        )
+
     async def _ensure_request_visible_for_contractor(self, *, current_user: CurrentUser, request_id: int) -> None:
         if current_user.role_id != settings.contractor_role_id:
             return
@@ -235,7 +247,14 @@ class OfferService:
 
         chat_state = await self._chats.get_chat_state_for_user(chat_id=chat.id, user_id=current_user.user_id)
         if chat_state is None:
-            raise Forbidden("Insufficient permissions to view chat")
+            if not require_send and current_user.role_id == settings.project_manager_role_id:
+                chat_state = self._build_read_only_chat_state(
+                    chat_id=chat.id,
+                    last_message_id=chat.last_message_id,
+                    last_message_at=chat.last_message_at,
+                )
+            else:
+                raise Forbidden("Insufficient permissions to view chat")
 
         return offer, request, chat, chat_state
 

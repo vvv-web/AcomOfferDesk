@@ -23,6 +23,14 @@ def serialize_permissions(current_user: CurrentUser) -> list[str]:
     return sorted(current_user.permissions)
 
 
+def _can_manage_subordinate_target(current_user: CurrentUser, *, target_role_id: int) -> bool:
+    if current_user.role_id == settings.project_manager_role_id:
+        return target_role_id in {settings.lead_economist_role_id, settings.economist_role_id}
+    if current_user.role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
+        return target_role_id == settings.economist_role_id
+    return False
+
+
 class RequestActionBuilder:
     @staticmethod
     def build(
@@ -153,11 +161,27 @@ class UserActionBuilder:
         target_user_id: str,
         target_role_id: int,
     ) -> UserActionsSchema:
+        can_manage_subordinate_target = _can_manage_subordinate_target(
+            current_user,
+            target_role_id=target_role_id,
+        )
+        can_update_status = UserPolicy.can_update_user_status(current_user)
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            can_update_status = can_update_status and can_manage_subordinate_target
         return UserActionsSchema(
-            can_update_status=UserPolicy.can_update_user_status(current_user),
+            can_view_profile=can_manage_subordinate_target,
+            can_update_status=can_update_status,
             can_update_role=(
                 UserPolicy.can_update_user_role(current_user)
                 and target_role_id != settings.superadmin_role_id
+            ),
+            can_update_manager=(
+                UserPolicy.can_update_user_manager(current_user)
+                and can_manage_subordinate_target
             ),
         )
 
@@ -171,10 +195,30 @@ class UserActionBuilder:
         )
 
     @staticmethod
-    def build_subordinate_profile(current_user: CurrentUser) -> UserActionsSchema:
-        can_manage_subordinate = UserPolicy.can_manage_subordinate_unavailability(current_user)
+    def build_subordinate_profile(
+        current_user: CurrentUser,
+        *,
+        target_role_id: int,
+    ) -> UserActionsSchema:
+        can_manage_subordinate_target = _can_manage_subordinate_target(
+            current_user,
+            target_role_id=target_role_id,
+        )
+        can_manage_subordinate = (
+            UserPolicy.can_manage_subordinate_unavailability(current_user)
+            and can_manage_subordinate_target
+        )
+        can_update_status = (
+            UserPolicy.can_update_user_status(current_user)
+            and can_manage_subordinate_target
+        )
         return UserActionsSchema(
-            can_view_profile=True,
+            can_view_profile=can_manage_subordinate_target,
+            can_update_status=can_update_status,
+            can_update_manager=(
+                UserPolicy.can_update_user_manager(current_user)
+                and can_manage_subordinate_target
+            ),
             can_manage_subordinate_unavailability=can_manage_subordinate,
         )
 

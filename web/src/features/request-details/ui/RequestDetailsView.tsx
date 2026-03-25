@@ -165,13 +165,13 @@ export const RequestDetailsView = () => {
     );
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
     const hasFileChanges = deletedFileIds.length > 0 || Boolean(newFile);
-    const hasPendingChanges =
+    const hasRequestFieldChanges =
         status !== baselineStatus ||
         deadline !== baselineDeadline ||
-        ownerUserId !== baselineOwnerUserId ||
         initialAmount !== baselineInitialAmount ||
-        finalAmount !== baselineFinalAmount ||
-        hasFileChanges;
+        finalAmount !== baselineFinalAmount;
+    const hasOwnerChange = ownerUserId !== baselineOwnerUserId;
+    const hasPendingChanges = hasRequestFieldChanges || hasOwnerChange || hasFileChanges;
 
     useEffect(() => {
         hasPendingChangesRef.current = hasPendingChanges;
@@ -197,14 +197,9 @@ export const RequestDetailsView = () => {
         () => Boolean(requestDetails?.actions.mark_deleted_alert_viewed),
         [requestDetails?.actions.mark_deleted_alert_viewed]
     );
-    const hasEditableFieldChanges =
-        status !== baselineStatus ||
-        deadline !== baselineDeadline ||
-        ownerUserId !== baselineOwnerUserId ||
-        initialAmount !== baselineInitialAmount ||
-        finalAmount !== baselineFinalAmount;
     const canSaveRequestChanges =
-        (hasEditableFieldChanges && canEditRequest)
+        (hasRequestFieldChanges && canEditRequest)
+        || (hasOwnerChange && canEditOwner)
         || (deletedFileIds.length > 0 && canDeleteRequestFiles)
         || (Boolean(newFile) && canUploadRequestFiles);
 

@@ -13,6 +13,7 @@ import {
     Typography
 } from '@mui/material';
 import { useAuth } from '@app/providers/AuthProvider';
+import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
 type GuideSection = {
     title: string;
@@ -718,6 +719,11 @@ export const RoleGuideButton = () => {
     const [open, setOpen] = useState(false);
     const roleGuide = useMemo(() => roleGuides[session?.roleId ?? 0], [session?.roleId]);
 
+    const handleOpen = () => {
+        blurActiveElement();
+        setOpen(true);
+    };
+
     if (!roleGuide) {
         return null;
     }
@@ -726,7 +732,7 @@ export const RoleGuideButton = () => {
         <>
             <Button
                 variant="outlined"
-                onClick={() => setOpen(true)}
+                onClick={handleOpen}
                 sx={{
                     minWidth: 42,
                     width: 42,

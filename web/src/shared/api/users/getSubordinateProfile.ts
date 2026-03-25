@@ -5,9 +5,12 @@ import { normalizeUserActions, type UserActions } from '../mappers';
 type SubordinatePayload = {
   user_id: string;
   role_id: number;
+  id_parent?: string | null;
   status: string;
   actions?: {
     can_view_profile?: boolean;
+    can_update_status?: boolean;
+    can_update_manager?: boolean;
     can_manage_subordinate_unavailability?: boolean;
   };
   full_name?: string | null;
@@ -34,6 +37,7 @@ type SubordinateResponse = {
 export type SubordinateProfile = {
   userId: string;
   roleId: number;
+  parentUserId: string | null;
   status: string;
   fullName: string | null;
   phone: string | null;
@@ -52,6 +56,7 @@ type SetSubordinateUnavailabilityPayload = {
 const mapSubordinateProfile = (response: SubordinateResponse): SubordinateProfile => ({
   userId: response.data.user_id,
   roleId: response.data.role_id,
+  parentUserId: response.data.id_parent ?? null,
   status: response.data.status,
   fullName: response.data.full_name ?? null,
   phone: response.data.phone ?? null,

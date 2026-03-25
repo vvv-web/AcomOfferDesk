@@ -313,7 +313,6 @@ export const ProfileButton = () => {
         fullWidth
         BackdropProps={{
           sx: {
-            backdropFilter: 'blur(6px)',
             backgroundColor: 'rgba(31, 42, 68, 0.35)'
           }
         }}

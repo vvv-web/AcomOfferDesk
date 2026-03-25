@@ -74,6 +74,22 @@ class UserRoleUpdateResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
+class UserManagerUpdateRequest(BaseModel):
+    manager_user_id: str = Field(min_length=1)
+
+
+class UserManagerUpdateData(BaseModel):
+    user_id: str
+    manager_user_id: str
+
+
+class UserManagerUpdateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: UserManagerUpdateData
+    links: LinkSet = Field(alias="_links")
+
+
 class UserStatusUpdateRequest(BaseModel):
     user_status: str
     tg_status: str | None = None
@@ -169,6 +185,7 @@ class MeResponse(BaseModel):
 class SubordinateProfileData(BaseModel):
     user_id: str
     role_id: int
+    id_parent: str | None = None
     status: str
     full_name: str | None = None
     phone: str | None = None

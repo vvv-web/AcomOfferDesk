@@ -36,6 +36,7 @@ class UserActionsSchema(BaseModel):
     can_view_profile: bool = False
     can_update_status: bool = False
     can_update_role: bool = False
+    can_update_manager: bool = False
     can_manage_own_profile: bool = False
     can_manage_credentials: bool = False
     can_manage_company_contacts: bool = False

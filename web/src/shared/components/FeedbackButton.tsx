@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { createFeedback } from '@shared/api/feedback/createFeedback';
+import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
 const schema = z.object({
   text: z.string().trim().min(1, 'Введите текст обратной связи').max(3000, 'Максимум 3000 символов')
@@ -40,6 +41,11 @@ export const FeedbackButton = () => {
 
   const currentTextLength = (watch('text') ?? '').length;
 
+  const handleOpen = () => {
+    blurActiveElement();
+    setOpen(true);
+  };
+
   const handleClose = () => {
     setOpen(false);
     setError(null);
@@ -61,7 +67,7 @@ export const FeedbackButton = () => {
 
   return (
     <>
-      <Button variant="outlined" onClick={() => setOpen(true)}>
+      <Button variant="outlined" onClick={handleOpen}>
         Обратная связь
       </Button>
       <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">

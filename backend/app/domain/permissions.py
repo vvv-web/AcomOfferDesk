@@ -10,6 +10,7 @@ class PermissionCodes:
     USERS_CREATE = "users.create"
     USERS_STATUS_UPDATE = "users.status.update"
     USERS_ROLE_UPDATE = "users.role.update"
+    USERS_MANAGER_UPDATE = "users.manager.update"
     PROFILE_MANAGE_OWN = "profile.manage_own"
     COMPANY_CONTACTS_MANAGE_OWN = "company_contacts.manage_own"
     REQUESTS_READ = "requests.read"
@@ -52,30 +53,32 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         if name.isupper() and isinstance(value, str)
     )
 
-    internal_request_permissions = {
+    internal_request_read_permissions = {
         PermissionCodes.REQUESTS_READ,
+        PermissionCodes.OFFERS_WORKSPACE_READ,
+        PermissionCodes.OFFERS_CONTRACTOR_INFO_READ,
+        PermissionCodes.CHAT_READ,
+        PermissionCodes.FILES_DOWNLOAD,
+    }
+    internal_request_manage_permissions = {
         PermissionCodes.REQUESTS_CREATE,
         PermissionCodes.REQUESTS_UPDATE,
         PermissionCodes.REQUESTS_FILES_UPLOAD,
         PermissionCodes.REQUESTS_FILES_DELETE,
-        PermissionCodes.REQUESTS_OPEN_READ,
         PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
         PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED,
-        PermissionCodes.OFFERS_WORKSPACE_READ,
         PermissionCodes.OFFERS_UPDATE,
         PermissionCodes.OFFERS_STATUS_UPDATE,
-        PermissionCodes.OFFERS_CONTRACTOR_INFO_READ,
-        PermissionCodes.CHAT_READ,
         PermissionCodes.CHAT_MESSAGE_SEND,
         PermissionCodes.CHAT_MESSAGE_ATTACH,
         PermissionCodes.CHAT_RECEIPTS_MARK_RECEIVED,
         PermissionCodes.CHAT_RECEIPTS_MARK_READ,
-        PermissionCodes.FILES_DOWNLOAD,
     }
     management_permissions = {
         PermissionCodes.USERS_READ,
         PermissionCodes.USERS_CREATE,
         PermissionCodes.USERS_STATUS_UPDATE,
+        PermissionCodes.USERS_MANAGER_UPDATE,
         PermissionCodes.REQUESTS_OWNER_CHANGE,
         PermissionCodes.DASHBOARD_RESPONSIBILITY_READ,
         PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
@@ -119,13 +122,21 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         settings.contractor_role_id: frozenset(common_permissions | contractor_permissions),
         settings.project_manager_role_id: frozenset(
             common_permissions
-            | internal_request_permissions
-            | management_permissions
+            | internal_request_read_permissions
+            | {
+                PermissionCodes.USERS_READ,
+                PermissionCodes.USERS_STATUS_UPDATE,
+                PermissionCodes.USERS_MANAGER_UPDATE,
+                PermissionCodes.REQUESTS_OWNER_CHANGE,
+                PermissionCodes.DASHBOARD_RESPONSIBILITY_READ,
+                PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
+            }
             | {PermissionCodes.UNAVAILABILITY_MANAGE_OWN}
         ),
         settings.lead_economist_role_id: frozenset(
             common_permissions
-            | internal_request_permissions
+            | internal_request_read_permissions
+            | internal_request_manage_permissions
             | management_permissions
             | {
                 PermissionCodes.NORMATIVE_FILES_MANAGE,
@@ -134,9 +145,12 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
         ),
         settings.economist_role_id: frozenset(
             common_permissions
-            | internal_request_permissions
+            | internal_request_read_permissions
+            | internal_request_manage_permissions
             | {
                 PermissionCodes.USERS_READ,
+                PermissionCodes.USERS_STATUS_UPDATE,
+                PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
             }

@@ -61,7 +61,7 @@ class UserPolicy:
         require_permission(
             current_user,
             PermissionCodes.USERS_CREATE,
-            message="Only admin, superadmin, lead economist and project manager can manage economist users",
+            message="Only admin, superadmin and lead economist can manage economist users",
         )
 
     @staticmethod
@@ -73,7 +73,7 @@ class UserPolicy:
         require_permission(
             current_user,
             PermissionCodes.USERS_CREATE,
-            message="Only admin, superadmin, lead economist and project manager can manage economist users",
+            message="Only admin, superadmin and lead economist can manage economist users",
         )
 
     @staticmethod
@@ -106,7 +106,7 @@ class UserPolicy:
         require_permission(
             current_user,
             PermissionCodes.USERS_STATUS_UPDATE,
-            message="Only admin, superadmin, lead economist and project manager can update user status",
+            message="Only admin, superadmin, project manager, lead economist and economist can update user status",
         )
 
     @staticmethod
@@ -119,6 +119,18 @@ class UserPolicy:
             current_user,
             PermissionCodes.USERS_ROLE_UPDATE,
             message="Only admin and superadmin can update user roles",
+        )
+
+    @staticmethod
+    def can_update_user_manager(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.USERS_MANAGER_UPDATE)
+
+    @staticmethod
+    def ensure_can_update_user_manager(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.USERS_MANAGER_UPDATE,
+            message="Only project manager, lead economist and economist can update user manager",
         )
 
     @staticmethod
@@ -317,7 +329,11 @@ class RequestPolicy:
             PermissionCodes.REQUESTS_OWNER_CHANGE,
             message="Only lead economist, project manager and superadmin can change request owner",
         )
-        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_READ,
+            message="Insufficient permissions to change request owner",
+        )
 
 
 class OfferPolicy:
@@ -443,7 +459,6 @@ class OfferPolicy:
         if current_user.role_id in {
             settings.superadmin_role_id,
             settings.lead_economist_role_id,
-            settings.project_manager_role_id,
         }:
             return
 

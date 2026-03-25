@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
 import { ROLE } from '@shared/constants/roles';
 import { useAuth } from '@app/providers/AuthProvider';
+import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
 export const NormativeFileButton = () => {
   const { session } = useAuth();
@@ -26,6 +27,11 @@ export const NormativeFileButton = () => {
     if (inputRef.current) {
       inputRef.current.value = '';
     }
+  };
+
+  const handleOpen = () => {
+    blurActiveElement();
+    setOpen(true);
   };
 
   const handleUpload = async () => {
@@ -53,7 +59,7 @@ export const NormativeFileButton = () => {
 
   return (
     <>
-      <Button variant="outlined" onClick={() => setOpen(true)}>
+      <Button variant="outlined" onClick={handleOpen}>
         Добавить нормативный документ
       </Button>
       <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
