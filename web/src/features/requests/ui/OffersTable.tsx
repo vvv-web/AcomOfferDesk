@@ -31,7 +31,7 @@ type NotificationStyle = {
 
 const columns = [
     { key: 'status', label: '', minWidth: 60, fraction: 0.3 },
-    { key: 'offerAmount', label: 'Offer amount', minWidth: 150, fraction: 1.1 },
+    { key: 'offerAmount', label: 'Сумма оффера', minWidth: 150, fraction: 1.1 },
     { key: 'offerId', label: 'Номер КП', minWidth: 100, fraction: 0.8 },
     { key: 'counterparty', label: 'Контрагент', minWidth: 220, fraction: 1.8 },
     { key: 'contacts', label: 'Контактное лицо', minWidth: 220, fraction: 1.8 },

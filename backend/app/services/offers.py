@@ -627,17 +627,11 @@ class OfferService:
         message_ids: list[int] | None = None,
         up_to_message_id: int | None = None,
     ) -> OfferMessageAckResult:
-        _, request, chat, _ = await self._require_chat_context(
+        _, _, chat, _ = await self._require_chat_context(
             current_user=current_user,
             offer_id=offer_id,
-            require_send=True,
+            require_send=False,
         )
-        if not self._can_acknowledge_chat_messages(
-            current_user=current_user,
-            request_owner_user_id=request.id_user,
-        ):
-            return OfferMessageAckResult(offer_id=offer_id, chat_id=chat.id, updated_message_ids=[])
-
         updated_message_ids = await self._messages.mark_delivered(
             chat_id=chat.id,
             recipient_user_id=current_user.user_id,
@@ -658,17 +652,11 @@ class OfferService:
         message_ids: list[int] | None = None,
         up_to_message_id: int | None = None,
     ) -> OfferMessageAckResult:
-        _, request, chat, _ = await self._require_chat_context(
+        _, _, chat, _ = await self._require_chat_context(
             current_user=current_user,
             offer_id=offer_id,
-            require_send=True,
+            require_send=False,
         )
-        if not self._can_acknowledge_chat_messages(
-            current_user=current_user,
-            request_owner_user_id=request.id_user,
-        ):
-            return OfferMessageAckResult(offer_id=offer_id, chat_id=chat.id, updated_message_ids=[])
-
         updated_message_ids = await self._messages.mark_read(
             chat_id=chat.id,
             recipient_user_id=current_user.user_id,
@@ -706,11 +694,6 @@ class OfferService:
             if item.id == message_id:
                 return item
         raise NotFound("Message not found")
-
-    def _can_acknowledge_chat_messages(self, *, current_user: CurrentUser, request_owner_user_id: str) -> bool:
-        if current_user.role_id == settings.contractor_role_id:
-            return True
-        return current_user.user_id == request_owner_user_id
 
     def _resolve_message_type(self, *, has_text: bool, has_attachments: bool) -> str:
         if has_text and has_attachments:

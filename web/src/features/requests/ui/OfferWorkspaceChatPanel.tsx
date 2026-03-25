@@ -577,11 +577,13 @@ export const OfferWorkspaceChatPanel = ({
                 multiline
                 minRows={3}
                 fullWidth
-                disabled={!canSendMessage || isSending}
+                disabled={isSending}
                 error={Boolean(errors.text)}
                 helperText={errors.text?.message}
+                InputProps={{ readOnly: !canSendMessage }}
                 {...register('text')}
                 onClick={() => void onMessageInputClick()}
+                onFocus={() => void onMessageInputClick()}
               />
 
               <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1 }}>

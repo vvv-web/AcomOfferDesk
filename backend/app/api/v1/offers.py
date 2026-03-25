@@ -172,6 +172,7 @@ def _offer_workspace_actions(
     request_owner_user_id: str,
     offer_status: str,
     can_create_new_offer: bool,
+    can_acknowledge_messages: bool,
 ) -> list[Link]:
     actions = [
         Link(href=f"/api/v1/offers/{offer_id}/workspace", method="GET"),
@@ -225,20 +226,16 @@ def _offer_workspace_actions(
                 Link(href=f"/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
             ]
         )
-
-        can_acknowledge_messages = (
-            current_user.role_id == settings.contractor_role_id
-            or current_user.user_id == request_owner_user_id
-        )
-        if can_acknowledge_messages:
-            actions.extend(
-                [
-                    Link(href=f"/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-                    Link(href=f"/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-                ]
-            )
     except Forbidden:
         pass
+
+    if can_acknowledge_messages:
+        actions.extend(
+            [
+                Link(href=f"/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
+                Link(href=f"/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
+            ]
+        )
 
     if can_create_new_offer:
         actions.append(Link(href=f"/api/v1/requests/{request_id}/offers", method="POST"))
@@ -271,6 +268,12 @@ async def _resolve_offer_action_links(
             and (latest_offer is None or latest_offer.status == "deleted")
         )
 
+    can_acknowledge_messages = False
+    chat = await uow.offers.get_chat(offer_id=offer.id)
+    if chat is not None:
+        participant = await uow.chats.get_active_participant(chat_id=chat.id, user_id=current_user.user_id)
+        can_acknowledge_messages = participant is not None
+
     return _offer_workspace_actions(
         offer_id=offer_id,
         request_id=request.id,
@@ -279,6 +282,7 @@ async def _resolve_offer_action_links(
         request_owner_user_id=request.id_user,
         offer_status=offer.status,
         can_create_new_offer=can_create_new_offer,
+        can_acknowledge_messages=can_acknowledge_messages,
     )
 
 

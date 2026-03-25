@@ -344,16 +344,32 @@ export const RequestDetailsView = () => {
         }
 
         if (Number.isNaN(parsedInitialAmount)) {
-            return 'РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅСѓСЋ initial_amount';
+            return 'Укажите корректную initial_amount';
         }
         if (Number.isNaN(parsedFinalAmount)) {
-            return 'РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅСѓСЋ final_amount';
+            return 'Укажите корректную final_amount';
         }
         if (parsedInitialAmount === null && (currentStatus === 'closed' || initialAmountChanged)) {
-            return 'РЈРєР°Р¶РёС‚Рµ initial_amount';
+            return 'Укажите initial_amount';
         }
         if ((parsedInitialAmount !== null && parsedInitialAmount < 0) || (parsedFinalAmount !== null && parsedFinalAmount < 0)) {
-            return 'РЎСѓРјРјР° РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕР№';
+            return 'Сумма не может быть отрицательной';
+        }
+
+        if (currentStatus === 'closed') {
+            const acceptedOffer = offers.find((offer) => offer.status === 'accepted');
+            if (parsedFinalAmount === null) {
+                return 'Для закрытия заявки укажите final_amount';
+            }
+            if (!acceptedOffer) {
+                if (parsedFinalAmount !== parsedInitialAmount) {
+                    return 'Для закрытия заявки без принятого оффера final_amount должна совпадать с initial_amount';
+                }
+            } else if (acceptedOffer.offer_amount === null || acceptedOffer.offer_amount === undefined) {
+                return 'Для закрытия заявки с принятым оффером у него должна быть указана сумма';
+            } else if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOffer.offer_amount) {
+                return 'final_amount должна совпадать с initial_amount или с суммой принятого оффера';
+            }
         }
 
         if ((deadlineChanged || isReopen) && !currentDeadline) {
@@ -366,27 +382,6 @@ export const RequestDetailsView = () => {
 
         if (!isFinalStatus && deadlineChanged && currentStatus !== 'open' && currentStatus !== 'review') {
             return 'Для изменения дедлайна заявку необходимо повторно открыть';
-        }
-
-        if (currentStatus === 'closed') {
-            const hasAcceptedOffer = offers.some((offer) => offer.status === 'accepted');
-            if (!hasAcceptedOffer) {
-                return 'Нельзя закрыть заявку без оффера со статусом "Принят"';
-            }
-        }
-
-        if (currentStatus === 'closed') {
-            const acceptedOffer = offers.find((offer) => offer.status === 'accepted');
-            const acceptedOfferAmount = acceptedOffer?.offer_amount ?? null;
-            if (acceptedOfferAmount === null || acceptedOfferAmount === undefined) {
-                return 'Р”Р»СЏ Р·Р°РєСЂС‹С‚РёСЏ Р·Р°СЏРІРєРё Сѓ РїСЂРёРЅСЏС‚РѕРіРѕ РѕС„С„РµСЂР° РґРѕР»Р¶РЅР° Р±С‹С‚СЊ СѓРєР°Р·Р°РЅР° СЃСѓРјРјР°';
-            }
-            if (parsedFinalAmount === null) {
-                return 'Р”Р»СЏ Р·Р°РєСЂС‹С‚РёСЏ Р·Р°СЏРІРєРё СѓРєР°Р¶РёС‚Рµ final_amount';
-            }
-            if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOfferAmount) {
-                return 'final_amount РґРѕР»Р¶РЅР° СЃРѕРІРїР°РґР°С‚СЊ СЃ initial_amount РёР»Рё СЃ СЃСѓРјРјРѕР№ РїСЂРёРЅСЏС‚РѕРіРѕ РѕС„С„РµСЂР°';
-            }
         }
 
         if (ownerChanged && !canEditOwner) {

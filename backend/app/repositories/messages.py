@@ -146,7 +146,7 @@ class MessageRepository:
         message_ids: Sequence[int] | None = None,
         up_to_message_id: int | None = None,
     ) -> list[int]:
-        if message_ids is not None and not message_ids:
+        if message_ids is not None and not message_ids and up_to_message_id is None:
             return []
 
         message_ids_stmt = self._build_recipient_message_ids_stmt(
@@ -180,7 +180,7 @@ class MessageRepository:
         message_ids: Sequence[int] | None = None,
         up_to_message_id: int | None = None,
     ) -> list[int]:
-        if message_ids is not None and not message_ids:
+        if message_ids is not None and not message_ids and up_to_message_id is None:
             return []
 
         message_ids_stmt = self._build_recipient_message_ids_stmt(

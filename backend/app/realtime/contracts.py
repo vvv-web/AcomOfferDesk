@@ -47,7 +47,7 @@ class MessageSendPayload(BaseModel):
 
 class MessageReadPayload(BaseModel):
     chat_id: int = Field(..., ge=1)
-    message_ids: list[int] = Field(default_factory=list)
+    message_ids: list[int] | None = None
     up_to_message_id: int | None = Field(default=None, ge=1)
 
 

@@ -43,7 +43,7 @@ const isValidAmountValue = (value: string) => {
 };
 
 const schema = z.object({
-  initialAmount: z.string().trim().min(1, 'РЈРєР°Р¶РёС‚Рµ СЃСѓРјРјСѓ РїСЂРµРґРІР°СЂРёС‚РµР»СЊРЅРѕРіРѕ РґРѕРіРѕРІРѕСЂР°').refine(isValidAmountValue, 'РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅСѓСЋ СЃСѓРјРјСѓ'),
+  initialAmount: z.string().trim().min(1, 'Укажите сумму предварительного договора').refine(isValidAmountValue, 'Укажите корректную сумму'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
   files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
@@ -360,13 +360,13 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                РЎСѓРјРјР° РїСЂРµРґРІР°СЂРёС‚РµР»СЊРЅРѕРіРѕ РґРѕРіРѕРІРѕСЂР°
+                Сумма предварительного договора
               </Typography>
               <TextField
-                placeholder="РЈРєР°Р¶РёС‚Рµ СЃСѓРјРјСѓ РІ СЂСѓР±Р»СЏС…"
+                placeholder="Укажите сумму в рублях"
                 fullWidth
                 error={Boolean(errors.initialAmount)}
-                helperText={errors.initialAmount?.message ?? 'Р—РЅР°С‡РµРЅРёРµ initial_amount РґР»СЏ СЂР°СЃС‡С‘С‚Р° СЌРєРѕРЅРѕРјРёРё РїРѕ Р·Р°СЏРІРєРµ.'}
+                helperText={errors.initialAmount?.message ?? 'Значение initial_amount для расчета экономии по заявке.'}
                 {...register('initialAmount')}
                 inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
                 sx={{

@@ -1,9 +1,11 @@
+var _a;
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
+var apiProxyTarget = (_a = process.env.VITE_API_PROXY_TARGET) !== null && _a !== void 0 ? _a : "http://gateway";
 export default defineConfig({
     plugins: [react()],
     resolve: {
@@ -44,7 +46,7 @@ export default defineConfig({
         host: true,
         proxy: {
             "/api": {
-                target: "http://192.168.3.5:8010",
+                target: apiProxyTarget,
                 changeOrigin: true,
             },
         },

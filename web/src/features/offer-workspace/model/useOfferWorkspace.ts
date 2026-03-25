@@ -265,28 +265,6 @@ export const useOfferWorkspace = () => {
     return () => window.clearInterval(interval);
   }, [connectionState, loadMessages, refreshWorkspace, selectedOfferId]);
 
-  useEffect(() => {
-    if (!selectedOffer || !workspace || !isChatOpen || !session?.login) {
-      return;
-    }
-
-    const lastIncomingMessage = [...messages]
-      .filter((message) => message.offer_id === selectedOffer.offer_id && message.user_id !== session.login)
-      .sort((left, right) => new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime())[0];
-
-    if (!lastIncomingMessage) {
-      return;
-    }
-
-    void markReadByInputFocus({
-      offerId: selectedOffer.offer_id,
-      canSetReadMessages: hasAvailableAction({ availableActions: chatActions }, `/api/v1/offers/${selectedOffer.offer_id}/messages/read`, 'PATCH'),
-      canSetReceivedMessages: hasAvailableAction({ availableActions: chatActions }, `/api/v1/offers/${selectedOffer.offer_id}/messages/received`, 'PATCH'),
-      sessionLogin: session.login,
-      offerItems: workspace.offers
-    }).catch(() => undefined);
-  }, [chatActions, isChatOpen, markReadByInputFocus, messages, selectedOffer, session?.login, workspace]);
-
   const availableActions = useMemo(() => {
     if (chatActions.length > 0) return chatActions;
     return (workspace?.offers ?? []).find((item) => item.offer_id === selectedOfferId)?.availableActions ?? workspace?.availableActions ?? [];

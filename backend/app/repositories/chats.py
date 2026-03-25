@@ -126,9 +126,10 @@ class ChatRepository:
         if up_to_message_id is not None:
             stmt = stmt.where(Message.id <= up_to_message_id)
         if message_ids is not None:
-            if not message_ids:
+            if not message_ids and up_to_message_id is None:
                 return None
-            stmt = stmt.where(Message.id.in_(message_ids))
+            if message_ids:
+                stmt = stmt.where(Message.id.in_(message_ids))
 
         result = await self._session.execute(stmt)
         boundary = result.scalar_one_or_none()

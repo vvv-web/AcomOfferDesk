@@ -6,7 +6,7 @@ import { DataTable } from '@shared/components/DataTable';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 const baseColumns = [
-    { key: 'id', label: 'id', minWidth: 60, fraction: 0.45 },
+    { key: 'id', label: 'ID', minWidth: 60, fraction: 0.45 },
     { key: 'description', label: 'Описание', minWidth: 200, fraction: 2.5 },
 
     { key: 'status', label: 'Статус', minWidth: 100, fraction: 1.1 },

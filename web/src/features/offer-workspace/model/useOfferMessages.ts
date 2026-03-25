@@ -166,9 +166,7 @@ export const useOfferMessages = ({
     const incomingSendIds = messagesResponse.items.filter((item) => item.user_id !== sessionLogin && item.status === 'send').map((item) => item.id);
     if (canSetReceived && incomingSendIds.length > 0) {
       if (connectionState === 'connected') {
-        const lastIncomingId = incomingSendIds[incomingSendIds.length - 1];
         await realtimeClient.syncChat(offerId, messagesResponse.items[messagesResponse.items.length - 1]?.id ?? null);
-        await realtimeClient.markRead(offerId, { upToMessageId: lastIncomingId });
       } else {
         await markOfferMessagesReceived(offerId, incomingSendIds);
         const refreshed = await getOfferMessages(offerId);
@@ -363,17 +361,13 @@ export const useOfferMessages = ({
 
     try {
       if (connectionState === 'connected') {
-        await realtimeClient.markRead(params.offerId, { upToMessageId: lastIncomingMessage.id });
+        await realtimeClient.markRead(params.offerId, {});
       } else {
         const incomingSendIds = incomingMessages.filter((item: OfferWorkspaceMessage) => item.status === 'send').map((item: OfferWorkspaceMessage) => item.id);
-        const incomingReceivedIds = incomingMessages.filter((item: OfferWorkspaceMessage) => item.status === 'received').map((item: OfferWorkspaceMessage) => item.id);
         if (params.canSetReceivedMessages && incomingSendIds.length > 0) {
           await markOfferMessagesReceived(params.offerId, incomingSendIds);
         }
-        const readIds = [...incomingReceivedIds, ...incomingSendIds];
-        if (readIds.length > 0) {
-          await markOfferMessagesRead(params.offerId, readIds);
-        }
+        await markOfferMessagesRead(params.offerId);
         await loadMessages(params.offerId, params.offerItems, false);
       }
     } catch (error) {

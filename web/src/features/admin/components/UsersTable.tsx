@@ -38,10 +38,10 @@ const contractorColumns = [
 ];
 
 const defaultColumns = [
-  { key: 'id', label: 'id', minWidth: 120, fraction: 1 },
-  { key: 'password', label: 'password', minWidth: 180, fraction: 1.4 },
-  { key: 'id_role', label: 'id_role', minWidth: 120, fraction: 1 },
-  { key: 'role', label: 'role', minWidth: 180, fraction: 1.4 },
+  { key: 'id', label: 'ID', minWidth: 120, fraction: 1 },
+  { key: 'password', label: 'Пароль', minWidth: 180, fraction: 1.4 },
+  { key: 'id_role', label: 'ID роли', minWidth: 120, fraction: 1 },
+  { key: 'role', label: 'Роль', minWidth: 180, fraction: 1.4 },
   { key: 'status', label: 'Статус профиля', minWidth: 170, fraction: 1.2 }
 ];
 

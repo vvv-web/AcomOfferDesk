@@ -128,7 +128,7 @@ class ChatSocketClient {
   markRead(chatId: number, params: { messageIds?: number[]; upToMessageId?: number | null }) {
     return this.sendRequest('message.read', {
       chat_id: chatId,
-      message_ids: params.messageIds ?? [],
+      message_ids: params.messageIds,
       up_to_message_id: params.upToMessageId ?? null
     });
   }

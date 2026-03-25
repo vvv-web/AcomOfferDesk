@@ -462,13 +462,17 @@ class RequestService:
             raise Conflict("Initial amount is required to close request")
         if request.final_amount is None:
             raise Conflict("Final amount is required to close request")
-        if accepted_offer is None:
-            raise Conflict("Accepted offer is required to close request")
-        if accepted_offer.offer_amount is None:
-            raise Conflict("Accepted offer amount is required to close request")
 
         initial_amount = Decimal(str(request.initial_amount))
         final_amount = Decimal(str(request.final_amount))
+        if accepted_offer is None:
+            if final_amount != initial_amount:
+                raise Conflict("Final amount must match initial amount when request is closed without accepted offer")
+            return
+
+        if accepted_offer.offer_amount is None:
+            raise Conflict("Accepted offer amount is required when request is closed with accepted offer")
+
         offer_amount = Decimal(str(accepted_offer.offer_amount))
         if final_amount != initial_amount and final_amount != offer_amount:
             raise Conflict("Final amount must match initial amount or accepted offer amount")

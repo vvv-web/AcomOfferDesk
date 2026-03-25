@@ -177,7 +177,7 @@ class OfferMessageCreateResponse(BaseModel):
 
 
 class OfferMessageStatusUpdatePayload(BaseModel):
-    message_ids: list[int] = Field(default_factory=list)
+    message_ids: list[int] | None = None
     up_to_message_id: int | None = None
 
 
