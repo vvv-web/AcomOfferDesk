@@ -57,10 +57,23 @@ class DashboardSavingsItem:
 
 
 @dataclass(frozen=True)
+class DashboardClosedRequestItem:
+    request_id: int
+    owner_user_id: str
+    owner_full_name: str | None
+    initial_amount: float | None
+    offer_amount: float | None
+    final_amount: float | None
+    savings_amount: float | None
+    closed_at: datetime | None
+
+
+@dataclass(frozen=True)
 class DashboardSavingsSummary:
     total_closed_requests: int
     total_with_savings: int
     total_savings_amount: float
+    closed_items: list[DashboardClosedRequestItem]
     items: list[DashboardSavingsItem]
 
 
@@ -248,6 +261,7 @@ class DashboardService:
 
         savings_rows = await self._requests.list_closed_requests_with_chosen_offer_by_owner_ids(owner_ids=staff_owner_ids)
         savings_items: list[DashboardSavingsItem] = []
+        closed_items: list[DashboardClosedRequestItem] = []
         total_savings_amount = Decimal("0")
         for request, chosen_offer, profile in savings_rows:
             savings_amount = self._calculate_savings(
@@ -255,6 +269,20 @@ class DashboardService:
                 offer_amount=(chosen_offer.offer_amount if chosen_offer is not None else None),
                 final_amount=request.final_amount,
             )
+
+            closed_items.append(
+                DashboardClosedRequestItem(
+                    request_id=request.id,
+                    owner_user_id=request.id_user,
+                    owner_full_name=profile.full_name if profile else None,
+                    initial_amount=float(request.initial_amount) if request.initial_amount is not None else None,
+                    offer_amount=float(chosen_offer.offer_amount) if chosen_offer and chosen_offer.offer_amount is not None else None,
+                    final_amount=float(request.final_amount) if request.final_amount is not None else None,
+                    savings_amount=float(savings_amount) if savings_amount is not None else None,
+                    closed_at=request.closed_at,
+                )
+            )
+
             if savings_amount is None:
                 continue
 
@@ -283,6 +311,7 @@ class DashboardService:
                 total_closed_requests=len(savings_rows),
                 total_with_savings=len(savings_items),
                 total_savings_amount=float(total_savings_amount),
+                closed_items=closed_items,
                 items=savings_items,
             ),
         )

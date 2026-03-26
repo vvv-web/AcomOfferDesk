@@ -40,10 +40,22 @@ export type ResponsibilitySavingsItem = {
   closed_at: string | null;
 };
 
+export type ResponsibilityClosedSavingsItem = {
+  request_id: number;
+  owner_user_id: string;
+  owner_full_name: string | null;
+  initial_amount: number | null;
+  offer_amount: number | null;
+  final_amount: number | null;
+  savings_amount: number | null;
+  closed_at: string | null;
+};
+
 export type ResponsibilitySavingsSummary = {
   total_closed_requests: number;
   total_with_savings: number;
   total_savings_amount: number;
+  closed_items?: ResponsibilityClosedSavingsItem[];
   items: ResponsibilitySavingsItem[];
 };
 
@@ -94,7 +106,10 @@ export const getResponsibilityDashboard = async (): Promise<ResponsibilityDashbo
     assignedRequests: response.data.assigned_requests,
     activeUnavailability: response.data.active_unavailability,
     upcomingUnavailability: response.data.upcoming_unavailability,
-    savings: response.data.savings,
+    savings: {
+      ...response.data.savings,
+      closed_items: response.data.savings.closed_items ?? [],
+    },
     permissions: response.data.permissions ?? []
   };
 };

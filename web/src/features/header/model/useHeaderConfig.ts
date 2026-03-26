@@ -36,6 +36,7 @@ export const useHeaderConfig = () => {
         contractorTab,
         adminUsersTab,
         onNavigateToDashboard: () => navigate('/pm-dashboard'),
+        onNavigateToSavings: () => navigate('/pm-dashboard/savings'),
         onNavigateToRequests: () => navigate('/requests'),
         onNavigateToRequestCreate: () => navigate('/requests/create', { state: { backgroundLocation: location } }),
         onNavigateToAdmin: () => navigate('/admin'),

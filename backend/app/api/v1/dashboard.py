@@ -6,6 +6,7 @@ from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
 from app.domain.policies import CurrentUser
 from app.schemas.dashboard import (
+    DashboardClosedRequestItemSchema,
     DashboardEconomistNodeSchema,
     DashboardRequestItemSchema,
     DashboardSavingsItemSchema,
@@ -96,6 +97,19 @@ async def get_responsibility_dashboard(
                 total_closed_requests=dashboard.savings.total_closed_requests,
                 total_with_savings=dashboard.savings.total_with_savings,
                 total_savings_amount=dashboard.savings.total_savings_amount,
+                closed_items=[
+                    DashboardClosedRequestItemSchema(
+                        request_id=item.request_id,
+                        owner_user_id=item.owner_user_id,
+                        owner_full_name=item.owner_full_name,
+                        initial_amount=item.initial_amount,
+                        offer_amount=item.offer_amount,
+                        final_amount=item.final_amount,
+                        savings_amount=item.savings_amount,
+                        closed_at=item.closed_at,
+                    )
+                    for item in dashboard.savings.closed_items
+                ],
                 items=[
                     DashboardSavingsItemSchema(
                         request_id=item.request_id,

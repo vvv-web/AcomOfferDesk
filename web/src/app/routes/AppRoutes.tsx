@@ -23,6 +23,9 @@ const FeedbackPage = lazy(async () => ({ default: (await import('@pages/feedback
 const ProjectManagerDashboardPage = lazy(
   async () => ({ default: (await import('@pages/dashboard/ProjectManagerDashboardPage')).ProjectManagerDashboardPage })
 );
+const ProjectManagerSavingsPage = lazy(
+  async () => ({ default: (await import('@pages/dashboard/ProjectManagerSavingsPage')).ProjectManagerSavingsPage })
+);
 
 type AppRoutesProps = {
   defaultPath: string;
@@ -90,6 +93,14 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
                 element={
                   <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST]}>
                     <ProjectManagerDashboardPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pm-dashboard/savings"
+                element={
+                  <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST]}>
+                    <ProjectManagerSavingsPage />
                   </RoleRoute>
                 }
               />

@@ -12,6 +12,7 @@ type BuildHeaderConfigArgs = {
   contractorTab: 'my' | 'open';
   adminUsersTab: 'contractors' | 'economists' | 'admins';
   onNavigateToDashboard: () => void;
+  onNavigateToSavings: () => void;
   onNavigateToRequests: () => void;
   onNavigateToRequestCreate: () => void;
   onNavigateToAdmin: () => void;
@@ -40,6 +41,7 @@ export const buildHeaderConfig = ({
   contractorTab,
   adminUsersTab,
   onNavigateToDashboard,
+  onNavigateToSavings,
   onNavigateToRequests,
   onNavigateToRequestCreate,
   onNavigateToAdmin,
@@ -60,6 +62,7 @@ export const buildHeaderConfig = ({
   const isRequestDetailsPage = /^\/requests\/\d+$/.test(pathname);
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
   const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard';
+  const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard/savings';
   const isResponsibilityRequestsPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/requests');
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
   const isAdminUsersPage = isAdmin && pathname.startsWith('/admin');
@@ -71,7 +74,7 @@ export const buildHeaderConfig = ({
     && (isLeadRequestsTab || isLeadEconomistsTab)
     && (canOpenUsersPage || isEconomist);
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
-    && (isResponsibilityDashboard || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
+    && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
     && canOpenUsersPage;
 
   if (isOfferWorkspacePage) {
@@ -109,20 +112,37 @@ export const buildHeaderConfig = ({
   if (canUseProjectManagerTabs) {
     return {
       mode: 'topbar',
-      title: isResponsibilityDashboard
-        ? isProjectManager
+      title: isProjectManager
+        ? isResponsibilityDashboard
           ? 'Дашборд Руководителя проекта'
-          : 'Дашборд Ведущего экономиста'
-        : undefined,
+          : isResponsibilitySavings
+            ? 'Экономия по закрытым заявкам'
+            : undefined
+        : isResponsibilityDashboard
+          ? 'Дашборд Ведущего экономиста'
+          : isResponsibilitySavings
+            ? 'Экономия по закрытым заявкам'
+            : undefined,
       tabs: [
         { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
+        { key: 'savings', value: 'savings', label: 'Экономия' },
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'employees', value: 'employees', label: 'Сотрудники' }
       ],
-      activeTab: isResponsibilityDashboard ? 'dashboard' : isResponsibilityEmployeesPage ? 'employees' : 'requests',
+      activeTab: isResponsibilityDashboard
+        ? 'dashboard'
+        : isResponsibilitySavings
+          ? 'savings'
+          : isResponsibilityEmployeesPage
+            ? 'employees'
+            : 'requests',
       onTabChange: (value) => {
         if (value === 'dashboard') {
           onNavigateToDashboard();
+          return;
+        }
+        if (value === 'savings') {
+          onNavigateToSavings();
           return;
         }
         if (value === 'employees') {

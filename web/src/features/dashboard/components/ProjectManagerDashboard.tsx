@@ -22,7 +22,6 @@ import {
   type ResponsibilityEmployeeNode,
   type ResponsibilityStatusCounter,
   type ResponsibilityDashboardRequest,
-  type ResponsibilitySavingsSummary,
   type ResponsibilityUpcomingUnavailability
 } from '@shared/api/users/getResponsibilityDashboard';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -58,16 +57,6 @@ const formatDate = (value: string) =>
     month: '2-digit',
     year: 'numeric'
   }).format(new Date(value));
-
-const formatAmount = (value: number) =>
-  new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value);
-
-const formatSignedAmount = (value: number) => `${value > 0 ? '+' : ''}${formatAmount(value)}`;
 
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
@@ -540,158 +529,6 @@ const EmployeeWorkloadChart = ({
   );
 };
 
-const SavingsChartCard = ({ savings }: { savings: ResponsibilitySavingsSummary }) => {
-  const items = useMemo(
-    () => [...savings.items].sort((left, right) => Math.abs(right.savings_amount) - Math.abs(left.savings_amount)),
-    [savings.items]
-  );
-  const maxAmount = useMemo(
-    () => items.reduce((acc, item) => Math.max(acc, Math.abs(item.savings_amount)), 0),
-    [items]
-  );
-
-  return (
-    <Card
-      sx={{
-        borderRadius: 2,
-        background: 'linear-gradient(135deg, rgba(232,245,233,0.9), rgba(255,255,255,0.98))',
-        border: '1px solid',
-        borderColor: 'divider'
-      }}
-    >
-      <CardContent>
-        <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6" sx={{ mb: 0.5, fontWeight: 700 }}>
-              Экономия по закрытым заявкам
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Сводный показатель по закрытым заявкам и детализация по ответственным.
-            </Typography>
-          </Box>
-
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-              gap: 1.5
-            }}
-          >
-            <Card variant="outlined" sx={{ borderRadius: 2 }}>
-              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                <Typography variant="caption" color="text.secondary">
-                  Закрытые заявки
-                </Typography>
-                <Typography variant="h5" fontWeight={800}>
-                  {savings.total_closed_requests}
-                </Typography>
-              </CardContent>
-            </Card>
-            <Card variant="outlined" sx={{ borderRadius: 2 }}>
-              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                <Typography variant="caption" color="text.secondary">
-                  С рассчитанной экономией
-                </Typography>
-                <Typography variant="h5" fontWeight={800}>
-                  {savings.total_with_savings}
-                </Typography>
-              </CardContent>
-            </Card>
-            <Card variant="outlined" sx={{ borderRadius: 2 }}>
-              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                <Typography variant="caption" color="text.secondary">
-                  Общая экономия
-                </Typography>
-                <Typography variant="h5" fontWeight={800} color={savings.total_savings_amount >= 0 ? 'success.main' : 'error.main'}>
-                  {formatSignedAmount(savings.total_savings_amount)}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Box>
-
-          {items.length === 0 ? (
-            <Typography color="text.secondary">
-              Пока нет закрытых заявок с корректно рассчитанной экономией.
-            </Typography>
-          ) : (
-            <Stack spacing={1.25}>
-              {items.map((item) => {
-                const widthPercent = maxAmount > 0 ? (Math.abs(item.savings_amount) / maxAmount) * 100 : 0;
-                const isPositive = item.savings_amount >= 0;
-
-                return (
-                  <Card key={`savings-${item.request_id}`} variant="outlined" sx={{ borderRadius: 2 }}>
-                    <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                      <Stack spacing={1}>
-                        <Stack
-                          direction={{ xs: 'column', md: 'row' }}
-                          justifyContent="space-between"
-                          alignItems={{ xs: 'flex-start', md: 'center' }}
-                          spacing={1}
-                        >
-                          <Stack spacing={0.35}>
-                            <Typography fontWeight={700}>
-                              Заявка #{item.request_id}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Ответственный: {item.owner_full_name || item.owner_user_id}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Закрыта: {item.closed_at ? formatDate(item.closed_at) : '-'}
-                            </Typography>
-                          </Stack>
-                          <Typography
-                            variant="h6"
-                            fontWeight={800}
-                            color={isPositive ? 'success.main' : 'error.main'}
-                          >
-                            {formatSignedAmount(item.savings_amount)}
-                          </Typography>
-                        </Stack>
-
-                        <Box
-                          sx={{
-                            height: 10,
-                            borderRadius: 999,
-                            backgroundColor: 'rgba(15,23,42,0.08)',
-                            overflow: 'hidden'
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              width: `${Math.max(widthPercent, 6)}%`,
-                              height: '100%',
-                              borderRadius: 999,
-                              backgroundColor: isPositive ? '#2e7d32' : '#d32f2f'
-                            }}
-                          />
-                        </Box>
-
-                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} flexWrap="wrap">
-                          <Typography variant="body2" color="text.secondary">
-                            Сумма по ТЗ: {formatAmount(item.initial_amount)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Сумма КП: {formatAmount(item.offer_amount)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Итоговая сумма: {formatAmount(item.final_amount)}
-                          </Typography>
-                        </Stack>
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </Stack>
-          )}
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-};
-
-
 const EmployeeNodeCard = ({
   node,
   level,
@@ -845,12 +682,6 @@ export const ProjectManagerDashboard = () => {
   const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [myRequests, setMyRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [assignedRequests, setAssignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
-  const [savings, setSavings] = useState<ResponsibilitySavingsSummary>({
-    total_closed_requests: 0,
-    total_with_savings: 0,
-    total_savings_amount: 0,
-    items: []
-  });
   const [activeUnavailability, setActiveUnavailability] = useState<ResponsibilityUpcomingUnavailability[]>([]);
   const [upcomingUnavailability, setUpcomingUnavailability] = useState<Array<{
     user_id: string;
@@ -878,7 +709,6 @@ export const ProjectManagerDashboard = () => {
       setUnassignedRequests(response.unassignedRequests);
       setMyRequests(response.myRequests);
       setAssignedRequests(response.assignedRequests);
-      setSavings(response.savings);
       setActiveUnavailability(response.activeUnavailability);
       setUpcomingUnavailability(response.upcomingUnavailability);
       setExpandedNodes((prev) => {
@@ -1097,8 +927,6 @@ export const ProjectManagerDashboard = () => {
         <CircularProcessChart totals={globalTotals} statusColors={statusColors} />
         <EmployeeWorkloadChart employees={allSubordinates} workloadColors={workloadColors} />
       </Box>
-
-      <SavingsChartCard savings={savings} />
 
       {errorMessage ? (
         <Alert severity="error" onClose={() => setErrorMessage(null)}>

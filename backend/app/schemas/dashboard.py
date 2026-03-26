@@ -56,10 +56,22 @@ class DashboardSavingsItemSchema(BaseModel):
     closed_at: datetime | None
 
 
+class DashboardClosedRequestItemSchema(BaseModel):
+    request_id: int
+    owner_user_id: str
+    owner_full_name: str | None
+    initial_amount: float | None
+    offer_amount: float | None
+    final_amount: float | None
+    savings_amount: float | None
+    closed_at: datetime | None
+
+
 class DashboardSavingsSummarySchema(BaseModel):
     total_closed_requests: int
     total_with_savings: int
     total_savings_amount: float
+    closed_items: list[DashboardClosedRequestItemSchema]
     items: list[DashboardSavingsItemSchema]
 
 
