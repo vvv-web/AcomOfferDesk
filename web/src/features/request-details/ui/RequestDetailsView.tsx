@@ -23,6 +23,7 @@ import { downloadFile } from '@shared/api/fileDownload';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { DataTable } from '@shared/components/DataTable';
+import { ToggleSection } from '@shared/components/ToggleSection';
 import { getFileKey } from '@shared/lib/files';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { useRequestDetails } from '../model/useRequestDetails';
@@ -143,6 +144,7 @@ export const RequestDetailsView = () => {
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
     const [newFile, setNewFile] = useState<File | null>(null);
     const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
+    const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
     const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
     const requestSignatureRef = useRef('');
     const hasPendingChangesRef = useRef(false);
@@ -191,6 +193,7 @@ export const RequestDetailsView = () => {
         () => status === 'open' && Boolean(requestDetails?.actions.send_email_notifications),
         [requestDetails?.actions.send_email_notifications, status]
     );
+    const isAdditionalEmailsFieldUnavailable = !canSendAdditionalEmails || isSendingEmails;
     const canUploadRequestFiles = useMemo(() => Boolean(requestDetails?.actions.upload_file), [requestDetails?.actions.upload_file]);
     const canDeleteRequestFiles = useMemo(() => Boolean(requestDetails?.actions.delete_file), [requestDetails?.actions.delete_file]);
     const canMarkDeletedAlertViewed = useMemo(
@@ -241,6 +244,7 @@ export const RequestDetailsView = () => {
             setBaselineFinalAmount(nextFinalAmount);
             setExistingFiles(nextRequest.files ?? []);
             setAdditionalEmails([]);
+            setAdditionalEmailsEnabled(false);
             setDeletedFileIds([]);
             setNewFile(null);
         }
@@ -332,13 +336,13 @@ export const RequestDetailsView = () => {
         }
 
         if (Number.isNaN(parsedInitialAmount)) {
-            return 'Укажите корректную initial_amount';
+            return 'Укажите корректную сумму по ТЗ';
         }
         if (Number.isNaN(parsedFinalAmount)) {
-            return 'Укажите корректную final_amount';
+            return 'Укажите корректную итоговую сумму';
         }
         if (parsedInitialAmount === null && (currentStatus === 'closed' || initialAmountChanged)) {
-            return 'Укажите initial_amount';
+            return 'Укажите сумму по ТЗ';
         }
         if ((parsedInitialAmount !== null && parsedInitialAmount < 0) || (parsedFinalAmount !== null && parsedFinalAmount < 0)) {
             return 'Сумма не может быть отрицательной';
@@ -347,16 +351,16 @@ export const RequestDetailsView = () => {
         if (currentStatus === 'closed') {
             const acceptedOffer = offers.find((offer) => offer.status === 'accepted');
             if (parsedFinalAmount === null) {
-                return 'Для закрытия заявки укажите final_amount';
+                return 'Для закрытия заявки укажите итоговую сумму';
             }
             if (!acceptedOffer) {
                 if (parsedFinalAmount !== parsedInitialAmount) {
-                    return 'Для закрытия заявки без принятого оффера final_amount должна совпадать с initial_amount';
+                    return 'Для закрытия заявки без принятого КП итоговая сумма должна совпадать с суммой по ТЗ';
                 }
             } else if (acceptedOffer.offer_amount === null || acceptedOffer.offer_amount === undefined) {
-                return 'Для закрытия заявки с принятым оффером у него должна быть указана сумма';
+                return 'Для закрытия заявки с принятым КП у него должна быть указана сумма';
             } else if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOffer.offer_amount) {
-                return 'final_amount должна совпадать с initial_amount или с суммой принятого оффера';
+                return 'Итоговая сумма должна совпадать с суммой по ТЗ или с суммой принятого КП';
             }
         }
 
@@ -472,14 +476,14 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setOffersError('Нельзя одобрить более одного оффера в рамках одной заявки');
+            setOffersError('Нельзя одобрить более одного КП в рамках одной заявки');
             return;
         }
 
         const confirmMessage =
             value === 'accepted'
-                ? 'Если принять этот оффер, остальные офферы по заявке автоматически получат статус «Отказано». Продолжить?'
-                : 'Вы уверены, что хотите изменить статус оффера на «Отказано»?';
+                ? 'Если принять это КП, остальные КП по заявке автоматически получат статус «Отказано». Продолжить?'
+                : 'Вы уверены, что хотите изменить статус КП на «Отказано»?';
 
         const isConfirmed = window.confirm(confirmMessage);
 
@@ -512,7 +516,7 @@ export const RequestDetailsView = () => {
                 ...prev,
                 [offerId]: previousStatus
             }));
-            setOffersError(error instanceof Error ? error.message : 'Не удалось обновить статус оффера');
+            setOffersError(error instanceof Error ? error.message : 'Не удалось обновить статус КП');
         }
     };
 
@@ -626,7 +630,7 @@ export const RequestDetailsView = () => {
         { id: 'offer', label: 'Номер КП', value: requestDetails?.id_offer ?? '-' },
         {
             id: 'initialAmount',
-            label: 'Initial amount, руб.',
+            label: 'Сумма по ТЗ, руб.',
             value: (
                 <TextField
                     size="small"
@@ -640,7 +644,7 @@ export const RequestDetailsView = () => {
         },
         {
             id: 'finalAmount',
-            label: 'Final amount, руб.',
+            label: 'Итоговая сумма, руб.',
             value: (
                 <TextField
                     size="small"
@@ -845,24 +849,43 @@ export const RequestDetailsView = () => {
                         )}
                     </Stack>
                     {status === 'open' && (
-                        <Stack spacing={1.5}>
-                            <AdditionalEmailsField
-                                ref={additionalEmailsFieldRef}
-                                emails={additionalEmails}
-                                onChange={setAdditionalEmails}
-                                disabled={!canSendAdditionalEmails || isSendingEmails}
-                                description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
-                                helperText="Введите один или несколько e-mail и нажмите кнопку отправки."
-                            />
-                            <Button
-                                variant="outlined"
-                                sx={{ width: 'fit-content' }}
-                                onClick={() => void handleSendAdditionalEmails()}
-                                disabled={!canSendAdditionalEmails || isSendingEmails}
-                            >
-                                {isSendingEmails ? 'Отправка...' : 'Отправить'}
-                            </Button>
-                        </Stack>
+                        <ToggleSection
+                            title="Дополнительная рассылка на электронную почту"
+                            checked={additionalEmailsEnabled}
+                            disabled={isAdditionalEmailsFieldUnavailable}
+                            onChange={(_event, checked) => {
+                                setAdditionalEmailsEnabled(checked);
+                                if (!checked) {
+                                    setAdditionalEmails([]);
+                                }
+                            }}
+                            description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
+                        >
+                            <Stack spacing={1.5}>
+                                <AdditionalEmailsField
+                                    ref={additionalEmailsFieldRef}
+                                    emails={additionalEmails}
+                                    onChange={setAdditionalEmails}
+                                    hideHeader
+                                    addButtonVariant="icon"
+                                    disabled={isAdditionalEmailsFieldUnavailable}
+                                    helperText="Можно добавить несколько адресов через запятую."
+                                    containerSx={{
+                                        mt: 0,
+                                        opacity: isAdditionalEmailsFieldUnavailable ? 0.5 : 1,
+                                        transition: 'opacity 0.2s ease'
+                                    }}
+                                />
+                                <Button
+                                    variant="outlined"
+                                    sx={{ width: 'fit-content' }}
+                                    onClick={() => void handleSendAdditionalEmails()}
+                                    disabled={isAdditionalEmailsFieldUnavailable}
+                                >
+                                    {isSendingEmails ? 'Отправка...' : 'Отправить'}
+                                </Button>
+                            </Stack>
+                        </ToggleSection>
                     )}
                     {hasDeletedAlert && canMarkDeletedAlertViewed && (
                         <Button

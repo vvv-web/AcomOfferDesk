@@ -175,8 +175,8 @@ export const OfferWorkspaceView = () => {
   );
 
   const detailsRows = [
-    { id: 'initialAmount', label: 'Initial amount', value: formatAmount(workspace?.request.initial_amount ?? null) },
-    { id: 'finalAmount', label: 'Final amount', value: formatAmount(workspace?.request.final_amount ?? null) },
+    { id: 'initialAmount', label: 'Сумма по ТЗ', value: formatAmount(workspace?.request.initial_amount ?? null) },
+    { id: 'finalAmount', label: 'Итоговая сумма', value: formatAmount(workspace?.request.final_amount ?? null) },
     { id: 'owner', label: 'Ответственный', value: workspace?.request.owner_full_name ?? '-' },
     { id: 'created', label: 'Создана', value: formatDate(workspace?.request.created_at ?? null) },
     { id: 'closed', label: 'Закрыта', value: formatDate(workspace?.request.closed_at ?? null) },
@@ -192,7 +192,7 @@ export const OfferWorkspaceView = () => {
   }
 
   if (!workspace || !selectedOffer) {
-    return <Typography color="text.secondary">Workspace оффера недоступен.</Typography>;
+    return <Typography color="text.secondary">Рабочее пространство КП недоступно.</Typography>;
   }
 
   return (
@@ -441,7 +441,7 @@ export const OfferWorkspaceView = () => {
               </Stack>
 
               <Stack spacing={1} sx={{ mb: 1.5 }}>
-                <Typography variant="body2">Offer amount: {formatAmount(offerItem.offer_amount)}</Typography>
+                <Typography variant="body2">Сумма КП: {formatAmount(offerItem.offer_amount)}</Typography>
                 {isCurrent && canEditOfferAmount ? (
                   <Stack
                     direction={{ xs: 'column', md: 'row' }}
@@ -450,7 +450,7 @@ export const OfferWorkspaceView = () => {
                   >
                     <TextField
                       size="small"
-                      label="Offer amount"
+                      label="Сумма КП"
                       value={offerAmountInput}
                       onChange={(event) => setOfferAmountInput(event.target.value)}
                       disabled={isUpdatingOfferAmount}
@@ -470,7 +470,7 @@ export const OfferWorkspaceView = () => {
 
               <Stack direction="row" flexWrap="wrap" gap={1}>
                 {offerItem.files.length === 0 ? (
-                  <Typography color="text.secondary">Файлы оффера не прикреплены.</Typography>
+                  <Typography color="text.secondary">Файлы КП не прикреплены.</Typography>
                 ) : (
                   offerItem.files.map((file) => (
                     <Chip

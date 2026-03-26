@@ -669,13 +669,13 @@ const SavingsChartCard = ({ savings }: { savings: ResponsibilitySavingsSummary }
 
                         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} flexWrap="wrap">
                           <Typography variant="body2" color="text.secondary">
-                            initial_amount: {formatAmount(item.initial_amount)}
+                            Сумма по ТЗ: {formatAmount(item.initial_amount)}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            offer_amount: {formatAmount(item.offer_amount)}
+                            Сумма КП: {formatAmount(item.offer_amount)}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            final_amount: {formatAmount(item.final_amount)}
+                            Итоговая сумма: {formatAmount(item.final_amount)}
                           </Typography>
                         </Stack>
                       </Stack>

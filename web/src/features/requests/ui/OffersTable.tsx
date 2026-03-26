@@ -31,7 +31,7 @@ type NotificationStyle = {
 
 const columns = [
     { key: 'status', label: '', minWidth: 60, fraction: 0.3 },
-    { key: 'offerAmount', label: 'Сумма оффера', minWidth: 150, fraction: 1.1 },
+    { key: 'offerAmount', label: 'Сумма КП', minWidth: 150, fraction: 1.1 },
     { key: 'offerId', label: 'Номер КП', minWidth: 100, fraction: 0.8 },
     { key: 'counterparty', label: 'Контрагент', minWidth: 220, fraction: 1.8 },
     { key: 'contacts', label: 'Контактное лицо', minWidth: 220, fraction: 1.8 },
@@ -206,7 +206,7 @@ export const OffersTable = ({
             rows={offers}
             rowKey={(offer) => offer.offer_id}
             isLoading={isLoading}
-            emptyMessage="Офферы пока не получены."
+            emptyMessage="КП пока не получены."
             statusContent={statusContent}
             storageKey="offers-table"
             onRowClick={(offer) => onOpenWorkspace(offer.offer_id)}
@@ -316,7 +316,7 @@ export const OffersTable = ({
                             if (!unreadLabel) {
                                 return (
                                     <Typography variant="body2" color="text.secondary">
-                                        Откройте оффер нажатием на строку
+                                        Откройте КП нажатием на строку
                                     </Typography>
                                 );
                             }

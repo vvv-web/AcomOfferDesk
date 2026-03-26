@@ -53,6 +53,9 @@ const isSameDay = (a: Date, b: Date) =>
 const AUTO_EMAIL_MESSAGE_LABEL = 'Сообщение сформировано автоматически из письма';
 const AUTO_EMAIL_PREFIXES = ['📧 Из письма контрагента', AUTO_EMAIL_MESSAGE_LABEL, '🤖 Сообщение сформировано автоматически из письма'];
 const AUTO_EMAIL_OFFER_CREATED_TEXTS = [
+  'КП сформировано автоматически из письма',
+  '📧 КП создано из ответа на e-mail',
+  '🤖 КП сформировано автоматически из письма',
   'Оффер сформирован автоматически из письма',
   '📧 Оффер создан из ответа на e-mail',
   '🤖 Оффер сформирован автоматически из письма'
@@ -180,7 +183,6 @@ export const OfferWorkspaceChatPanel = ({
 }: OfferWorkspaceChatPanelProps) => {
   const {
     control,
-    register,
     handleSubmit,
     watch,
     setValue,
@@ -194,6 +196,7 @@ export const OfferWorkspaceChatPanel = ({
   const attachedFiles = watch('files');
   const messageText = watch('text');
   const messagesContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const messageInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const [statusMenuState, setStatusMenuState] = React.useState<{
     mouseX: number;
     mouseY: number;
@@ -261,6 +264,11 @@ export const OfferWorkspaceChatPanel = ({
 
     await onSendMessage(trimmedText, values.files);
     reset({ text: '', files: [] });
+    window.requestAnimationFrame(() => {
+      if (messageInputRef.current) {
+        messageInputRef.current.style.height = 'auto';
+      }
+    });
     scrollToBottom(true);
   };
 
@@ -283,7 +291,7 @@ export const OfferWorkspaceChatPanel = ({
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', p: 2 }}>
             <Typography variant="h6" fontWeight={600} sx={{ flex: 1 }}>
-              Чат по офферу №{offerId}
+              Чат по КП №{offerId}
             </Typography>
             <IconButton onClick={() => onToggleOpen(false)} aria-label="Скрыть чат">
               <CloseRoundedIcon fontSize="small" />
@@ -572,18 +580,31 @@ export const OfferWorkspaceChatPanel = ({
             ) : null}
 
             <Box component="form" onSubmit={handleSubmit(onSubmitMessage)} sx={{ flexShrink: 0 }}>
-              <TextField
-                placeholder="Введите сообщение"
-                multiline
-                minRows={3}
-                fullWidth
-                disabled={isSending}
-                error={Boolean(errors.text)}
-                helperText={errors.text?.message}
-                InputProps={{ readOnly: !canSendMessage }}
-                {...register('text')}
-                onClick={() => void onMessageInputClick()}
-                onFocus={() => void onMessageInputClick()}
+              <Controller
+                control={control}
+                name="text"
+                render={({ field }) => (
+                  <TextField
+                    placeholder="Введите сообщение"
+                    multiline
+                    minRows={3}
+                    fullWidth
+                    disabled={isSending}
+                    error={Boolean(errors.text)}
+                    helperText={errors.text?.message}
+                    InputProps={{ readOnly: !canSendMessage }}
+                    name={field.name}
+                    value={field.value}
+                    inputRef={(element) => {
+                      field.ref(element);
+                      messageInputRef.current = element;
+                    }}
+                    onBlur={field.onBlur}
+                    onChange={field.onChange}
+                    onClick={() => void onMessageInputClick()}
+                    onFocus={() => void onMessageInputClick()}
+                  />
+                )}
               />
 
               <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1 }}>

@@ -204,7 +204,7 @@ export const updateOfferAmount = async (offerId: number, offerAmount: number) =>
       method: 'PATCH',
       body: JSON.stringify({ offer_amount: offerAmount })
     },
-    'Не удалось сохранить сумму оффера'
+    'Не удалось сохранить сумму КП'
   );
 
   return response.data;

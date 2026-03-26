@@ -200,7 +200,7 @@ export const useOfferWorkspace = () => {
         }
       }
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Ошибка загрузки workspace оффера'));
+      setErrorMessage(getErrorMessage(error, 'Ошибка загрузки рабочего пространства КП'));
     } finally {
       setIsLoading(false);
     }
@@ -307,10 +307,10 @@ export const useOfferWorkspace = () => {
   const handleStatusChange = async (nextStatus: 'accepted' | 'rejected' | '') => {
     if (!selectedOffer || !nextStatus) return;
     if (nextStatus === 'accepted' && acceptedOfferId && acceptedOfferId !== selectedOffer.offer_id) {
-      setErrorMessage('Нельзя одобрить более одного оффера в рамках одной заявки');
+      setErrorMessage('Нельзя одобрить более одного КП в рамках одной заявки');
       return;
     }
-    const confirmed = window.confirm(nextStatus === 'accepted' ? 'Если принять этот оффер, остальные офферы по заявке автоматически получат статус «Отказано». Продолжить?' : 'Вы уверены, что хотите изменить статус оффера на «Отказано»?');
+    const confirmed = window.confirm(nextStatus === 'accepted' ? 'Если принять это КП, остальные КП по заявке автоматически получат статус «Отказано». Продолжить?' : 'Вы уверены, что хотите изменить статус КП на «Отказано»?');
     if (!confirmed) return;
     setOfferDecisionStatus(nextStatus);
     setIsUpdatingOfferStatus(true);
@@ -318,7 +318,7 @@ export const useOfferWorkspace = () => {
       await updateOfferStatus({ offer_id: selectedOffer.offer_id, status: nextStatus });
       await refreshWorkspace(selectedOffer.offer_id);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось обновить статус оффера'));
+      setErrorMessage(getErrorMessage(error, 'Не удалось обновить статус КП'));
     } finally {
       setIsUpdatingOfferStatus(false);
     }
@@ -343,15 +343,15 @@ export const useOfferWorkspace = () => {
 
     const parsedOfferAmount = parseAmountInput(offerAmountInput);
     if (parsedOfferAmount === null) {
-      setErrorMessage('Укажите сумму оффера');
+      setErrorMessage('Укажите сумму КП');
       return;
     }
     if (Number.isNaN(parsedOfferAmount)) {
-      setErrorMessage('Укажите корректную сумму оффера');
+      setErrorMessage('Укажите корректную сумму КП');
       return;
     }
     if (parsedOfferAmount < 0) {
-      setErrorMessage('Сумма оффера не может быть отрицательной');
+      setErrorMessage('Сумма КП не может быть отрицательной');
       return;
     }
 
@@ -361,7 +361,7 @@ export const useOfferWorkspace = () => {
       await updateOfferAmount(selectedOffer.offer_id, parsedOfferAmount);
       await refreshWorkspace(selectedOffer.offer_id);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось сохранить сумму оффера'));
+      setErrorMessage(getErrorMessage(error, 'Не удалось сохранить сумму КП'));
     } finally {
       setIsUpdatingOfferAmount(false);
     }

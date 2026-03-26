@@ -127,7 +127,7 @@ export const getOfferWorkspace = async (offerId: number): Promise<OfferWorkspace
   const response = await fetchJson<ApiResponse>(
     `/api/v1/offers/${offerId}/workspace`,
     { method: 'GET' },
-    'Ошибка загрузки workspace оффера'
+    'Ошибка загрузки рабочего пространства КП'
   );
 
   const contractorUserId = response.data.contractor?.user_id;

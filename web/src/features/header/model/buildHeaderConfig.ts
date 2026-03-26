@@ -25,7 +25,7 @@ const superadminItems: HeaderSidebarItem[] = [
   { key: 'users', label: 'Пользователи', to: '/admin' },
   { key: 'requests', label: 'Заявки', to: '/requests' },
   { key: 'feedback', label: 'Фидбек', to: '/feedback' },
-  { key: 'offers', label: 'Офферы', disabled: true },
+  { key: 'offers', label: 'КП', disabled: true },
   { key: 'roles', label: 'Роли', disabled: true }
 ];
 

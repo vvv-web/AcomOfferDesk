@@ -19,7 +19,7 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Link expired': 'Срок действия ссылки истек',
   'Access denied': 'Доступ запрещен',
   'Request not found': 'Заявка не найдена',
-  'Offer not found': 'Оффер не найден',
+  'Offer not found': 'КП не найдено',
   'Chat not found': 'Чат не найден',
   'File not found': 'Файл не найден',
   'Message text cannot be empty': 'Текст сообщения не может быть пустым',

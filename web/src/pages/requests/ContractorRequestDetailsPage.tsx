@@ -125,11 +125,11 @@ export const ContractorRequestDetailsPage = () => {
 
     const parsedOfferAmount = parseAmountInput(offerAmount);
     if (Number.isNaN(parsedOfferAmount)) {
-      setErrorMessage('Укажите корректную сумму оффера');
+      setErrorMessage('Укажите корректную сумму КП');
       return;
     }
     if (parsedOfferAmount !== null && parsedOfferAmount < 0) {
-      setErrorMessage('Сумма оффера не может быть отрицательной');
+      setErrorMessage('Сумма КП не может быть отрицательной');
       return;
     }
 
@@ -258,14 +258,14 @@ export const ContractorRequestDetailsPage = () => {
       {canCreateOffer ? (
         <Stack spacing={1} sx={{ mt: 3, maxWidth: 360 }}>
           <Typography variant="subtitle2" color="text.secondary">
-            Сумма оффера, руб. (необязательно)
+            Сумма КП, руб. (необязательно)
           </Typography>
           <TextField
             size="small"
             value={offerAmount}
             onChange={(event) => setOfferAmount(event.target.value)}
             inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-            helperText="Можно оставить пустым и заполнить позже в workspace оффера."
+            helperText="Можно оставить пустым и заполнить позже в рабочем пространстве КП."
           />
         </Stack>
       ) : null}

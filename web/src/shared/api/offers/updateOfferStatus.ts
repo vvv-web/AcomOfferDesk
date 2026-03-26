@@ -32,7 +32,7 @@ export const updateOfferStatus = async (
       method: 'PATCH',
       body: JSON.stringify({ status: payload.status })
     },
-    'Ошибка обновления статуса оффера'
+    'Ошибка обновления статуса КП'
   );
   return {
     offer: {

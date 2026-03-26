@@ -7,18 +7,14 @@ import {
   Box,
   Button,
   Chip,
-  Collapse,
   Dialog,
   DialogContent,
-  FormControlLabel,
   Stack,
-  Switch,
   TextField,
   Typography,
-  type SwitchProps,
 } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
@@ -28,6 +24,7 @@ import { getRequestContractors, type RequestContractorItem } from '@shared/api/u
 import { hasPermission } from '@shared/auth/permissions';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { DatePickerField } from '@shared/components/DatePickerField';
+import { ToggleSection } from '@shared/components/ToggleSection';
 
 const ALLOWED_FILE_EXTENSIONS = ['PDF', 'PNG', 'JPG', 'JPEG', 'TXT', 'MD', 'DOC', 'DOCX', 'DOCS', 'XLS', 'XLSX', 'EXL', 'CSV', 'ODS'];
 const MAX_FILE_SIZE_MB = 10;
@@ -43,7 +40,7 @@ const isValidAmountValue = (value: string) => {
 };
 
 const schema = z.object({
-  initialAmount: z.string().trim().min(1, 'Укажите сумму предварительного договора').refine(isValidAmountValue, 'Укажите корректную сумму'),
+  initialAmount: z.string().trim().min(1, 'Укажите сумму по ТЗ').refine(isValidAmountValue, 'Укажите корректную сумму'),
   description: z.string().max(3000, 'Максимум 3000 символов').optional(),
   deadlineAt: z.string().min(1, 'Укажите дату завершения сбора откликов'),
   files: z.array(z.instanceof(File)).min(1, 'Добавьте хотя бы один файл'),
@@ -70,72 +67,6 @@ const getContractorOptionLabel = (contractor: RequestContractorItem) => {
   const secondaryLabel = contractor.company_mail?.trim() || contractor.mail?.trim() || contractor.user_id;
   return `${primaryLabel} (${secondaryLabel})`;
 };
-
-type OptionSectionProps = {
-  title: string;
-  checked: boolean;
-  onChange: (event: ChangeEvent<HTMLInputElement>, checked: boolean) => void;
-  description: string;
-  children: ReactNode;
-};
-
-const StyledSwitch = (props: SwitchProps) => (
-  <Switch
-    {...props}
-    sx={{
-      width: 46,
-      height: 28,
-      p: 0,
-      '& .MuiSwitch-switchBase': {
-        p: '4px',
-        '&.Mui-checked': {
-          transform: 'translateX(18px)',
-          color: '#fff',
-          '& + .MuiSwitch-track': {
-            opacity: 1,
-            backgroundColor: 'primary.main',
-            borderColor: 'primary.main',
-          },
-        },
-      },
-      '& .MuiSwitch-thumb': {
-        width: 20,
-        height: 20,
-        boxShadow: 'none',
-      },
-      '& .MuiSwitch-track': {
-        borderRadius: '999px',
-        opacity: 1,
-        backgroundColor: 'action.selected',
-        border: '1px solid',
-        borderColor: 'divider',
-      },
-    }}
-  />
-);
-
-const OptionSection = ({ title, checked, onChange, description, children }: OptionSectionProps) => (
-  <Stack spacing={1.25}>
-    <FormControlLabel
-      sx={{ m: 0, alignItems: 'center', gap: 1.5 }}
-      control={<StyledSwitch checked={checked} onChange={onChange} />}
-      label={
-        <Typography variant="subtitle1" fontWeight={600} lineHeight={1.2}>
-          {title}
-        </Typography>
-      }
-    />
-
-    <Collapse in={checked} unmountOnExit>
-      <Stack spacing={1.25}>
-        <Typography variant="body1" lineHeight={1.35}>
-          {description}
-        </Typography>
-        {children}
-      </Stack>
-    </Collapse>
-  </Stack>
-);
 
 export const CreateRequestPage = () => {
   const { session } = useAuth();
@@ -360,13 +291,13 @@ export const CreateRequestPage = () => {
 
             <Stack spacing={1}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Сумма предварительного договора
+                Сумма по ТЗ
               </Typography>
               <TextField
                 placeholder="Укажите сумму в рублях"
                 fullWidth
                 error={Boolean(errors.initialAmount)}
-                helperText={errors.initialAmount?.message ?? 'Значение initial_amount для расчета экономии по заявке.'}
+                helperText={errors.initialAmount?.message ?? 'Значение «Сумма по ТЗ» используется для расчета экономии по заявке.'}
                 {...register('initialAmount')}
                 inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
                 sx={{
@@ -480,7 +411,7 @@ export const CreateRequestPage = () => {
               ) : null}
             </Stack>
 
-            <OptionSection
+            <ToggleSection
               title="Скрыть от контрагентов"
               checked={hideFromContractorsEnabled}
               onChange={(_event, checked) => {
@@ -541,9 +472,9 @@ export const CreateRequestPage = () => {
                   />
                 )}
               />
-            </OptionSection>
+            </ToggleSection>
 
-            <OptionSection
+            <ToggleSection
               title="Дополнительная рассылка на электронную почту"
               checked={additionalEmailsEnabled}
               onChange={(_event, checked) => {
@@ -580,7 +511,7 @@ export const CreateRequestPage = () => {
                 }}
                 containerSx={{ mt: 0 }}
               />
-            </OptionSection>
+            </ToggleSection>
 
             <Button
               variant="contained"
