@@ -1,5 +1,6 @@
 import {
   Alert,
+  Box,
   Button,
   Dialog,
   DialogContent,
@@ -10,10 +11,38 @@ import {
   Typography,
   type SelectChangeEvent
 } from '@mui/material';
+import { alpha, type Theme } from '@mui/material/styles';
 import { UsersTable } from '@features/admin/components/UsersTable';
 import { useAdminPage } from '../model/useAdminPage';
 import { ROLE } from '@shared/constants/roles';
 import type { UserTab } from '../model/constants';
+
+const dialogPaperSx = (theme: Theme) => ({
+  borderRadius: 2,
+  px: { xs: 2.5, sm: 3.5 },
+  py: { xs: 3, sm: 3.5 },
+  backgroundColor: theme.palette.background.default,
+  maxHeight: 'min(760px, calc(100vh - 32px))',
+  overflow: 'hidden',
+  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
+});
+
+const dialogContentSx = {
+  p: 0,
+  overflowX: 'hidden',
+  overflowY: 'auto',
+  scrollbarWidth: 'none',
+  '&::-webkit-scrollbar': {
+    display: 'none'
+  }
+};
+
+const inputFieldSx = {
+  '& .MuiOutlinedInput-root': {
+    borderRadius: 1,
+    backgroundColor: 'background.paper'
+  }
+};
 
 export const AdminPageView = () => {
   const {
@@ -101,61 +130,78 @@ export const AdminPageView = () => {
         onClose={handleClose}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 4, p: { xs: 2.5, md: 3 } } }}
+        PaperProps={{ sx: dialogPaperSx }}
       >
-        <DialogContent sx={{ p: 0 }}>
-          <Stack spacing={2.2}>
-            <Typography variant="h5" textAlign="center" fontWeight={700}>
-              Создание нового пользователя
-            </Typography>
-            <TextField
-              label="Роль пользователя"
-              select
-              error={Boolean(errors.role_id)}
-              helperText={errors.role_id?.message}
-              defaultValue={roleOptions[0]?.id ?? 2}
-              {...register('role_id', { valueAsNumber: true })}
-            >
-              {roleOptions.map((option) => (
-                <MenuItem key={option.id} value={option.id}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField label="Логин" error={Boolean(errors.login)} helperText={errors.login?.message} {...register('login')} />
-            <TextField label="Пароль" type="password" error={Boolean(errors.password)} helperText={errors.password?.message} {...register('password')} />
-            <TextField label="Повторите пароль" type="password" error={Boolean(errors.confirmPassword)} helperText={errors.confirmPassword?.message} {...register('confirmPassword')} />
-
-            {requiresParent ? (
+        <DialogContent sx={dialogContentSx}>
+          <Box component="form" onSubmit={handleSubmit(onSubmit)}>
+            <Stack spacing={2}>
+              <Typography variant="h5" fontWeight={600} lineHeight={1}>
+                Создание нового пользователя
+              </Typography>
               <TextField
-                label={selectedRoleId === ROLE.ECONOMIST ? 'Руководитель (экономист или ведущий экономист)' : 'Руководитель (руководитель проекта)'}
+                label="Роль пользователя"
                 select
-                error={Boolean(errors.id_parent)}
-                helperText={errors.id_parent?.message ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}
-                {...register('id_parent')}
+                error={Boolean(errors.role_id)}
+                helperText={errors.role_id?.message}
+                defaultValue={roleOptions[0]?.id ?? 2}
+                {...register('role_id', { valueAsNumber: true })}
+                sx={inputFieldSx}
               >
-                {managerOptions.map((manager) => (
-                  <MenuItem key={manager.user_id} value={manager.user_id}>
-                    {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                {roleOptions.map((option) => (
+                  <MenuItem key={option.id} value={option.id}>
+                    {option.label}
                   </MenuItem>
                 ))}
               </TextField>
-            ) : null}
+              <TextField label="Логин" error={Boolean(errors.login)} helperText={errors.login?.message} {...register('login')} sx={inputFieldSx} />
+              <TextField
+                label="Пароль"
+                type="password"
+                error={Boolean(errors.password)}
+                helperText={errors.password?.message}
+                {...register('password')}
+                sx={inputFieldSx}
+              />
+              <TextField
+                label="Повторите пароль"
+                type="password"
+                error={Boolean(errors.confirmPassword)}
+                helperText={errors.confirmPassword?.message}
+                {...register('confirmPassword')}
+                sx={inputFieldSx}
+              />
 
-            {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-            {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
+              {requiresParent ? (
+                <TextField
+                  label={selectedRoleId === ROLE.ECONOMIST ? 'Руководитель (экономист или ведущий экономист)' : 'Руководитель (руководитель проекта)'}
+                  select
+                  error={Boolean(errors.id_parent)}
+                  helperText={errors.id_parent?.message ?? (managerOptions.length ? '' : 'Нет доступных руководителей')}
+                  {...register('id_parent')}
+                  sx={inputFieldSx}
+                >
+                  {managerOptions.map((manager) => (
+                    <MenuItem key={manager.user_id} value={manager.user_id}>
+                      {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              ) : null}
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="center">
+              {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
+              {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
+
               <Button
+                type="submit"
                 variant="contained"
-                onClick={handleSubmit(onSubmit)}
+                fullWidth
                 disabled={isSubmitting}
-                sx={{ borderRadius: 999, textTransform: 'none', minWidth: 220, boxShadow: 'none' }}
+                sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
               >
                 {isSubmitting ? 'Сохранение...' : 'Создать пользователя'}
               </Button>
             </Stack>
-          </Stack>
+          </Box>
         </DialogContent>
       </Dialog>
     </Stack>

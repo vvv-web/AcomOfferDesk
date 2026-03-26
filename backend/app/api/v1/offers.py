@@ -175,6 +175,12 @@ async def get_offer_workspace(
             current_user=current_user,
             offer_id=offer_id,
         )
+    request_actions = RequestActionBuilder.build(
+        current_user,
+        owner_user_id=item.request.owner_user_id,
+        status=item.request.status,
+        can_create_offer=resolved.can_create_new_offer,
+    )
 
     return OfferWorkspaceResponse(
         data={
@@ -183,8 +189,8 @@ async def get_offer_workspace(
                 "description": item.request.description,
                 "status": item.request.status,
                 "status_label": item.request.status_label,
-                "initial_amount": item.request.initial_amount,
-                "final_amount": item.request.final_amount,
+                "initial_amount": item.request.initial_amount if request_actions.can_view_amounts else None,
+                "final_amount": item.request.final_amount if request_actions.can_view_amounts else None,
                 "deadline_at": item.request.deadline_at,
                 "owner_user_id": item.request.owner_user_id,
                 "owner_full_name": item.request.owner_full_name,
@@ -192,12 +198,7 @@ async def get_offer_workspace(
                 "updated_at": item.request.updated_at,
                 "closed_at": item.request.closed_at,
                 "files": [_request_file_schema(file_item) for file_item in item.request.files],
-                "actions": RequestActionBuilder.build(
-                    current_user,
-                    owner_user_id=item.request.owner_user_id,
-                    status=item.request.status,
-                    can_create_offer=resolved.can_create_new_offer,
-                ),
+                "actions": request_actions,
             },
             "offer": {
                 "offer_id": item.offer.offer_id,

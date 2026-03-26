@@ -208,6 +208,18 @@ class UserPolicy:
         )
 
     @staticmethod
+    def can_view_request_amounts(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.REQUESTS_AMOUNTS_READ)
+
+    @staticmethod
+    def ensure_can_view_request_amounts(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_AMOUNTS_READ,
+            message="Insufficient permissions to view request amounts",
+        )
+
+    @staticmethod
     def can_create_request(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.REQUESTS_CREATE)
 

@@ -167,11 +167,15 @@ export const RequestDetailsView = () => {
     );
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
     const hasFileChanges = deletedFileIds.length > 0 || Boolean(newFile);
+    const canViewRequestAmounts = useMemo(
+        () => Boolean(requestDetails?.actions.view_amounts),
+        [requestDetails?.actions.view_amounts]
+    );
     const hasRequestFieldChanges =
         status !== baselineStatus ||
         deadline !== baselineDeadline ||
-        initialAmount !== baselineInitialAmount ||
-        finalAmount !== baselineFinalAmount;
+        (canViewRequestAmounts && initialAmount !== baselineInitialAmount) ||
+        (canViewRequestAmounts && finalAmount !== baselineFinalAmount);
     const hasOwnerChange = ownerUserId !== baselineOwnerUserId;
     const hasPendingChanges = hasRequestFieldChanges || hasOwnerChange || hasFileChanges;
 
@@ -325,42 +329,44 @@ export const RequestDetailsView = () => {
         const ownerChanged = ownerUserId !== baselineOwnerUserId;
         const isReopen = statusChanged && baselineStatus !== 'open' && currentStatus === 'open';
         const deadlineChanged = currentDeadline !== baselineDeadline;
-        const initialAmountChanged = currentInitialAmount !== baselineInitialAmount;
-        const finalAmountChanged = currentFinalAmount !== baselineFinalAmount;
-        const parsedInitialAmount = parseAmountInput(currentInitialAmount);
-        const parsedFinalAmount = parseAmountInput(currentFinalAmount);
+        const initialAmountChanged = canViewRequestAmounts && currentInitialAmount !== baselineInitialAmount;
+        const finalAmountChanged = canViewRequestAmounts && currentFinalAmount !== baselineFinalAmount;
+        const parsedInitialAmount = canViewRequestAmounts ? parseAmountInput(currentInitialAmount) : null;
+        const parsedFinalAmount = canViewRequestAmounts ? parseAmountInput(currentFinalAmount) : null;
 
         const isFinalStatus = currentStatus === 'closed' || currentStatus === 'cancelled';
         if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !hasFileChanges) {
             return 'Нет изменений для сохранения';
         }
 
-        if (Number.isNaN(parsedInitialAmount)) {
-            return 'Укажите корректную сумму по ТЗ';
-        }
-        if (Number.isNaN(parsedFinalAmount)) {
-            return 'Укажите корректную итоговую сумму';
-        }
-        if (parsedInitialAmount === null && (currentStatus === 'closed' || initialAmountChanged)) {
-            return 'Укажите сумму по ТЗ';
-        }
-        if ((parsedInitialAmount !== null && parsedInitialAmount < 0) || (parsedFinalAmount !== null && parsedFinalAmount < 0)) {
-            return 'Сумма не может быть отрицательной';
-        }
-
-        if (currentStatus === 'closed') {
-            const acceptedOffer = offers.find((offer) => offer.status === 'accepted');
-            if (parsedFinalAmount === null) {
-                return 'Для закрытия заявки укажите итоговую сумму';
+        if (canViewRequestAmounts) {
+            if (Number.isNaN(parsedInitialAmount)) {
+                return 'Укажите корректную сумму по ТЗ';
             }
-            if (!acceptedOffer) {
-                if (parsedFinalAmount !== parsedInitialAmount) {
-                    return 'Для закрытия заявки без принятого КП итоговая сумма должна совпадать с суммой по ТЗ';
+            if (Number.isNaN(parsedFinalAmount)) {
+                return 'Укажите корректную итоговую сумму';
+            }
+            if (parsedInitialAmount === null && (currentStatus === 'closed' || initialAmountChanged)) {
+                return 'Укажите сумму по ТЗ';
+            }
+            if ((parsedInitialAmount !== null && parsedInitialAmount < 0) || (parsedFinalAmount !== null && parsedFinalAmount < 0)) {
+                return 'Сумма не может быть отрицательной';
+            }
+
+            if (currentStatus === 'closed') {
+                const acceptedOffer = offers.find((offer) => offer.status === 'accepted');
+                if (parsedFinalAmount === null) {
+                    return 'Для закрытия заявки укажите итоговую сумму';
                 }
-            } else if (acceptedOffer.offer_amount === null || acceptedOffer.offer_amount === undefined) {
-                return 'Для закрытия заявки с принятым КП у него должна быть указана сумма';
-            } else if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOffer.offer_amount) {
-                return 'Итоговая сумма должна совпадать с суммой по ТЗ или с суммой принятого КП';
+                if (!acceptedOffer) {
+                    if (parsedFinalAmount !== parsedInitialAmount) {
+                        return 'Для закрытия заявки без принятого КП итоговая сумма должна совпадать с суммой по ТЗ';
+                    }
+                } else if (acceptedOffer.offer_amount === null || acceptedOffer.offer_amount === undefined) {
+                    return 'Для закрытия заявки с принятым КП у него должна быть указана сумма';
+                } else if (parsedFinalAmount !== parsedInitialAmount && parsedFinalAmount !== acceptedOffer.offer_amount) {
+                    return 'Итоговая сумма должна совпадать с суммой по ТЗ или с суммой принятого КП';
+                }
             }
         }
 
@@ -410,10 +416,10 @@ export const RequestDetailsView = () => {
 
         const statusChanged = status !== baselineStatus;
         const ownerChanged = ownerUserId !== baselineOwnerUserId;
-        const parsedInitialAmount = parseAmountInput(initialAmount);
-        const parsedFinalAmount = parseAmountInput(finalAmount);
-        const initialAmountChanged = initialAmount !== baselineInitialAmount;
-        const finalAmountChanged = finalAmount !== baselineFinalAmount;
+        const parsedInitialAmount = canViewRequestAmounts ? parseAmountInput(initialAmount) : null;
+        const parsedFinalAmount = canViewRequestAmounts ? parseAmountInput(finalAmount) : null;
+        const initialAmountChanged = canViewRequestAmounts && initialAmount !== baselineInitialAmount;
+        const finalAmountChanged = canViewRequestAmounts && finalAmount !== baselineFinalAmount;
         let effectiveDeadline = deadline;
         if (status === 'review') {
             effectiveDeadline = todayDate;
@@ -628,34 +634,38 @@ export const RequestDetailsView = () => {
         { id: 'created', label: 'Создана', value: formatDate(requestDetails?.created_at ?? null) },
         { id: 'closed', label: 'Закрыта', value: formatDate(requestDetails?.closed_at ?? null) },
         { id: 'offer', label: 'Номер КП', value: requestDetails?.id_offer ?? '-' },
-        {
-            id: 'initialAmount',
-            label: 'Сумма по ТЗ, руб.',
-            value: (
-                <TextField
-                    size="small"
-                    value={initialAmount}
-                    onChange={(event) => setInitialAmount(event.target.value)}
-                    disabled={!canEditRequest}
-                    inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                    sx={{ minWidth: 150 }}
-                />
-            )
-        },
-        {
-            id: 'finalAmount',
-            label: 'Итоговая сумма, руб.',
-            value: (
-                <TextField
-                    size="small"
-                    value={finalAmount}
-                    onChange={(event) => setFinalAmount(event.target.value)}
-                    disabled={!canEditRequest}
-                    inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                    sx={{ minWidth: 150 }}
-                />
-            )
-        },
+        ...(canViewRequestAmounts
+            ? [
+                {
+                    id: 'initialAmount',
+                    label: 'Сумма по ТЗ, руб.',
+                    value: (
+                        <TextField
+                            size="small"
+                            value={initialAmount}
+                            onChange={(event) => setInitialAmount(event.target.value)}
+                            disabled={!canEditRequest}
+                            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                            sx={{ minWidth: 150 }}
+                        />
+                    )
+                },
+                {
+                    id: 'finalAmount',
+                    label: 'Итоговая сумма, руб.',
+                    value: (
+                        <TextField
+                            size="small"
+                            value={finalAmount}
+                            onChange={(event) => setFinalAmount(event.target.value)}
+                            disabled={!canEditRequest}
+                            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                            sx={{ minWidth: 150 }}
+                        />
+                    )
+                }
+            ]
+            : []),
         {
             id: 'deadline',
             label: 'Дедлайн сбора КП',

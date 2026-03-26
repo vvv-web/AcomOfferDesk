@@ -173,10 +173,15 @@ export const OfferWorkspaceView = () => {
     () => statusOptions.find((item) => item.value === workspace?.request.status) ?? statusOptions[0],
     [workspace?.request.status]
   );
+  const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
 
   const detailsRows = [
-    { id: 'initialAmount', label: 'Сумма по ТЗ', value: formatAmount(workspace?.request.initial_amount ?? null) },
-    { id: 'finalAmount', label: 'Итоговая сумма', value: formatAmount(workspace?.request.final_amount ?? null) },
+    ...(canViewRequestAmounts
+      ? [
+          { id: 'initialAmount', label: 'Сумма по ТЗ', value: formatAmount(workspace?.request.initial_amount ?? null) },
+          { id: 'finalAmount', label: 'Итоговая сумма', value: formatAmount(workspace?.request.final_amount ?? null) }
+        ]
+      : []),
     { id: 'owner', label: 'Ответственный', value: workspace?.request.owner_full_name ?? '-' },
     { id: 'created', label: 'Создана', value: formatDate(workspace?.request.created_at ?? null) },
     { id: 'closed', label: 'Закрыта', value: formatDate(workspace?.request.closed_at ?? null) },

@@ -212,6 +212,12 @@ async def get_request_details(
     async with uow:
         service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         item = await service.get_request_details(current_user=current_user, request_id=request_id)
+    request_actions = RequestActionBuilder.build(
+        current_user,
+        owner_user_id=item.owner_user_id,
+        status=item.status,
+        deleted_alert_count=item.count_deleted_alert,
+    )
 
     return RequestDetailsResponse(
         data=RequestDetailsResponseData(
@@ -220,8 +226,8 @@ async def get_request_details(
                 description=item.description,
                 status=item.status,
                 status_label=item.status_label,
-                initial_amount=item.initial_amount,
-                final_amount=item.final_amount,
+                initial_amount=item.initial_amount if request_actions.can_view_amounts else None,
+                final_amount=item.final_amount if request_actions.can_view_amounts else None,
                 deadline_at=item.deadline_at,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
@@ -232,12 +238,7 @@ async def get_request_details(
                 stats=_request_stats_schema(item),
                 unread_messages_count=item.unread_messages_count,
                 files=[_request_file_schema(file_item) for file_item in item.files],
-                actions=RequestActionBuilder.build(
-                    current_user,
-                    owner_user_id=item.owner_user_id,
-                    status=item.status,
-                    deleted_alert_count=item.count_deleted_alert,
-                ),
+                actions=request_actions,
                 offers=[
                     OfferItemSchema(
                         offer_id=offer.offer_id,

@@ -370,6 +370,13 @@ class RequestService:
                 current_user,
                 request_owner_user_id=request.id_user,
             )
+        has_amount_changes = data.initial_amount is not None or data.final_amount is not None
+        if has_amount_changes:
+            require_permission(
+                current_user,
+                PermissionCodes.REQUESTS_AMOUNTS_READ,
+                message="Insufficient permissions to update request amounts",
+            )
 
         if data.initial_amount is not None:
             self._validate_amount(value=data.initial_amount, field_name="Initial amount")

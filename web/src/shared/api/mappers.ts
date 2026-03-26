@@ -3,6 +3,7 @@ import type { RequestWithOfferStats } from './requests/getRequests';
 
 type BackendRequestActionFlags = {
   can_view_details?: boolean;
+  can_view_amounts?: boolean;
   can_open_contractor_view?: boolean;
   can_edit?: boolean;
   can_change_owner?: boolean;
@@ -46,6 +47,7 @@ type BackendUserActionFlags = {
 
 export type RequestActions = {
   view_details: boolean;
+  view_amounts: boolean;
   open_contractor_view: boolean;
   edit: boolean;
   change_owner: boolean;
@@ -89,6 +91,7 @@ export type UserActions = {
 
 export const normalizeRequestActions = (actions?: BackendRequestActionFlags): RequestActions => ({
   view_details: Boolean(actions?.can_view_details),
+  view_amounts: Boolean(actions?.can_view_amounts),
   open_contractor_view: Boolean(actions?.can_open_contractor_view),
   edit: Boolean(actions?.can_edit),
   change_owner: Boolean(actions?.can_change_owner),

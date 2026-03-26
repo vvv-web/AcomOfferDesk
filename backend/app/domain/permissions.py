@@ -14,6 +14,7 @@ class PermissionCodes:
     PROFILE_MANAGE_OWN = "profile.manage_own"
     COMPANY_CONTACTS_MANAGE_OWN = "company_contacts.manage_own"
     REQUESTS_READ = "requests.read"
+    REQUESTS_AMOUNTS_READ = "requests.amounts.read"
     REQUESTS_CREATE = "requests.create"
     REQUESTS_UPDATE = "requests.update"
     REQUESTS_OWNER_CHANGE = "requests.owner.change"
@@ -63,6 +64,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
     internal_request_manage_permissions = {
         PermissionCodes.REQUESTS_CREATE,
         PermissionCodes.REQUESTS_UPDATE,
+        PermissionCodes.REQUESTS_AMOUNTS_READ,
         PermissionCodes.REQUESTS_FILES_UPLOAD,
         PermissionCodes.REQUESTS_FILES_DELETE,
         PermissionCodes.REQUESTS_EMAIL_NOTIFICATIONS_SEND,
@@ -128,6 +130,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.REQUESTS_OWNER_CHANGE,
+                PermissionCodes.REQUESTS_AMOUNTS_READ,
                 PermissionCodes.DASHBOARD_RESPONSIBILITY_READ,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
             }
@@ -162,6 +165,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.REQUESTS_READ,
                 PermissionCodes.REQUESTS_CREATE,
                 PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.REQUESTS_AMOUNTS_READ,
             }
         ),
     }

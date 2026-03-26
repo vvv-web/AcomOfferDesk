@@ -11,6 +11,7 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
+import { alpha, type Theme } from '@mui/material/styles';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -188,7 +189,7 @@ const InfoRow = ({ label, value }: { label: string; value: string | number | nul
     <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
       {label}
     </Typography>
-    <Typography variant="body1" sx={{ fontWeight: 500, color: '#1f2a44', overflowWrap: 'anywhere' }}>
+    <Typography variant="body1" sx={{ fontWeight: 500, color: 'text.primary', overflowWrap: 'anywhere' }}>
       {value ?? '—'}
     </Typography>
   </Stack>
@@ -205,15 +206,16 @@ const SourceSection = ({
 }) => (
   <Box
     sx={{
-      border: '1px solid #d6dfef',
-      borderRadius: 2,
+      border: '1px solid',
+      borderColor: 'divider',
+      borderRadius: 1,
       p: { xs: 1.4, sm: 1.8 },
-      backgroundColor: '#ffffff'
+      backgroundColor: 'background.paper'
     }}
   >
     <Stack spacing={1.2}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" rowGap={0.6}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1f2a44' }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }}>
           {title}
         </Typography>
         <Box
@@ -222,9 +224,10 @@ const SourceSection = ({
             px: 1,
             py: 0.2,
             borderRadius: 99,
-            border: '1px solid #d9e3f4',
-            backgroundColor: '#eef4ff',
-            color: '#3d5a86',
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'background.default',
+            color: 'text.secondary',
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: '0.03em'
@@ -270,6 +273,26 @@ const statusMemoText = `Связь статусов users и tg_users:
 
 4) users: blacklist → tg_users: disapproved
    Пользователь в чёрном списке, доступ запрещён.`;
+
+const dialogPaperSx = (theme: Theme) => ({
+  borderRadius: 2,
+  px: { xs: 2.5, sm: 3.5 },
+  py: { xs: 3, sm: 3.5 },
+  backgroundColor: theme.palette.background.default,
+  maxHeight: 'min(760px, calc(100vh - 32px))',
+  overflow: 'hidden',
+  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
+});
+
+const dialogContentSx = {
+  p: 0,
+  overflowX: 'hidden',
+  overflowY: 'auto',
+  scrollbarWidth: 'none',
+  '&::-webkit-scrollbar': {
+    display: 'none'
+  }
+};
 
 export const UsersTable = ({
   users,
@@ -549,26 +572,23 @@ export const UsersTable = ({
           maxWidth="sm"
           fullWidth
           PaperProps={{
-            sx: {
-              borderRadius: 2,
-              p: { xs: 2, md: 2.5 },
-              maxHeight: '92vh'
-            }
+            sx: dialogPaperSx
           }}
         >
-          <DialogContent sx={{ p: 0 }}>
+          <DialogContent sx={dialogContentSx}>
             {selectedUser ? (
-              <Stack spacing={1.8}>
-                <Typography variant="h5" fontWeight={700} textAlign="center">
+              <Stack spacing={2}>
+                <Typography variant="h5" fontWeight={600} lineHeight={1}>
                   Карточка пользователя
                 </Typography>
 
                 <Box
                   sx={{
-                    border: '1px solid #d3dbe7',
+                    border: '1px solid',
+                    borderColor: 'divider',
                     borderRadius: 1,
                     p: { xs: 1.4, sm: 1.6 },
-                    backgroundColor: '#f8fbff'
+                    backgroundColor: 'background.paper'
                   }}
                 >
                   <Stack spacing={1.2}>
@@ -678,13 +698,14 @@ export const UsersTable = ({
                   <Stack
                     spacing={1.2}
                     sx={{
-                      border: '1px solid #d6dfef',
-                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
                       p: { xs: 1.4, sm: 1.8 },
-                      backgroundColor: '#ffffff'
+                      backgroundColor: 'background.paper'
                     }}
                   >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1f2a44' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                       Смена руководителя
                     </Typography>
                     {managerError ? <Alert severity="warning">{managerError}</Alert> : null}
@@ -700,6 +721,12 @@ export const UsersTable = ({
                           ? ''
                           : 'Нет доступных руководителей'
                       }
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 1,
+                          backgroundColor: 'background.paper'
+                        }
+                      }}
                     >
                       {managerOptions
                         .filter((manager) => manager.user_id !== selectedUser.user_id)
@@ -719,7 +746,7 @@ export const UsersTable = ({
                           || isUpdatingManager
                           || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
                         }
-                        sx={{ borderRadius: 999, textTransform: 'none' }}
+                        sx={{ borderRadius: 1, textTransform: 'none' }}
                       >
                         {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
                       </Button>
@@ -735,7 +762,7 @@ export const UsersTable = ({
                       setSelectedUser(null);
                       setOpenSubordinateUnavailability(false);
                     }}
-                    sx={{ borderRadius: 999, textTransform: 'none' }}
+                    sx={{ borderRadius: 1, textTransform: 'none' }}
                   >
                     Закрыть
                   </Button>
@@ -779,26 +806,23 @@ export const UsersTable = ({
         maxWidth="md"
         fullWidth
         PaperProps={{
-          sx: {
-            borderRadius: 2,
-            p: { xs: 2, md: 2.5 },
-            maxHeight: '92vh'
-          }
+          sx: dialogPaperSx
         }}
       >
-        <DialogContent sx={{ p: 0 }}>
+        <DialogContent sx={dialogContentSx}>
           {selectedUser ? (
-            <Stack spacing={1.8}>
-              <Typography variant="h5" fontWeight={700} textAlign="center">
+            <Stack spacing={2}>
+              <Typography variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
 
               <Box
                 sx={{
-                  border: '1px solid #d3dbe7',
+                  border: '1px solid',
+                  borderColor: 'divider',
                   borderRadius: 1,
                   p: { xs: 1.4, sm: 1.6 },
-                  backgroundColor: '#f8fbff'
+                  backgroundColor: 'background.paper'
                 }}
               >
                 <Stack spacing={1.2}>
@@ -888,14 +912,14 @@ export const UsersTable = ({
                 <Stack
                   spacing={1.2}
                   sx={{
-                    border: '2px solid #bcd0f5',
-                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
                     p: { xs: 1.4, sm: 1.8 },
-                    background: 'linear-gradient(180deg, #f4f8ff 0%, #ffffff 100%)',
-                    boxShadow: '0 8px 24px rgba(39, 87, 171, 0.12)'
+                    backgroundColor: 'background.paper'
                   }}
                 >
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1f2a44' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                     Изменение статуса
                   </Typography>
                   <Stack direction="row" alignItems="center" spacing={1}>
@@ -907,7 +931,8 @@ export const UsersTable = ({
                       {...register('user_status')}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          borderRadius: 2
+                          borderRadius: 1,
+                          backgroundColor: 'background.paper'
                         }
                       }}
                     >
@@ -947,8 +972,9 @@ export const UsersTable = ({
                           width: 24,
                           height: 24,
                           borderRadius: '50%',
-                          border: '1px solid #2f6fd6',
-                          color: '#2f6fd6',
+                          border: '1px solid',
+                          borderColor: 'primary.main',
+                          color: 'primary.main',
                           fontSize: 14,
                           fontWeight: 700,
                           display: 'inline-flex',
@@ -966,14 +992,14 @@ export const UsersTable = ({
                   {submitSuccess ? <Alert severity="success">{submitSuccess}</Alert> : null}
 
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
-                    <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 999, textTransform: 'none' }}>
+                    <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 1, textTransform: 'none' }}>
                       Закрыть
                     </Button>
                     <Button
                       variant="contained"
                       onClick={handleSubmit(handleStatusSubmit)}
                       disabled={isSubmitting}
-                      sx={{ borderRadius: 999, textTransform: 'none', minWidth: 180, boxShadow: 'none' }}
+                      sx={{ borderRadius: 1, textTransform: 'none', minWidth: 180, boxShadow: 'none' }}
                     >
                       {isSubmitting ? 'Сохранение...' : 'Сохранить статус'}
                     </Button>

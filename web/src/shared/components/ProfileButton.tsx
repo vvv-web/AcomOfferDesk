@@ -12,6 +12,7 @@ import {
   TextField,
   Typography
 } from '@mui/material';
+import { alpha, type Theme } from '@mui/material/styles';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -30,10 +31,30 @@ import { requestEmailVerification } from '@shared/api/auth/emailVerification';
 
 const fallbackText = 'Не указано';
 
-const roundedFieldSx = {
+const dialogPaperSx = (theme: Theme) => ({
+  borderRadius: 2,
+  px: { xs: 2.5, sm: 3.5 },
+  py: { xs: 3, sm: 3.5 },
+  backgroundColor: theme.palette.background.default,
+  maxHeight: 'min(760px, calc(100vh - 32px))',
+  overflow: 'hidden',
+  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
+});
+
+const dialogContentSx = {
+  p: 0,
+  overflowX: 'hidden',
+  overflowY: 'auto',
+  scrollbarWidth: 'none',
+  '&::-webkit-scrollbar': {
+    display: 'none'
+  }
+};
+
+const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
-    borderRadius: 999,
-    backgroundColor: '#d9d9d9'
+    borderRadius: 1,
+    backgroundColor: 'background.paper'
   }
 };
 
@@ -311,33 +332,22 @@ export const ProfileButton = () => {
         onClose={() => setOpen(false)}
         maxWidth="sm"
         fullWidth
-        BackdropProps={{
-          sx: {
-            backgroundColor: 'rgba(31, 42, 68, 0.35)'
-          }
-        }}
         PaperProps={{
-          sx: {
-            borderRadius: 4,
-            border: '1px solid',
-            borderColor: 'divider',
-            backgroundColor: '#d9d9d9',
-            maxWidth: 560
-          }
+          sx: dialogPaperSx
         }}
       >
-        <DialogContent sx={{ p: 4 }}>
+        <DialogContent sx={dialogContentSx}>
           {isLoading ? (
             <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 240 }}>
               <CircularProgress size={28} />
             </Stack>
           ) : (
-            <Stack spacing={2.5}>
+            <Stack spacing={2}>
               {error ? <Alert severity="error">{error}</Alert> : null}
               {info ? <Alert severity="info">{info}</Alert> : null}
               
               <Stack spacing={1.5}>
-                <Typography variant="h5" fontWeight={700}>
+                <Typography variant="h5" fontWeight={600} lineHeight={1}>
                   Личные данные
                 </Typography>
                 <DataRow label="Логин" value={session?.login ?? profile?.userId ?? null} />
@@ -348,12 +358,12 @@ export const ProfileButton = () => {
 
               <Stack spacing={1.25}>
                 {canEditCredentials ? (
-                  <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenPassword(true)}>
+                  <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenPassword(true)}>
                     Изменить данные входа
                   </Button>
                 ) : null}
                 {canEditProfile ? (
-                  <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenProfile(true)}>
+                  <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenProfile(true)}>
                     Изменить данные для связи
                   </Button>
                 ) : null}
@@ -397,7 +407,7 @@ export const ProfileButton = () => {
 
               {showCompanyInfo ? (
                 <Stack spacing={1.5}>
-                  <Typography variant="h5" fontWeight={700}>
+                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
                     Данные компании
                   </Typography>
                   <Box
@@ -417,7 +427,7 @@ export const ProfileButton = () => {
                     <DataRow label="Доп. информация" value={profile?.company.note ?? null} />
                   </Box>
                   {canEditCompany ? (
-                    <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenCompany(true)}>
+                    <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenCompany(true)}>
                       Изменить данные компании
                     </Button>
                   ) : null}
@@ -428,10 +438,10 @@ export const ProfileButton = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openPassword} onClose={() => setOpenPassword(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+      <Dialog open={openPassword} onClose={() => setOpenPassword(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
           <Stack spacing={2} component="form" onSubmit={handlePasswordSubmit((values) => void onSubmitPassword(values))}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Изменение пароля
             </Typography>
             <TextField
@@ -440,7 +450,7 @@ export const ProfileButton = () => {
               {...registerPassword('oldPassword')}
               error={Boolean(passwordErrors.oldPassword)}
               helperText={passwordErrors.oldPassword?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Новый пароль"
@@ -448,7 +458,7 @@ export const ProfileButton = () => {
               {...registerPassword('password')}
               error={Boolean(passwordErrors.password)}
               helperText={passwordErrors.password?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Повторите новый пароль"
@@ -456,19 +466,25 @@ export const ProfileButton = () => {
               {...registerPassword('confirmPassword')}
               error={Boolean(passwordErrors.confirmPassword)}
               helperText={passwordErrors.confirmPassword?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingPassword}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
+              disabled={isSubmittingPassword}
+            >
               Сохранить новый пароль
             </Button>
           </Stack>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openProfile} onClose={() => setOpenProfile(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+      <Dialog open={openProfile} onClose={() => setOpenProfile(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
           <Stack spacing={2} component="form" onSubmit={handleProfileSubmit((values) => void onSubmitProfile(values))}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Личные данные
             </Typography>
             <TextField
@@ -476,33 +492,39 @@ export const ProfileButton = () => {
               {...registerProfile('full_name')}
               error={Boolean(profileErrors.full_name)}
               helperText={profileErrors.full_name?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Телефон"
               {...registerProfile('phone')}
               error={Boolean(profileErrors.phone)}
               helperText={profileErrors.phone?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Электронная почта"
               {...registerProfile('mail')}
               error={Boolean(profileErrors.mail)}
               helperText={profileErrors.mail?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingProfile}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
+              disabled={isSubmittingProfile}
+            >
               Сохранить изменения
             </Button>
           </Stack>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openCompany} onClose={() => setOpenCompany(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+      <Dialog open={openCompany} onClose={() => setOpenCompany(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
           <Stack spacing={2} component="form" onSubmit={handleCompanySubmit((values) => void onSubmitCompany(values))}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Юридические данные компании
             </Typography>
             <TextField
@@ -510,35 +532,35 @@ export const ProfileButton = () => {
               {...registerCompany('inn')}
               error={Boolean(companyErrors.inn)}
               helperText={companyErrors.inn?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Наименование"
               {...registerCompany('company_name')}
               error={Boolean(companyErrors.company_name)}
               helperText={companyErrors.company_name?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Телефон"
               {...registerCompany('company_phone')}
               error={Boolean(companyErrors.company_phone)}
               helperText={companyErrors.company_phone?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Электронная почта"
               {...registerCompany('company_mail')}
               error={Boolean(companyErrors.company_mail)}
               helperText={companyErrors.company_mail?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Адрес"
               {...registerCompany('address')}
               error={Boolean(companyErrors.address)}
               helperText={companyErrors.address?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Дополнительная информация"
@@ -547,9 +569,15 @@ export const ProfileButton = () => {
               {...registerCompany('note')}
               error={Boolean(companyErrors.note)}
               helperText={companyErrors.note?.message}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3, backgroundColor: '#d9d9d9' } }}
+              sx={inputFieldSx}
             />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingCompany}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
+              disabled={isSubmittingCompany}
+            >
               Сохранить изменения
             </Button>
           </Stack>

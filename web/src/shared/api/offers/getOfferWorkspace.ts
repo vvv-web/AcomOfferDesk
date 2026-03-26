@@ -76,6 +76,7 @@ type ApiResponse = {
     request: Omit<OfferWorkspace['request'], 'actions'> & {
       actions?: {
         can_view_details?: boolean;
+        can_view_amounts?: boolean;
         can_open_contractor_view?: boolean;
         can_edit?: boolean;
         can_change_owner?: boolean;

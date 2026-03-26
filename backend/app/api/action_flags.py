@@ -48,6 +48,7 @@ class RequestActionBuilder:
         )
         return RequestActionsSchema(
             can_view_details=UserPolicy.can_view_requests(current_user),
+            can_view_amounts=UserPolicy.can_view_request_amounts(current_user),
             can_open_contractor_view=has_permission(current_user, PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ),
             can_edit=can_edit_owned_unassigned,
             can_change_owner=RequestPolicy.can_change_owner(current_user, request_owner_user_id=owner_user_id),
