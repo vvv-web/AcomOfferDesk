@@ -155,13 +155,30 @@ export const ContractorRequestDetailsPage = () => {
 
   if (!request) {
     if (errorMessage) {
-      return <Typography color="error">{errorMessage}</Typography>;
+      return (
+        <Stack spacing={2} alignItems="flex-start">
+          <Button variant="outlined" onClick={() => navigate('/requests')}>
+            Назад
+          </Button>
+          <Typography color="error">{errorMessage}</Typography>
+        </Stack>
+      );
     }
-    return <Typography color="text.secondary">Заявка не найдена.</Typography>;
+    return (
+      <Stack spacing={2} alignItems="flex-start">
+        <Button variant="outlined" onClick={() => navigate('/requests')}>
+          Назад
+        </Button>
+        <Typography color="text.secondary">Заявка не найдена.</Typography>
+      </Stack>
+    );
   }
 
   return (
     <Box>
+      <Button variant="outlined" onClick={() => navigate('/requests')} sx={{ mb: 2 }}>
+        Назад
+      </Button>
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 3 }}>
         <Typography variant="h6" fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
           Номер заявки: {request.id}

@@ -20,10 +20,14 @@ export const SuperadminSidebarHeader = ({ config, onLogout }: SuperadminSidebarH
       borderRadius: 3,
       backgroundColor: theme.palette.background.paper,
       p: 2,
-      minHeight: { xs: 'auto', lg: 'calc(100vh - 32px)' }
+      position: { xs: 'static', lg: 'sticky' },
+      top: { lg: 16 },
+      height: { xs: 'auto', lg: 'calc(100vh - 32px)' },
+      maxHeight: { xs: 'none', lg: 'calc(100vh - 32px)' },
+      overflow: 'hidden'
     })}
   >
-    <Stack spacing={1.8}>
+    <Stack spacing={1.8} sx={{ overflowY: { lg: 'auto' }, pr: { lg: 0.5 } }}>
       {(config.sidebarItems ?? []).map((item) => {
         if (!item.to) {
           return (

@@ -713,6 +713,13 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
+            <Button
+                variant="outlined"
+                onClick={() => navigate('/requests')}
+                sx={{ mb: 2, alignSelf: 'flex-start' }}
+            >
+                Назад
+            </Button>
             <Stack
                 direction="row"
                 spacing={2}

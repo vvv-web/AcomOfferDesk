@@ -9,8 +9,8 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Pagination,
   Select,
-  Slider,
   Stack,
   Typography,
 } from '@mui/material';
@@ -190,7 +190,7 @@ export const DataTable = <T,>({
   storageKey,
   stickyFirstColumn = true,
   stickyLastColumn = true,
-  pageSize = 10,
+  pageSize = 8,
 }: DataTableProps<T>) => {
   const hasRows = rows.length > 0;
 
@@ -510,12 +510,6 @@ export const DataTable = <T,>({
   };
 
   const showPagination = hasRows && totalPages > 1;
-  const sliderMarks = totalPages <= 8
-    ? Array.from({ length: totalPages }, (_, index) => ({
-        value: index + 1,
-        label: String(index + 1),
-      }))
-    : undefined;
 
   return (
     <Box
@@ -681,55 +675,36 @@ export const DataTable = <T,>({
               Показаны строки {currentRangeStart}-{currentRangeEnd} из {rows.length}
             </Typography>
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
-              <Button
-                size="small"
+            <Box sx={{ display: 'flex', justifyContent: { xs: 'center', md: 'flex-end' } }}>
+              <Pagination
+                count={totalPages}
+                page={currentPage}
+                onChange={(_, page) => handlePageChange(page)}
                 variant="outlined"
-                sx={controlButtonSx}
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                Назад
-              </Button>
-
-              <Box sx={{ width: { xs: '100%', sm: 240 }, px: { xs: 0.5, sm: 1 } }}>
-                <Typography variant="caption" color="text.secondary">
-                  Страница {currentPage} из {totalPages}
-                </Typography>
-                <Slider
-                  value={currentPage}
-                  min={1}
-                  max={totalPages}
-                  step={1}
-                  marks={sliderMarks}
-                  onChange={(_, value) => handlePageChange(Array.isArray(value) ? value[0] ?? 1 : value)}
-                  valueLabelDisplay="auto"
-                  valueLabelFormat={(page) => {
-                    const start = (page - 1) * pageSize + 1;
-                    const end = Math.min(page * pageSize, rows.length);
-                    return `${start}-${end}`;
-                  }}
-                  aria-label="Переход по страницам таблицы"
-                  sx={{
-                    mt: 0.5,
-                    color: tablePalette.accent,
-                    '& .MuiSlider-valueLabel': {
-                      backgroundColor: tablePalette.headerText,
+                shape="rounded"
+                size="small"
+                siblingCount={1}
+                boundaryCount={1}
+                sx={{
+                  '& .MuiPaginationItem-root': {
+                    color: '#6b7280',
+                    borderColor: tablePalette.border,
+                    minWidth: 32,
+                    height: 32,
+                    borderRadius: 1,
+                    fontWeight: 600,
+                  },
+                  '& .MuiPaginationItem-root.Mui-selected': {
+                    backgroundColor: tablePalette.accent,
+                    borderColor: tablePalette.accent,
+                    color: '#fff',
+                    '&:hover': {
+                      backgroundColor: '#245bb5',
                     },
-                  }}
-                />
-              </Box>
-
-              <Button
-                size="small"
-                variant="outlined"
-                sx={controlButtonSx}
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                Вперед
-              </Button>
-            </Stack>
+                  },
+                }}
+              />
+            </Box>
           </Stack>
         ) : null}
       </Box>

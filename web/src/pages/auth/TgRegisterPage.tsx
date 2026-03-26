@@ -121,6 +121,8 @@ export const TgRegisterPage = () => {
     const hasToken = Boolean(token);
     const [step, setStep] = useState(0);
     const currentStep = useMemo(() => stepTitles[step], [step]);
+    const [stepValidationAttempts, setStepValidationAttempts] = useState<Record<number, boolean>>({});
+    const [interactedFields, setInteractedFields] = useState<Partial<Record<keyof RegistrationFormValues, boolean>>>({});
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isCompleted, setIsCompleted] = useState(false);
     const [loginStatus, setLoginStatus] = useState<{ available: boolean; detail: string } | null>(null);
@@ -156,6 +158,7 @@ export const TgRegisterPage = () => {
 
     const loginValue = watch('login');
     const watchedValues = watch();
+    const isLastStep = step === stepTitles.length - 1;
 
     useEffect(() => {
         if (!token || loginValue.trim().length < 3) {
@@ -200,6 +203,7 @@ export const TgRegisterPage = () => {
     }, [loginStatus, step, loginValue, clearErrors, setError, errorMessage]);
 
     const handleNext = async () => {
+        setStepValidationAttempts((prev) => ({ ...prev, [step]: true }));
         const fields = stepFields[step];
         const isValid = await trigger(fields, { shouldFocus: true });
         if (!isValid) {
@@ -217,6 +221,14 @@ export const TgRegisterPage = () => {
     const handleBack = () => {
         setStep((prev) => Math.max(prev - 1, 0));
 
+    };
+
+    const shouldShowFieldError = (fieldName: keyof RegistrationFormValues) => {
+        if (!errors[fieldName]) {
+            return false;
+        }
+
+        return Boolean(stepValidationAttempts[step]) || Boolean(interactedFields[fieldName]);
     };
 
     const onSubmit = async (values: RegistrationFormValues) => {
@@ -243,6 +255,8 @@ export const TgRegisterPage = () => {
                 note: values.note?.trim() ? values.note : 'Не указано'
             });
             setIsCompleted(true);
+            setStepValidationAttempts({});
+            setInteractedFields({});
             reset();
         } catch (error) {
             setErrorMessage(error instanceof Error ? error.message : 'Не удалось отправить данные регистрации');
@@ -313,26 +327,41 @@ export const TgRegisterPage = () => {
                         </Alert>
                     ) : (
                         <Stack spacing={2.5} width="100%" alignItems="center">
-                            {currentStep.fields.map((field) => (
-                                <TextField
-                                    key={field.label}
-                                    fullWidth
-                                    label={field.label}
-                                    type={field.type ?? 'text'}
-                                    variant="outlined"
-                                    multiline={Boolean(field.multiline)}
-                                    rows={field.rows}
-                                    error={Boolean(errors[field.name])}
-                                    helperText={errors[field.name]?.message}
-                                    InputProps={{
-                                        sx: (theme) => ({
-                                            borderRadius: field.multiline ? 3 : 999,
-                                            backgroundColor: theme.palette.primary.light
-                                        })
-                                    }}
-                                    {...register(field.name)}
-                                />
-                            ))}
+                            {currentStep.fields.map((field) => {
+                                const registration = register(field.name);
+
+                                return (
+                                    <TextField
+                                        key={field.label}
+                                        fullWidth
+                                        label={field.label}
+                                        type={field.type ?? 'text'}
+                                        variant="outlined"
+                                        multiline={Boolean(field.multiline)}
+                                        rows={field.rows}
+                                        error={shouldShowFieldError(field.name)}
+                                        helperText={shouldShowFieldError(field.name) ? errors[field.name]?.message : ''}
+                                        InputProps={{
+                                            sx: (theme) => ({
+                                                borderRadius: field.multiline ? 3 : 999,
+                                                backgroundColor: theme.palette.primary.light
+                                            })
+                                        }}
+                                        name={registration.name}
+                                        inputRef={registration.ref}
+                                        onBlur={(event) => {
+                                            registration.onBlur(event);
+                                            setInteractedFields((prev) => ({ ...prev, [field.name]: true }));
+                                        }}
+                                        onChange={(event) => {
+                                            registration.onChange(event);
+                                            if (!interactedFields[field.name]) {
+                                                setInteractedFields((prev) => ({ ...prev, [field.name]: true }));
+                                            }
+                                        }}
+                                    />
+                                );
+                            })}
                             {step === 0 && loginStatus ? (
                                 <Alert severity={loginStatus.available ? 'success' : 'warning'} sx={{ width: '100%' }}>
                                     {loginStatus.detail}
@@ -341,8 +370,12 @@ export const TgRegisterPage = () => {
                             {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
                             <Button
                                 variant="outlined"
-                                onClick={step === stepTitles.length - 1 ? undefined : handleNext}
-                                type={step === stepTitles.length - 1 ? 'submit' : 'button'}
+                                onClick={
+                                    isLastStep
+                                        ? () => setStepValidationAttempts((prev) => ({ ...prev, [step]: true }))
+                                        : () => void handleNext()
+                                }
+                                type={isLastStep ? 'submit' : 'button'}
                                 disabled={isSubmitting || isCompleted}
                                 sx={(theme) => ({
                                     width: '100%',
@@ -352,7 +385,7 @@ export const TgRegisterPage = () => {
                                     paddingY: 1.3
                                 })}
                             >
-                                {step === stepTitles.length - 1 ? (isSubmitting ? 'Отправка...' : 'Зарегистрироваться') : 'Далее'}
+                                {isLastStep ? (isSubmitting ? 'Отправка...' : 'Зарегистрироваться') : 'Далее'}
                             </Button>
                         </Stack>
                     )}

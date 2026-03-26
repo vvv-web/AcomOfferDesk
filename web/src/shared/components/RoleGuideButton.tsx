@@ -805,7 +805,7 @@ export const RoleGuideButton = () => {
                         </Box>
 
                         <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right', pt: 0.5 }}>
-                            Created by "Цифровизация проектных задач"
+                            Created by «Цифровизация проектных задач»
                         </Typography>
                     </Stack>
                 </DialogContent>
