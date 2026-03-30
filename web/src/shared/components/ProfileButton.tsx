@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -12,24 +12,49 @@ import {
   TextField,
   Typography
 } from '@mui/material';
+import { alpha, type Theme } from '@mui/material/styles';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
+import { UnavailabilityManagementSection, UnavailabilityPeriodEditor } from '@entities/unavailability';
 import {
   getCurrentUserProfile,
+  setMyUnavailabilityPeriod,
   updateMyCompanyContacts,
   updateMyCredentials,
   updateMyProfile
-} from '@shared/api/getCurrentUserProfile';
-import type { CurrentUserProfile } from '@shared/api/getCurrentUserProfile';
-import { hasAvailableAction } from '@shared/auth/availableActions';
+} from '@shared/api/users/getCurrentUserProfile';
+import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile';
+import { ROLE } from '@shared/constants/roles';
+import { requestEmailVerification } from '@shared/api/auth/emailVerification';
+
 
 const fallbackText = 'Не указано';
 
-const roundedFieldSx = {
+const dialogPaperSx = (theme: Theme) => ({
+  borderRadius: 2,
+  px: { xs: 2.5, sm: 3.5 },
+  py: { xs: 3, sm: 3.5 },
+  backgroundColor: theme.palette.background.default,
+  maxHeight: 'min(760px, calc(100vh - 32px))',
+  overflow: 'hidden',
+  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
+});
+
+const dialogContentSx = {
+  p: 0,
+  overflowX: 'hidden',
+  overflowY: 'auto',
+  scrollbarWidth: 'none',
+  '&::-webkit-scrollbar': {
+    display: 'none'
+  }
+};
+
+const inputFieldSx = {
   '& .MuiOutlinedInput-root': {
-    borderRadius: 999,
-    backgroundColor: '#d9d9d9'
+    borderRadius: 1,
+    backgroundColor: 'background.paper'
   }
 };
 
@@ -74,9 +99,21 @@ const companySchema = z.object({
   note: z.string().trim()
 });
 
+const unavailabilitySchema = z
+  .object({
+    status: z.enum(['sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable']),
+    started_at: z.string().min(1, 'Выберите дату начала'),
+    ended_at: z.string().min(1, 'Выберите дату окончания')
+  })
+  .refine((values) => new Date(values.ended_at).getTime() >= new Date(values.started_at).getTime(), {
+    message: 'Дата окончания должна быть не раньше даты начала',
+    path: ['ended_at']
+  });
+
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 type ProfileFormValues = z.infer<typeof profileSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
+type UnavailabilityFormValues = z.infer<typeof unavailabilitySchema>;
 
 const ProfileIcon = () => (
   <SvgIcon fontSize="small">
@@ -107,9 +144,11 @@ export const ProfileButton = () => {
   const [openPassword, setOpenPassword] = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
+  const [openUnavailability, setOpenUnavailability] = useState(false);
   const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const {
     register: registerPassword,
@@ -141,6 +180,18 @@ export const ProfileButton = () => {
     defaultValues: { inn: '', company_name: '', company_phone: '', company_mail: '', address: '', note: '' }
   });
 
+  const {
+    register: registerUnavailability,
+    handleSubmit: handleUnavailabilitySubmit,
+    watch: watchUnavailability,
+    setValue: setUnavailabilityValue,
+    formState: { errors: unavailabilityErrors, isSubmitting: isSubmittingUnavailability },
+    reset: resetUnavailability
+  } = useForm<UnavailabilityFormValues>({
+    resolver: zodResolver(unavailabilitySchema),
+    defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
+  });
+
   useEffect(() => {
     if (!profile) {
       return;
@@ -160,11 +211,18 @@ export const ProfileButton = () => {
       address: sanitizeDefaultValue(profile.company.address),
       note: sanitizeDefaultValue(profile.company.note)
     });
-  }, [profile, resetCompany, resetProfile]);
+
+    resetUnavailability({
+      status: 'unavailable',
+      started_at: '',
+      ended_at: ''
+    });
+  }, [profile, resetCompany, resetProfile, resetUnavailability]);
 
   const loadProfile = async () => {
     setIsLoading(true);
     setError(null);
+    setInfo(null);
     try {
       const data = await getCurrentUserProfile();
       setProfile(data);
@@ -183,14 +241,15 @@ export const ProfileButton = () => {
     await loadProfile();
   };
 
-  const availableActions = useMemo(() => ({ availableActions: profile?.availableActions ?? [] }), [profile?.availableActions]);
-  const showCompanyInfo = (profile?.roleId ?? session?.roleId) === 5;
-  const canEditCredentials = hasAvailableAction(availableActions, '/api/v1/users/me/credentials', 'PATCH');
-  const canEditProfile = hasAvailableAction(availableActions, '/api/v1/users/me/profile', 'PATCH');
-  const canEditCompany = hasAvailableAction(availableActions, '/api/v1/users/me/company-contacts', 'PATCH');
+  const showCompanyInfo = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
+  const canEditCredentials = Boolean(profile?.actions.manage_credentials);
+  const canEditProfile = Boolean(profile?.actions.manage_own_profile);
+  const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
+  const canSetUnavailability = Boolean(profile?.actions.manage_own_unavailability);
 
   const onSubmitPassword = async (values: PasswordFormValues) => {
     setError(null);
+    setInfo(null);
     try {
       const nextProfile = await updateMyCredentials({
         current_password: values.oldPassword.trim(),
@@ -206,14 +265,23 @@ export const ProfileButton = () => {
 
   const onSubmitProfile = async (values: ProfileFormValues) => {
     setError(null);
+    setInfo(null);
     try {
+      const normalizedMail = normalizeOptional(values.mail);
       const nextProfile = await updateMyProfile({
         full_name: values.full_name.trim(),
-        phone: values.phone.trim(),
-        mail: normalizeOptional(values.mail)
+        phone: values.phone.trim()
       });
+      let verificationDetail: string | null = null;
+      if (normalizedMail) {
+        const verificationResult = await requestEmailVerification(normalizedMail);
+        verificationDetail = verificationResult.detail;
+      }
       setProfile(nextProfile);
       setOpenProfile(false);
+      if (verificationDetail) {
+        setInfo(verificationDetail);
+      }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить личные данные');
     }
@@ -221,6 +289,7 @@ export const ProfileButton = () => {
 
   const onSubmitCompany = async (values: CompanyFormValues) => {
     setError(null);
+    setInfo(null);
     try {
       const nextProfile = await updateMyCompanyContacts({
         inn: values.inn.trim(),
@@ -237,6 +306,21 @@ export const ProfileButton = () => {
     }
   };
 
+  const onSubmitUnavailability = async (values: UnavailabilityFormValues) => {
+    setError(null);
+    setInfo(null);
+    try {
+      const nextProfile = await setMyUnavailabilityPeriod({
+        status: values.status,
+        started_at: new Date(values.started_at).toISOString(),
+        ended_at: new Date(values.ended_at).toISOString()
+      });
+      setProfile(nextProfile);
+      setOpenUnavailability(false);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось обновить нерабочий период');
+    }
+  };
   return (
     <>
       <Button variant="outlined" onClick={() => void openDialog()} startIcon={<ProfileIcon />} sx={{ minWidth: 124 }}>
@@ -248,33 +332,22 @@ export const ProfileButton = () => {
         onClose={() => setOpen(false)}
         maxWidth="sm"
         fullWidth
-        BackdropProps={{
-          sx: {
-            backdropFilter: 'blur(6px)',
-            backgroundColor: 'rgba(31, 42, 68, 0.35)'
-          }
-        }}
         PaperProps={{
-          sx: {
-            borderRadius: 4,
-            border: '1px solid',
-            borderColor: 'divider',
-            backgroundColor: '#d9d9d9',
-            maxWidth: 560
-          }
+          sx: dialogPaperSx
         }}
       >
-        <DialogContent sx={{ p: 4 }}>
+        <DialogContent sx={dialogContentSx}>
           {isLoading ? (
             <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 240 }}>
               <CircularProgress size={28} />
             </Stack>
           ) : (
-            <Stack spacing={2.5}>
+            <Stack spacing={2}>
               {error ? <Alert severity="error">{error}</Alert> : null}
-
+              {info ? <Alert severity="info">{info}</Alert> : null}
+              
               <Stack spacing={1.5}>
-                <Typography variant="h5" fontWeight={700}>
+                <Typography variant="h5" fontWeight={600} lineHeight={1}>
                   Личные данные
                 </Typography>
                 <DataRow label="Логин" value={session?.login ?? profile?.userId ?? null} />
@@ -285,20 +358,56 @@ export const ProfileButton = () => {
 
               <Stack spacing={1.25}>
                 {canEditCredentials ? (
-                  <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenPassword(true)}>
+                  <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenPassword(true)}>
                     Изменить данные входа
                   </Button>
                 ) : null}
                 {canEditProfile ? (
-                  <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenProfile(true)}>
+                  <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenProfile(true)}>
                     Изменить данные для связи
                   </Button>
                 ) : null}
               </Stack>
 
+              {canSetUnavailability ? (
+                <Stack spacing={1.5}>
+                  <UnavailabilityManagementSection
+                    currentPeriod={profile?.unavailablePeriod ?? null}
+                    periods={profile?.unavailablePeriods ?? []}
+                    canEdit
+                    isDialogOpen={openUnavailability}
+                    onOpenDialog={() => setOpenUnavailability(true)}
+                    onCloseDialog={() => setOpenUnavailability(false)}
+                    onSubmit={handleUnavailabilitySubmit((values) => void onSubmitUnavailability(values))}
+                    isSubmitting={isSubmittingUnavailability}
+                    dialogTitle="Установить нерабочий период"
+                    triggerLabel="Установить нерабочий период"
+                    submitLabel="Сохранить период"
+                    editor={
+                      <UnavailabilityPeriodEditor
+                        statusField={registerUnavailability('status')}
+                        startedAtField={registerUnavailability('started_at')}
+                        endedAtField={registerUnavailability('ended_at')}
+                        startedAtValue={watchUnavailability('started_at') ?? ''}
+                        endedAtValue={watchUnavailability('ended_at') ?? ''}
+                        onStartedAtChange={(value: string) =>
+                          setUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })
+                        }
+                        onEndedAtChange={(value: string) =>
+                          setUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })
+                        }
+                        statusError={unavailabilityErrors.status?.message}
+                        startedAtError={unavailabilityErrors.started_at?.message}
+                        endedAtError={unavailabilityErrors.ended_at?.message}
+                      />
+                    }
+                  />
+                </Stack>
+              ) : null}
+
               {showCompanyInfo ? (
                 <Stack spacing={1.5}>
-                  <Typography variant="h5" fontWeight={700}>
+                  <Typography variant="h5" fontWeight={600} lineHeight={1}>
                     Данные компании
                   </Typography>
                   <Box
@@ -318,7 +427,7 @@ export const ProfileButton = () => {
                     <DataRow label="Доп. информация" value={profile?.company.note ?? null} />
                   </Box>
                   {canEditCompany ? (
-                    <Button variant="outlined" sx={{ borderRadius: 999 }} onClick={() => setOpenCompany(true)}>
+                    <Button variant="outlined" sx={{ borderRadius: 1, textTransform: 'none' }} onClick={() => setOpenCompany(true)}>
                       Изменить данные компании
                     </Button>
                   ) : null}
@@ -329,10 +438,10 @@ export const ProfileButton = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openPassword} onClose={() => setOpenPassword(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+      <Dialog open={openPassword} onClose={() => setOpenPassword(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
           <Stack spacing={2} component="form" onSubmit={handlePasswordSubmit((values) => void onSubmitPassword(values))}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Изменение пароля
             </Typography>
             <TextField
@@ -341,7 +450,7 @@ export const ProfileButton = () => {
               {...registerPassword('oldPassword')}
               error={Boolean(passwordErrors.oldPassword)}
               helperText={passwordErrors.oldPassword?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Новый пароль"
@@ -349,7 +458,7 @@ export const ProfileButton = () => {
               {...registerPassword('password')}
               error={Boolean(passwordErrors.password)}
               helperText={passwordErrors.password?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Повторите новый пароль"
@@ -357,19 +466,25 @@ export const ProfileButton = () => {
               {...registerPassword('confirmPassword')}
               error={Boolean(passwordErrors.confirmPassword)}
               helperText={passwordErrors.confirmPassword?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingPassword}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
+              disabled={isSubmittingPassword}
+            >
               Сохранить новый пароль
             </Button>
           </Stack>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openProfile} onClose={() => setOpenProfile(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+      <Dialog open={openProfile} onClose={() => setOpenProfile(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
           <Stack spacing={2} component="form" onSubmit={handleProfileSubmit((values) => void onSubmitProfile(values))}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Личные данные
             </Typography>
             <TextField
@@ -377,33 +492,39 @@ export const ProfileButton = () => {
               {...registerProfile('full_name')}
               error={Boolean(profileErrors.full_name)}
               helperText={profileErrors.full_name?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Телефон"
               {...registerProfile('phone')}
               error={Boolean(profileErrors.phone)}
               helperText={profileErrors.phone?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Электронная почта"
               {...registerProfile('mail')}
               error={Boolean(profileErrors.mail)}
               helperText={profileErrors.mail?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingProfile}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
+              disabled={isSubmittingProfile}
+            >
               Сохранить изменения
             </Button>
           </Stack>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openCompany} onClose={() => setOpenCompany(false)} fullWidth maxWidth="xs">
-        <DialogContent sx={{ p: 3, backgroundColor: '#d9d9d9' }}>
+      <Dialog open={openCompany} onClose={() => setOpenCompany(false)} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
+        <DialogContent sx={dialogContentSx}>
           <Stack spacing={2} component="form" onSubmit={handleCompanySubmit((values) => void onSubmitCompany(values))}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h5" fontWeight={600} lineHeight={1}>
               Юридические данные компании
             </Typography>
             <TextField
@@ -411,35 +532,35 @@ export const ProfileButton = () => {
               {...registerCompany('inn')}
               error={Boolean(companyErrors.inn)}
               helperText={companyErrors.inn?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Наименование"
               {...registerCompany('company_name')}
               error={Boolean(companyErrors.company_name)}
               helperText={companyErrors.company_name?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Телефон"
               {...registerCompany('company_phone')}
               error={Boolean(companyErrors.company_phone)}
               helperText={companyErrors.company_phone?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Электронная почта"
               {...registerCompany('company_mail')}
               error={Boolean(companyErrors.company_mail)}
               helperText={companyErrors.company_mail?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Адрес"
               {...registerCompany('address')}
               error={Boolean(companyErrors.address)}
               helperText={companyErrors.address?.message}
-              sx={roundedFieldSx}
+              sx={inputFieldSx}
             />
             <TextField
               label="Дополнительная информация"
@@ -448,9 +569,15 @@ export const ProfileButton = () => {
               {...registerCompany('note')}
               error={Boolean(companyErrors.note)}
               helperText={companyErrors.note?.message}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3, backgroundColor: '#d9d9d9' } }}
+              sx={inputFieldSx}
             />
-            <Button type="submit" variant="outlined" sx={{ borderRadius: 999 }} disabled={isSubmittingCompany}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ borderRadius: 1, textTransform: 'none', py: 1.25, fontSize: 16, fontWeight: 700, boxShadow: 'none' }}
+              disabled={isSubmittingCompany}
+            >
               Сохранить изменения
             </Button>
           </Stack>

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.actions import OfferActionsSchema, RequestActionsSchema
 from app.schemas.links import LinkSet
 
 
@@ -26,6 +27,7 @@ class OfferItemSchema(BaseModel):
     contractor_user_id: str
     status: str
     status_label: str
+    offer_amount: float | None
     created_at: datetime
     updated_at: datetime
     offer_workspace_url: str
@@ -42,6 +44,7 @@ class OfferItemSchema(BaseModel):
     contractor_note: str | None
     files: list[RequestFileSchema]
     unread_messages_count: int
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 
 class RequestItemSchema(BaseModel):
@@ -49,6 +52,8 @@ class RequestItemSchema(BaseModel):
     description: str | None
     status: str
     status_label: str
+    initial_amount: float | None = None
+    final_amount: float | None = None
     deadline_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -59,6 +64,7 @@ class RequestItemSchema(BaseModel):
     stats: RequestStatsSchema
     unread_messages_count: int
     files: list[RequestFileSchema]
+    actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
 
 
 class RequestDetailsSchema(RequestItemSchema):
@@ -69,6 +75,7 @@ class OfferedRequestOfferSchema(BaseModel):
     id: int = Field(alias="offer_id")
     status: str
     unread_messages_count: int
+    actions: OfferActionsSchema = Field(default_factory=OfferActionsSchema)
 
 class OpenRequestItemSchema(BaseModel):
     request_id: int
@@ -84,18 +91,22 @@ class OpenRequestItemSchema(BaseModel):
     chosen_offer_id: int | None
     files: list[RequestFileSchema]
     offers: list[OfferedRequestOfferSchema] = Field(default_factory=list)
+    actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
 
 
 class OpenRequestListData(BaseModel):
     items: list[OpenRequestItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestListData(BaseModel):
     items: list[RequestItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestDetailsResponseData(BaseModel):
     item: RequestDetailsSchema
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestListResponse(BaseModel):
@@ -157,6 +168,12 @@ class RequestEditPayload(BaseModel):
     status: str | None = None
     deadline_at: datetime | None = None
     owner_user_id: str | None = None
+    initial_amount: float | None = None
+    final_amount: float | None = None
+
+
+class RequestEmailNotificationPayload(BaseModel):
+    additional_emails: list[str]
 
 
 class RequestFileMutationResponseData(BaseModel):
@@ -168,10 +185,22 @@ class RequestMutationResponseData(BaseModel):
     request_id: int
 
 
+class RequestEmailNotificationResponseData(BaseModel):
+    request_id: int
+    sent_to: list[str]
+
+
 class RequestMutationResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: RequestMutationResponseData
+    links: LinkSet = Field(alias="_links")
+
+
+class RequestEmailNotificationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: RequestEmailNotificationResponseData
     links: LinkSet = Field(alias="_links")
 
 

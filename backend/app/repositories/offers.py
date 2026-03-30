@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import Select, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.orm_models import Chat, File, Message, MessageFile, Offer, OfferFile, TgUser, User
 
@@ -10,8 +13,8 @@ class OfferRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def create(self, *, request_id: int, contractor_user_id: str) -> Offer:
-        offer = Offer(id_request=request_id, id_user=contractor_user_id)
+    async def create(self, *, request_id: int, contractor_user_id: str, offer_amount: float | None = None) -> Offer:
+        offer = Offer(id_request=request_id, id_user=contractor_user_id, offer_amount=offer_amount)
         self._session.add(offer)
         await self._session.flush()
         return offer
@@ -24,6 +27,9 @@ class OfferRepository:
     async def update_status(self, *, offer: Offer, status: str) -> None:
         offer.status = status
 
+    async def update_amount(self, *, offer: Offer, offer_amount: float) -> None:
+        offer.offer_amount = offer_amount
+
     async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str) -> Offer | None:
         stmt: Select[tuple[Offer]] = (
             select(Offer)
@@ -32,6 +38,27 @@ class OfferRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalars().first()
+
+    async def list_latest_contractor_offers_by_request_ids(
+        self,
+        *,
+        contractor_user_id: str,
+        request_ids: Sequence[int],
+    ) -> list[Offer]:
+        if not request_ids:
+            return []
+
+        stmt: Select[tuple[Offer]] = (
+            select(Offer)
+            .where(Offer.id_request.in_(request_ids), Offer.id_user == contractor_user_id)
+            .order_by(Offer.id_request.asc(), Offer.created_at.desc(), Offer.id.desc())
+        )
+        result = await self._session.execute(stmt)
+
+        latest_by_request_id: dict[int, Offer] = {}
+        for offer in result.scalars().all():
+            latest_by_request_id.setdefault(offer.id_request, offer)
+        return list(latest_by_request_id.values())
 
     async def list_by_request(self, *, request_id: int) -> list[Offer]:
         stmt: Select[tuple[Offer]] = (
@@ -45,12 +72,27 @@ class OfferRepository:
     async def list_offer_files(self, *, offer_id: int) -> list[File]:
         stmt: Select[tuple[File]] = (
             select(File)
+            .options(joinedload(File.storage_object))
             .join(OfferFile, OfferFile.id == File.id)
             .where(OfferFile.id_offer == offer_id)
             .order_by(File.id.asc())
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_offer_files_by_offer_ids(self, *, offer_ids: Sequence[int]) -> list[tuple[int, File]]:
+        if not offer_ids:
+            return []
+
+        stmt: Select[tuple[int, File]] = (
+            select(OfferFile.id_offer, File)
+            .options(joinedload(File.storage_object))
+            .join(File, File.id == OfferFile.id)
+            .where(OfferFile.id_offer.in_(offer_ids))
+            .order_by(OfferFile.id_offer.asc(), File.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
 
     async def attach_file(self, *, offer_id: int, file_id: int) -> None:
         self._session.add(OfferFile(id=file_id, id_offer=offer_id))

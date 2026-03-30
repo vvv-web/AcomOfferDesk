@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Integer,
+    Numeric,
     SmallInteger,
     Text,
     TIMESTAMP,
@@ -47,6 +48,11 @@ class User(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     id_role: Mapped[int] = mapped_column(SmallInteger, ForeignKey("roles.id"), nullable=False)
+    id_parent: Mapped[Optional[str]] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="review")
     tg_user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
@@ -94,12 +100,60 @@ class CompanyContact(Base):
     user: Mapped[User] = relationship("User", back_populates="company_contact")
 
 
+class StorageObject(Base):
+    __tablename__ = "storage_objects"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    storage_bucket: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    files: Mapped[list["File"]] = relationship("File", back_populates="storage_object")
+
+
 class File(Base):
     __tablename__ = "files"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    path: Mapped[str] = mapped_column(Text, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
+    id_storage_object: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("storage_objects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    original_name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    storage_object: Mapped[StorageObject] = relationship("StorageObject", back_populates="files", lazy="joined")
+
+    @property
+    def path(self) -> str:
+        return self.storage_object.storage_key
+
+    @property
+    def name(self) -> str:
+        return self.original_name
+
+    @property
+    def storage_bucket(self) -> str:
+        return self.storage_object.storage_bucket
+
+    @property
+    def storage_key(self) -> str:
+        return self.storage_object.storage_key
+
+    @property
+    def content_sha256(self) -> str:
+        return self.storage_object.content_sha256
+
+    @property
+    def mime_type(self) -> str:
+        return self.storage_object.mime_type
+
+    @property
+    def size_bytes(self) -> int:
+        return self.storage_object.size_bytes
 
 
 class Request(Base):
@@ -125,6 +179,8 @@ class Request(Base):
     )
 
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"), nullable=False)
+    initial_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    final_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     offers: Mapped[list["Offer"]] = relationship(
@@ -139,6 +195,30 @@ class Request(Base):
         foreign_keys=[id_offer],
         post_update=True,
     )
+    hidden_contractors: Mapped[list["RequestHiddenContractor"]] = relationship(
+        "RequestHiddenContractor",
+        back_populates="request",
+        cascade="all, delete-orphan",
+    )
+
+
+class RequestHiddenContractor(Base):
+    __tablename__ = "request_hidden_contractors"
+
+    request_id: Mapped[int] = mapped_column(
+        "id_request",
+        BigInteger,
+        ForeignKey("requests.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    contractor_user_id: Mapped[str] = mapped_column(
+        "id_user",
+        Text,
+        ForeignKey("users.id"),
+        primary_key=True,
+    )
+
+    request: Mapped["Request"] = relationship("Request", back_populates="hidden_contractors")
 
 
 class Offer(Base):
@@ -157,6 +237,7 @@ class Offer(Base):
     )
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="submitted")
+    offer_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
@@ -196,7 +277,7 @@ class Chat(Base):
         ForeignKey("messages.id", ondelete="SET NULL"),
         nullable=True,
     )
-    last_message_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    last_message_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     offer: Mapped[Offer] = relationship("Offer", back_populates="chat")
     messages: Mapped[list["Message"]] = relationship(
@@ -219,8 +300,8 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('send','received','read')",
-            name="messages_status_check",
+            "type IN ('text', 'system', 'file', 'mixed', 'email')",
+            name="messages_type_check",
         ),
     )
 
@@ -228,15 +309,62 @@ class Message(Base):
     id_chat: Mapped[int] = mapped_column(BigInteger, ForeignKey("chats.id", ondelete="CASCADE"))
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"))
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False, default="text")
+    reply_to_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="send")
 
     chat: Mapped["Chat"] = relationship(
         "Chat",
         back_populates="messages",
         foreign_keys=[id_chat],
     )
+
+
+class ChatParticipant(Base):
+    __tablename__ = "chat_participants"
+
+    id_chat: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("chats.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_user: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    joined_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    left_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    last_read_message_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    last_read_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    is_muted: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    is_archived: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+
+
+class MessageReceipt(Base):
+    __tablename__ = "message_receipts"
+
+    id_message: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("messages.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_user: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    delivered_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    read_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
 
 
 class RequestFile(Base):
@@ -260,8 +388,32 @@ class MessageFile(Base):
     id_message: Mapped[int] = mapped_column(BigInteger, ForeignKey("messages.id", ondelete="CASCADE"))
 
 
+class NormativeFile(Base):
+    __tablename__ = "normative_files"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id_file: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), nullable=False)
+
+
 class FeedBack(Base):
     __tablename__ = "feed_back"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class UserStatusPeriod(Base):
+    __tablename__ = "user_status_periods"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable')",
+            name="user_status_periods_status_check",
+        ),
+        CheckConstraint("ended_at >= started_at", name="user_status_periods_period_chk"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)
+    ended_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)
