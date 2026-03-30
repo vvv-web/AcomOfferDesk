@@ -15,6 +15,18 @@
 - **Критично:** при перезапуске localtunnel URL меняется → обновить `PUBLIC_BACKEND_BASE_URL` и `WEB_BASE_URL` в `backend/.env` и `tg_bot/.env`, затем `docker compose up -d --force-recreate backend tg_bot` (restart не перечитывает .env).
 - **Доступ с другого ПК:** после ввода Tunnel Password (публичный IP машины с туннелем) доступ по тому же URL.
 
+**Шаблоны переменных окружения (этап перед `docker compose up`):**
+
+| Файл | Назначение |
+|------|------------|
+| `compose.env.example` | Скопировать в **корневой** `.env` — подстановка для MinIO в `docker-compose.yml`. |
+| `backend/env.example` | Скопировать в **`backend/.env`** — все переменные бэкенда (см. `backend/app/core/config.py`). |
+| `tg_bot/env.example` | Скопировать в **`tg_bot/.env`** — токен бота и URL шлюза/API. |
+
+Команды: `cp compose.env.example .env`, `cp backend/env.example backend/.env`, `cp tg_bot/env.example tg_bot/.env`, затем отредактировать значения (секреты не коммитить).
+
+**Два бота в Telegram:** продуктовый **AcomOfferDesk** (тест/прод) и отдельный **DevOfferDesk** для разработки. На стенде **`test`** используйте токен и ссылки **AcomOfferDesk**, публичные URL своего хоста или туннеля — не подставляйте слепо dev-бота и чужой ngrok из чужих `.env`.
+
 Подробная шпаргалка — в `docs/AcomOfferDesk_DEPLOYMENT_SUCCESS.md` (devops_manual).
 
 **Кратко: шаги по ролям**

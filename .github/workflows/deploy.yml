@@ -30,4 +30,10 @@ jobs:
             git checkout test
             git pull upstream test
             docker compose down --remove-orphans || true
-            docker compose up -d --build
+            if ! docker compose up -d --build; then
+              echo "=== docker compose ps -a ==="
+              docker compose ps -a || true
+              echo "=== backend logs (tail) ==="
+              docker compose logs --tail=120 backend || true
+              exit 1
+            fi
