@@ -32,6 +32,7 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'File cannot be empty': 'Файл не может быть пустым',
   'File content does not match extension': 'Содержимое файла не соответствует расширению',
   'Only lead economist can manage normative files': 'Только ведущий экономист может загружать нормативные документы',
+  'Normative file can be uploaded only once': 'Нормативный документ можно загрузить только один раз',
   'Partner card file is not configured': 'Не загружен нормативный документ для карты партнера',
   Forbidden: 'Доступ запрещен'
 };

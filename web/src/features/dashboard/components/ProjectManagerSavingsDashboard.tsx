@@ -164,15 +164,21 @@ const SummaryListCard = ({
 };
 
 const SavingsBalanceChart = ({
-  totalSavings,
+  totalClosedAmount,
+  netSavings,
   lostSavings,
 }: {
-  totalSavings: number;
+  totalClosedAmount: number;
+  netSavings: number;
   lostSavings: number;
 }) => {
-  const totalMagnitude = totalSavings + lostSavings;
+  const closedTotal = Math.max(totalClosedAmount, 0);
+  const cleanSavings = Math.max(netSavings, 0);
+  const totalLostSavings = Math.max(lostSavings, 0);
+  const highlightedAmount = cleanSavings + totalLostSavings;
+  const chartBase = Math.max(closedTotal, highlightedAmount);
 
-  if (totalMagnitude === 0) {
+  if (chartBase === 0) {
     return (
       <Card variant="outlined" sx={{ borderRadius: 2 }}>
         <CardContent>
@@ -180,15 +186,43 @@ const SavingsBalanceChart = ({
             Баланс экономии
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Пока нет закрытых заявок с рассчитанной экономией.
+            Пока нет закрытых заявок для расчета.
           </Typography>
         </CardContent>
       </Card>
     );
   }
 
-  const successPercent = (totalSavings / totalMagnitude) * 100;
-  const lostPercent = (lostSavings / totalMagnitude) * 100;
+  const neutralAmount = Math.max(chartBase - cleanSavings - totalLostSavings, 0);
+  const cleanPercent = (cleanSavings / chartBase) * 100;
+  const lostPercent = (totalLostSavings / chartBase) * 100;
+  const neutralPercent = (neutralAmount / chartBase) * 100;
+  const ringRadius = 74;
+  const ringStrokeWidth = 28;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringSegments = [
+    {
+      key: 'clean',
+      label: 'Чистая экономия',
+      amount: cleanSavings,
+      percent: cleanPercent,
+      color: '#2e7d32',
+    },
+    {
+      key: 'lost',
+      label: 'Упущенная экономия',
+      amount: totalLostSavings,
+      percent: lostPercent,
+      color: '#d32f2f',
+    },
+    {
+      key: 'neutral',
+      label: 'Без выделения',
+      amount: neutralAmount,
+      percent: neutralPercent,
+      color: '#cbd5e1',
+    },
+  ].filter((segment) => segment.amount > 0.0001);
 
   return (
     <Card
@@ -204,7 +238,7 @@ const SavingsBalanceChart = ({
           Баланс экономии
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Круговая диаграмма общей и упущенной экономии по закрытым заявкам.
+          Общая сумма закрытых заявок с цветовым выделением: зеленым — чистая экономия, красным — упущенная. Наведите на сегмент диаграммы, чтобы увидеть сумму и категорию.
         </Typography>
 
         <Box
@@ -218,18 +252,53 @@ const SavingsBalanceChart = ({
           <Box sx={{ display: 'flex', justifyContent: 'center' }}>
             <Box
               sx={{
+                position: 'relative',
                 width: 180,
                 height: 180,
                 borderRadius: '50%',
-                background: `conic-gradient(#2e7d32 0% ${successPercent}%, #d32f2f ${successPercent}% 100%)`,
-                p: '16px',
                 boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 10px 24px rgba(31,42,68,0.12)',
               }}
             >
               <Box
+                component="svg"
+                viewBox="0 0 200 200"
                 sx={{
                   width: '100%',
                   height: '100%',
+                  transform: 'rotate(-90deg)',
+                }}
+              >
+                {(() => {
+                  let offsetLength = 0;
+                  return ringSegments.map((segment) => {
+                    const strokeLength = (segment.percent / 100) * ringCircumference;
+                    const circle = (
+                      <circle
+                        key={segment.key}
+                        cx="100"
+                        cy="100"
+                        r={ringRadius}
+                        fill="none"
+                        stroke={segment.color}
+                        strokeWidth={ringStrokeWidth}
+                        strokeDasharray={`${strokeLength} ${Math.max(ringCircumference - strokeLength, 0)}`}
+                        strokeDashoffset={-offsetLength}
+                        strokeLinecap="butt"
+                        style={{ cursor: 'help' }}
+                      >
+                        <title>{`${segment.label}: ${formatAmount(segment.amount)} (${Math.round(segment.percent * 10) / 10}%)`}</title>
+                      </circle>
+                    );
+                    offsetLength += strokeLength;
+                    return circle;
+                  });
+                })()}
+              </Box>
+
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 16,
                   borderRadius: '50%',
                   backgroundColor: 'background.paper',
                   boxShadow: '0 0 0 1px rgba(47,111,214,0.10)',
@@ -242,10 +311,10 @@ const SavingsBalanceChart = ({
                 }}
               >
                 <Typography variant="caption" color="text.secondary">
-                  Учтено в расчете
+                  Сумма закрытых заявок
                 </Typography>
                 <Typography variant="subtitle1" fontWeight={800}>
-                  {formatAmount(totalMagnitude)}
+                  {formatAmount(closedTotal)}
                 </Typography>
               </Box>
             </Box>
@@ -256,13 +325,29 @@ const SavingsBalanceChart = ({
               <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                   <Stack direction="row" spacing={1} alignItems="center">
+                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#2563eb' }} />
+                    <Typography variant="body2" fontWeight={600}>
+                      Общая сумма закрытых
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="primary.main" fontWeight={700}>
+                    {formatAmount(closedTotal)}
+                  </Typography>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card variant="outlined" sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                  <Stack direction="row" spacing={1} alignItems="center">
                     <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#2e7d32' }} />
                     <Typography variant="body2" fontWeight={600}>
-                      Общая экономия
+                      Чистая экономия
                     </Typography>
                   </Stack>
                   <Typography variant="body2" color="success.main" fontWeight={700}>
-                    {formatAmount(totalSavings)} ({Math.round(successPercent * 10) / 10}%)
+                    {formatAmount(cleanSavings)} ({Math.round(cleanPercent * 10) / 10}%)
                   </Typography>
                 </Stack>
               </CardContent>
@@ -278,7 +363,7 @@ const SavingsBalanceChart = ({
                     </Typography>
                   </Stack>
                   <Typography variant="body2" color="error.main" fontWeight={700}>
-                    {formatAmount(lostSavings)} ({Math.round(lostPercent * 10) / 10}%)
+                    {formatAmount(totalLostSavings)} ({Math.round(lostPercent * 10) / 10}%)
                   </Typography>
                 </Stack>
               </CardContent>
@@ -353,6 +438,15 @@ export const ProjectManagerSavingsDashboard = () => {
     );
   }, [savings.items]);
 
+  const totalClosedAmount = useMemo(
+    () =>
+      (savings.closed_items ?? []).reduce((acc, item) => {
+        const amount = item.final_amount ?? item.initial_amount ?? item.offer_amount ?? 0;
+        return acc + (Number.isFinite(amount) ? amount : 0);
+      }, 0),
+    [savings.closed_items]
+  );
+
   const closedItemsList = useMemo(() => itemsByClosed.map((item) => toClosedSummaryListItem(item)), [itemsByClosed]);
 
   const withSavingsList = useMemo(() => itemsWithSavings.map((item) => toSummaryListItem(item)), [itemsWithSavings]);
@@ -388,7 +482,11 @@ export const ProjectManagerSavingsDashboard = () => {
         </Card>
       ) : (
         <>
-          <SavingsBalanceChart totalSavings={summary.totalSavings} lostSavings={summary.lostSavings} />
+          <SavingsBalanceChart
+            totalClosedAmount={totalClosedAmount}
+            netSavings={savings.total_savings_amount}
+            lostSavings={summary.lostSavings}
+          />
 
           <Box
             sx={{
