@@ -26,6 +26,16 @@ class UserRepository:
     async def add(self, user: User) -> None:
         self._session.add(user)
 
+    async def list_subordinates_with_profiles(self, *, manager_user_id: str) -> list[tuple[User, Profile | None]]:
+        stmt = (
+            select(User, Profile)
+            .outerjoin(Profile, Profile.id == User.id)
+            .where(User.id_parent == manager_user_id)
+            .order_by(User.id)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
     async def list_users_with_profiles(self, role_id: int | None = None) -> list[tuple[User, Profile | None]]:
         stmt = (
             select(User, Profile)
@@ -105,6 +115,9 @@ class UserRepository:
     async def update_role(self, user: User, role_id: int) -> None:
         user.id_role = role_id
 
+    async def update_parent(self, user: User, parent_user_id: str | None) -> None:
+        user.id_parent = parent_user_id
+
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int) -> int | None:
         stmt = (
             select(TgUser.id)
@@ -116,6 +129,25 @@ class UserRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_active_approved_contractor_tg_ids(
+        self,
+        *,
+        contractor_role_id: int,
+        exclude_user_ids: list[str] | None = None,
+    ) -> list[int]:
+        stmt = (
+            select(TgUser.id)
+            .join(User, User.tg_user_id == TgUser.id)
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(TgUser.status == "approved")
+            .order_by(User.id.asc())
+        )
+        if exclude_user_ids:
+            stmt = stmt.where(User.id.not_in(exclude_user_ids))
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
 
     async def list_active_tg_user_ids(self) -> list[int]:

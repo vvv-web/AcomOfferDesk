@@ -33,12 +33,56 @@ class DashboardRequestItemSchema(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_user_id: str
+    owner_full_name: str | None
+
+
+class UpcomingUnavailabilityItemSchema(BaseModel):
+    user_id: str
+    full_name: str | None
+    role_name: str
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
+class DashboardSavingsItemSchema(BaseModel):
+    request_id: int
+    owner_user_id: str
+    owner_full_name: str | None
+    initial_amount: float
+    offer_amount: float
+    final_amount: float
+    savings_amount: float
+    closed_at: datetime | None
+
+
+class DashboardClosedRequestItemSchema(BaseModel):
+    request_id: int
+    owner_user_id: str
+    owner_full_name: str | None
+    initial_amount: float | None
+    offer_amount: float | None
+    final_amount: float | None
+    savings_amount: float | None
+    closed_at: datetime | None
+
+
+class DashboardSavingsSummarySchema(BaseModel):
+    total_closed_requests: int
+    total_with_savings: int
+    total_savings_amount: float
+    closed_items: list[DashboardClosedRequestItemSchema]
+    items: list[DashboardSavingsItemSchema]
 
 
 class ResponsibilityDashboardData(BaseModel):
     tree: list[DashboardEconomistNodeSchema]
     unassigned_requests: list[DashboardRequestItemSchema]
+    my_requests: list[DashboardRequestItemSchema]
     assigned_requests: list[DashboardRequestItemSchema]
+    active_unavailability: list[UpcomingUnavailabilityItemSchema]
+    upcoming_unavailability: list[UpcomingUnavailabilityItemSchema]
+    savings: DashboardSavingsSummarySchema
 
 
 class ResponsibilityDashboardResponse(BaseModel):

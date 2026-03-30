@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 import io
-import os
-import zipfile
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
+from urllib.parse import quote
 
-import anyio
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
+from app.api.action_flags import OfferActionBuilder, RequestActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
 from app.core.uow import UnitOfWork
-from app.domain.exceptions import Conflict, Forbidden, NotFound
-from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
+from app.domain.authorization import has_permission
+from app.domain.exceptions import Forbidden, NotFound
+from app.domain.permissions import PermissionCodes
+from app.domain.policies import CurrentUser
 from app.schemas.links import Link, LinkSet
 from app.schemas.requests import (
+    DeletedAlertViewed,
+    DeletedAlertViewedResponse,
     OfferItemSchema,
     OfferedRequestOfferSchema,
     OpenRequestItemSchema,
@@ -27,9 +29,9 @@ from app.schemas.requests import (
     RequestDetailsResponse,
     RequestDetailsResponseData,
     RequestDetailsSchema,
-    DeletedAlertViewed,
-    DeletedAlertViewedResponse,
     RequestEditPayload,
+    RequestEmailNotificationPayload,
+    RequestEmailNotificationResponse,
     RequestFileMutationResponse,
     RequestFileSchema,
     RequestItemSchema,
@@ -39,219 +41,99 @@ from app.schemas.requests import (
     RequestOfferStatsSchema,
     RequestStatsSchema,
 )
+from app.services.email_notifications import EmailNotificationService
+from app.services.files import FileService
 from app.services.requests import RequestEditInput, RequestFileCreateInput, RequestService
 
 router = APIRouter()
 
-_ALLOWED_EXTENSIONS = {
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".txt",
-    ".md",
-    ".doc",
-    ".docx",
-    ".docs",
-    ".xls",
-    ".xlsx",
-    ".exl",
-    ".csv",
-    ".ods",
-}
-_DANGEROUS_EXTENSIONS = {".exe", ".sh", ".bat", ".cmd", ".ps1", ".js", ".msi", ".dll", ".so", ".jar"}
-_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+
+def _request_file_schema(file_item) -> RequestFileSchema:
+    return RequestFileSchema(
+        id=file_item.id,
+        path=file_item.path,
+        name=file_item.name,
+        download_url=f"/api/v1/files/{file_item.id}/download",
+    )
 
 
-def _is_zip_based_office_document(*, content: bytes, required_entry: str) -> bool:
-    if not content.startswith(b"PK\x03\x04"):
-        return False
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            names = set(archive.namelist())
-            return required_entry in names
-    except zipfile.BadZipFile:
-        return False
+def _request_stats_schema(item) -> RequestStatsSchema:
+    return RequestStatsSchema(
+        count_submitted=item.count_submitted,
+        count_deleted_alert=item.count_deleted_alert,
+        count_accepted_total=item.count_accepted_total,
+        count_rejected_total=item.count_rejected_total,
+    )
 
 
-def _magic_signature_matches(*, extension: str, content: bytes) -> bool:
-    if extension == ".pdf":
-        return content.startswith(b"%PDF-")
-    if extension == ".png":
-        return content.startswith(b"\x89PNG\r\n\x1a\n")
-    if extension in {".jpg", ".jpeg"}:
-        return content.startswith(b"\xff\xd8\xff")
-    if extension in {".txt", ".md", ".csv"}:
-        try:
-            content.decode("utf-8")
-        except UnicodeDecodeError:
-            return False
-        return True
-    if extension in {".doc", ".docs", ".xls", ".exl"}:
-        return content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
-    if extension == ".docx":
-        return _is_zip_based_office_document(content=content, required_entry="word/document.xml")
-    if extension == ".xlsx":
-        return _is_zip_based_office_document(content=content, required_entry="xl/workbook.xml")
-    if extension == ".ods":
-        if not content.startswith(b"PK\x03\x04"):
-            return False
-        try:
-            with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                names = set(archive.namelist())
-                if "mimetype" in names:
-                    mimetype = archive.read("mimetype")
-                    if mimetype == b"application/vnd.oasis.opendocument.spreadsheet":
-                        return True
-                return "content.xml" in names
-        except (zipfile.BadZipFile, KeyError):
-            return False
-    return False
+def _request_item_schema(current_user: CurrentUser, item) -> RequestItemSchema:
+    return RequestItemSchema(
+        request_id=item.request_id,
+        description=item.description,
+        status=item.status,
+        status_label=item.status_label,
+        initial_amount=None,
+        final_amount=None,
+        deadline_at=item.deadline_at,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        closed_at=item.closed_at,
+        owner_user_id=item.owner_user_id,
+        owner_full_name=item.owner_full_name,
+        chosen_offer_id=item.chosen_offer_id,
+        stats=_request_stats_schema(item),
+        unread_messages_count=item.unread_messages_count,
+        files=[_request_file_schema(file_item) for file_item in item.files],
+        actions=RequestActionBuilder.build(
+            current_user,
+            owner_user_id=item.owner_user_id,
+            status=item.status,
+            deleted_alert_count=item.count_deleted_alert,
+        ),
+    )
 
 
-def _sanitize_filename(filename: str) -> str:
-    basename = Path(filename).name.strip()
-    if not basename:
-        raise Conflict("File name is required")
-    if basename != filename.strip():
-        raise Conflict("Unsafe file name")
-    return basename
-
-
-async def _validate_upload(file: UploadFile) -> tuple[str, bytes]:
-    filename = _sanitize_filename(file.filename or "")
-    extension = Path(filename).suffix.lower()
-
-    if extension in _DANGEROUS_EXTENSIONS:
-        raise Conflict("Forbidden file type")
-    if extension not in _ALLOWED_EXTENSIONS:
-        raise Conflict("Unsupported file extension")
-
-    content = await file.read()
-    if not content:
-        raise Conflict("File cannot be empty")
-    if len(content) > _MAX_FILE_SIZE_BYTES:
-        raise Conflict("File too large")
-    if not _magic_signature_matches(extension=extension, content=content):
-        raise Conflict("File content does not match extension")
-
-    return filename, content
-
-def _request_actions(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_view_requests(current_user)
-    except Forbidden:
-        return None
-    actions = [
-        Link(href="/api/v1/requests", method="GET"),
-        Link(href="/api/v1/requests/{request_id}", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-    try:
-        UserPolicy.can_create_request(current_user)
-        actions.append(Link(href="/api/v1/requests", method="POST"))
-    except Forbidden:
-        pass
-
-    try:
-        UserPolicy.can_manage_requests(current_user)
-    except Forbidden:
-        if current_user.role_id == settings.operator_role_id:
-            actions.extend(
-                [
-                    Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-                    Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-                    Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-                ]
+def _open_request_item_schema(current_user: CurrentUser, item) -> OpenRequestItemSchema:
+    can_create_offer = (
+        current_user.role_id == settings.contractor_role_id
+        and item.status == "open"
+        and item.latest_offer_status in {None, "deleted"}
+    )
+    return OpenRequestItemSchema(
+        request_id=item.request_id,
+        description=item.description,
+        status=item.status,
+        status_label=item.status_label,
+        deadline_at=item.deadline_at,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        closed_at=item.closed_at,
+        owner_user_id=item.owner_user_id,
+        owner_full_name=item.owner_full_name,
+        chosen_offer_id=(None if current_user.role_id == settings.contractor_role_id else item.chosen_offer_id),
+        files=[_request_file_schema(file_item) for file_item in item.files],
+        offers=[
+            OfferedRequestOfferSchema(
+                offer_id=offer.offer_id,
+                status=offer.status,
+                unread_messages_count=offer.unread_messages_count,
+                actions=OfferActionBuilder.build(
+                    current_user,
+                    offer_owner_user_id=current_user.user_id,
+                    request_owner_user_id=item.owner_user_id,
+                    contractor_user_id=current_user.user_id,
+                    offer_status=offer.status,
+                ),
             )
-        return actions
-
-    actions.extend(
-        [
-            Link(href="/api/v1/requests/{request_id}", method="PATCH"),
-            Link(href="/api/v1/requests/{request_id}/files", method="POST"),
-            Link(href="/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
-            Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-        ]
+            for offer in item.offers
+        ],
+        actions=RequestActionBuilder.build(
+            current_user,
+            owner_user_id=item.owner_user_id,
+            status=item.status,
+            can_create_offer=can_create_offer,
+        ),
     )
-
-    return actions
-
-def _open_request_actions(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_view_open_requests(current_user)
-    except Forbidden:
-        return None
-    actions = [
-        Link(href="/api/v1/requests/open", method="GET"),
-        Link(href="/api/v1/requests/offered", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-    try:
-        UserPolicy.can_create_offer(current_user)
-    except Forbidden:
-        return actions
-
-    actions.extend(
-        [
-            Link(href="/api/v1/requests/{request_id}/contractor-view", method="GET"),
-            Link(href="/api/v1/requests/{request_id}/offers", method="POST"),
-        ]
-    )
-    return actions
-
-def _offered_request_actions(current_user: CurrentUser) -> list[Link] | None:
-    try:
-        UserPolicy.can_view_offered_requests(current_user)
-    except Forbidden:
-        return None
-    return [
-        Link(href="/api/v1/requests/offered", method="GET"),
-        Link(href="/api/v1/requests/{request_id}/contractor-view", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-
-
-def _request_detail_actions(current_user: CurrentUser, *, request_id: int, owner_user_id: str) -> list[Link] | None:
-    actions = [
-        Link(href="/api/v1/requests", method="GET"),
-        Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/workspace", method="GET"),
-        Link(href="/api/v1/offers/{offer_id}/messages", method="GET"),
-        Link(href="/api/v1/files/{file_id}/download", method="GET"),
-    ]
-
-    try:
-        RequestPolicy.can_edit_owned_unassigned(current_user, request_owner_user_id=owner_user_id)
-        actions.extend(
-            [
-                Link(href=f"/api/v1/requests/{request_id}", method="PATCH"),
-                Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
-                Link(href=f"/api/v1/requests/{request_id}/files/{{file_id}}", method="DELETE"),
-            ]
-        )
-    except Forbidden:
-        return actions
-
-    try:
-        RequestPolicy.can_edit(current_user, request_owner_user_id=owner_user_id)
-    except Forbidden:
-        return actions
-
-    actions.extend(
-        [
-            Link(href="/api/v1/offers/{offer_id}/status", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/attachments", method="POST"),
-            Link(href="/api/v1/offers/{offer_id}/messages/received", method="PATCH"),
-            Link(href="/api/v1/offers/{offer_id}/messages/read", method="PATCH"),
-        ]
-    )
-
-    return actions
 
 
 @router.get("/requests", response_model=RequestListResponse)
@@ -261,49 +143,19 @@ async def list_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         items = await service.list_requests(current_user=current_user)
 
     return RequestListResponse(
         data=RequestListData(
-            items=[
-                RequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    closed_at=item.closed_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                    chosen_offer_id=item.chosen_offer_id,
-                    stats=RequestStatsSchema(
-                        count_submitted=item.count_submitted,
-                        count_deleted_alert=item.count_deleted_alert,
-                        count_accepted_total=item.count_accepted_total,
-                        count_rejected_total=item.count_rejected_total,
-                    ),
-                    unread_messages_count=item.unread_messages_count,
-                    files=[
-                        RequestFileSchema(
-                            id=f.id,
-                            path=f.path,
-                            name=f.name,
-                            download_url=f"/api/v1/files/{f.id}/download",
-                        )
-                        for f in item.files
-                    ],
-                )
-                for item in items
-            ]
+            items=[_request_item_schema(current_user, item) for item in items],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/requests", method="GET"),
-            available_actions=_request_actions(current_user),
         ),
     )
+
 
 @router.get("/requests/open", response_model=OpenRequestListResponse)
 @router.get("/requests/open/", response_model=OpenRequestListResponse, include_in_schema=False)
@@ -312,7 +164,7 @@ async def list_open_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OpenRequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         if current_user.role_id == settings.contractor_role_id:
             items = await service.list_open_requests_for_contractor(current_user=current_user)
         else:
@@ -320,37 +172,14 @@ async def list_open_requests(
 
     return OpenRequestListResponse(
         data=OpenRequestListData(
-            items=[
-                OpenRequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    closed_at=item.closed_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                    chosen_offer_id=(None if current_user.role_id == settings.contractor_role_id else item.chosen_offer_id),
-                    files=[
-                        RequestFileSchema(
-                            id=f.id,
-                            path=f.path,
-                            name=f.name,
-                            download_url=f"/api/v1/files/{f.id}/download",
-                        )
-                        for f in item.files
-                    ],
-                )
-                for item in items
-            ]
+            items=[_open_request_item_schema(current_user, item) for item in items],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/requests/open", method="GET"),
-            available_actions=_open_request_actions(current_user),
         ),
     )
+
 
 @router.get("/requests/offered", response_model=OpenRequestListResponse)
 @router.get("/requests/offered/", response_model=OpenRequestListResponse, include_in_schema=False)
@@ -359,50 +188,19 @@ async def list_offered_requests(
     uow: UnitOfWork = Depends(get_uow),
 ) -> OpenRequestListResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         items = await service.list_offered_requests_for_contractor(current_user=current_user)
 
     return OpenRequestListResponse(
         data=OpenRequestListData(
-            items=[
-                OpenRequestItemSchema(
-                    request_id=item.request_id,
-                    description=item.description,
-                    status=item.status,
-                    status_label=item.status_label,
-                    deadline_at=item.deadline_at,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at,
-                    closed_at=item.closed_at,
-                    owner_user_id=item.owner_user_id,
-                    owner_full_name=item.owner_full_name,
-                    chosen_offer_id=None,
-                    files=[
-                        RequestFileSchema(
-                            id=f.id,
-                            path=f.path,
-                            name=f.name,
-                            download_url=f"/api/v1/files/{f.id}/download",
-                        )
-                        for f in item.files
-                    ],
-                    offers=[
-                        OfferedRequestOfferSchema(
-                            offer_id=offer.offer_id,
-                            status=offer.status,
-                            unread_messages_count=offer.unread_messages_count,
-                        )
-                        for offer in item.offers
-                    ],
-                )
-                for item in items
-            ]
+            items=[_open_request_item_schema(current_user, item) for item in items],
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href="/api/v1/requests/offered", method="GET"),
-            available_actions=_offered_request_actions(current_user),
         ),
     )
+
 
 @router.get("/requests/{request_id}", response_model=RequestDetailsResponse)
 @router.get("/requests/{request_id}/", response_model=RequestDetailsResponse, include_in_schema=False)
@@ -412,8 +210,14 @@ async def get_request_details(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestDetailsResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         item = await service.get_request_details(current_user=current_user, request_id=request_id)
+    request_actions = RequestActionBuilder.build(
+        current_user,
+        owner_user_id=item.owner_user_id,
+        status=item.status,
+        deleted_alert_count=item.count_deleted_alert,
+    )
 
     return RequestDetailsResponse(
         data=RequestDetailsResponseData(
@@ -422,6 +226,8 @@ async def get_request_details(
                 description=item.description,
                 status=item.status,
                 status_label=item.status_label,
+                initial_amount=item.initial_amount if request_actions.can_view_amounts else None,
+                final_amount=item.final_amount if request_actions.can_view_amounts else None,
                 deadline_at=item.deadline_at,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
@@ -429,32 +235,21 @@ async def get_request_details(
                 owner_user_id=item.owner_user_id,
                 owner_full_name=item.owner_full_name,
                 chosen_offer_id=item.chosen_offer_id,
-                stats=RequestStatsSchema(
-                    count_submitted=item.count_submitted,
-                    count_deleted_alert=item.count_deleted_alert,
-                    count_accepted_total=item.count_accepted_total,
-                    count_rejected_total=item.count_rejected_total,
-                ),
+                stats=_request_stats_schema(item),
                 unread_messages_count=item.unread_messages_count,
-                files=[
-                    RequestFileSchema(
-                        id=f.id,
-                        path=f.path,
-                        name=f.name,
-                        download_url=f"/api/v1/files/{f.id}/download",
-                    )
-                    for f in item.files
-                ],
+                files=[_request_file_schema(file_item) for file_item in item.files],
+                actions=request_actions,
                 offers=[
                     OfferItemSchema(
                         offer_id=offer.offer_id,
                         contractor_user_id=offer.contractor_user_id,
                         status=offer.status,
                         status_label=offer.status_label,
+                        offer_amount=offer.offer_amount,
                         created_at=offer.created_at,
                         updated_at=offer.updated_at,
                         offer_workspace_url=offer.offer_workspace_url,
-                        contractor_full_name=offer.contractor_full_name,                        
+                        contractor_full_name=offer.contractor_full_name,
                         contractor_phone=offer.contractor_phone,
                         contractor_mail=offer.contractor_mail,
                         contractor_inn=offer.contractor_inn,
@@ -465,28 +260,23 @@ async def get_request_details(
                         contractor_contact_mail=offer.contractor_contact_mail,
                         contractor_address=offer.contractor_address,
                         contractor_note=offer.contractor_note,
-                        files=[
-                            RequestFileSchema(
-                                id=f.id,
-                                path=f.path,
-                                name=f.name,
-                                download_url=f"/api/v1/files/{f.id}/download",
-                            )
-                            for f in offer.files
-                        ],
+                        files=[_request_file_schema(file_item) for file_item in offer.files],
                         unread_messages_count=offer.unread_messages_count,
+                        actions=OfferActionBuilder.build(
+                            current_user,
+                            offer_owner_user_id=offer.contractor_user_id,
+                            request_owner_user_id=item.owner_user_id,
+                            contractor_user_id=offer.contractor_user_id,
+                            offer_status=offer.status,
+                        ),
                     )
                     for offer in item.offers
                 ],
-            )
+            ),
+            permissions=serialize_permissions(current_user),
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_detail_actions(
-                current_user,
-                request_id=request_id,
-                owner_user_id=item.owner_user_id,
-            ),
         ),
     )
 
@@ -495,40 +285,57 @@ async def get_request_details(
 async def create_request(
     deadline_at: datetime = Form(...),
     description: str | None = Form(default=None),
+    initial_amount: float | None = Form(default=None),
+    additional_emails: list[str] | None = Form(default=None),
+    hidden_contractor_ids: list[str] | None = Form(default=None),
     files: list[UploadFile] = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestCreateResponse:
-    if not files:
-        raise Conflict("At least one file is required")
-
-    relative_dir = Path("uploads")
-    await anyio.Path(relative_dir).mkdir(parents=True, exist_ok=True)
-
+    validator = FileService()
     file_inputs: list[RequestFileCreateInput] = []
     for file in files:
-        safe_name, content = await _validate_upload(file)
-
-        ext = os.path.splitext(safe_name)[1]
-        generated_name = f"{uuid4().hex}{ext}"
-        relative_path = relative_dir / generated_name
-        await anyio.Path(relative_path).write_bytes(content)
-        file_inputs.append(RequestFileCreateInput(path=str(relative_path), name=safe_name))
-
-    async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
-        request_id, file_ids = await service.create_request(
-            current_user=current_user,
-            deadline_at=deadline_at,
-            description=description,
-            files=file_inputs,
+        prepared = await validator.prepare_upload(file)
+        file_inputs.append(
+            RequestFileCreateInput(
+                original_name=prepared.original_name,
+                content_bytes=prepared.content_bytes,
+                mime_type=prepared.mime_type,
+            )
         )
+
+    request_file_service: FileService | None = None
+    try:
+        async with uow:
+            request_file_service = FileService(uow.files)
+            email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+            service = RequestService(
+                uow.requests,
+                uow.files,
+                uow.users,
+                uow.offers,
+                uow.user_status_periods,
+                email_notifications=email_notifications,
+                file_service=request_file_service,
+            )
+            request_id, file_ids = await service.create_request(
+                current_user=current_user,
+                deadline_at=deadline_at,
+                description=description,
+                initial_amount=initial_amount,
+                files=file_inputs,
+                additional_emails=additional_emails,
+                hidden_contractor_ids=hidden_contractor_ids,
+            )
+    except Exception:
+        if request_file_service is not None:
+            await request_file_service.cleanup_tracked_objects()
+        raise
 
     return RequestCreateResponse(
         data={"request_id": request_id, "file_ids": file_ids},
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
         ),
     )
 
@@ -541,7 +348,7 @@ async def update_request(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestMutationResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         await service.update_request(
             current_user=current_user,
             request_id=request_id,
@@ -549,6 +356,8 @@ async def update_request(
                 status=payload.status,
                 deadline_at=payload.deadline_at,
                 owner_user_id=payload.owner_user_id,
+                initial_amount=payload.initial_amount,
+                final_amount=payload.final_amount,
             ),
         )
 
@@ -556,7 +365,37 @@ async def update_request(
         data={"request_id": request_id},
         _links=LinkSet(
             self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
+        ),
+    )
+
+
+@router.post("/requests/{request_id}/email-notifications", response_model=RequestEmailNotificationResponse)
+async def send_request_email_notifications(
+    payload: RequestEmailNotificationPayload = Body(...),
+    request_id: int = PathParam(..., ge=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> RequestEmailNotificationResponse:
+    async with uow:
+        email_notifications = EmailNotificationService(uow.profiles, uow.requests)
+        service = RequestService(
+            uow.requests,
+            uow.files,
+            uow.users,
+            uow.offers,
+            uow.user_status_periods,
+            email_notifications=email_notifications,
+        )
+        result = await service.send_request_email_notification(
+            current_user=current_user,
+            request_id=request_id,
+            additional_emails=payload.additional_emails,
+        )
+
+    return RequestEmailNotificationResponse(
+        data={"request_id": result.request_id, "sent_to": result.sent_to},
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/requests/{request_id}/email-notifications", method="POST"),
         ),
     )
 
@@ -568,28 +407,38 @@ async def add_request_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestFileMutationResponse:
-    safe_name, content = await _validate_upload(file)
+    prepared = await FileService().prepare_upload(file)
 
-    relative_dir = Path("uploads")
-    await anyio.Path(relative_dir).mkdir(parents=True, exist_ok=True)
-    ext = os.path.splitext(safe_name)[1]
-    generated_name = f"{uuid4().hex}{ext}"
-    relative_path = relative_dir / generated_name
-    await anyio.Path(relative_path).write_bytes(content)
-
-    async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
-        file_id = await service.attach_file(
-            current_user=current_user,
-            request_id=request_id,
-            file_data=RequestFileCreateInput(path=str(relative_path), name=safe_name),
-        )
+    request_file_service: FileService | None = None
+    try:
+        async with uow:
+            request_file_service = FileService(uow.files)
+            service = RequestService(
+                uow.requests,
+                uow.files,
+                uow.users,
+                uow.offers,
+                uow.user_status_periods,
+                file_service=request_file_service,
+            )
+            file_id = await service.attach_file(
+                current_user=current_user,
+                request_id=request_id,
+                file_data=RequestFileCreateInput(
+                    original_name=prepared.original_name,
+                    content_bytes=prepared.content_bytes,
+                    mime_type=prepared.mime_type,
+                ),
+            )
+    except Exception:
+        if request_file_service is not None:
+            await request_file_service.cleanup_tracked_objects()
+        raise
 
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
         _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
+            self=Link(href=f"/api/v1/requests/{request_id}/files", method="POST"),
         ),
     )
 
@@ -602,7 +451,7 @@ async def delete_request_file(
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestFileMutationResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         await service.remove_file(
             current_user=current_user,
             request_id=request_id,
@@ -612,8 +461,7 @@ async def delete_request_file(
     return RequestFileMutationResponse(
         data={"request_id": request_id, "file_id": file_id},
         _links=LinkSet(
-            self=Link(href=f"/api/v1/requests/{request_id}", method="GET"),
-            available_actions=_request_actions(current_user),
+            self=Link(href=f"/api/v1/requests/{request_id}/files/{file_id}", method="DELETE"),
         ),
     )
 
@@ -625,7 +473,7 @@ async def mark_deleted_alert_viewed(
     uow: UnitOfWork = Depends(get_uow),
 ) -> DeletedAlertViewedResponse:
     async with uow:
-        service = RequestService(uow.requests, uow.files, uow.users, uow.offers)
+        service = RequestService(uow.requests, uow.files, uow.users, uow.offers, uow.user_status_periods)
         updated_stats = await service.mark_deleted_alert_viewed(
             current_user=current_user,
             request_id=payload.request_id,
@@ -642,9 +490,13 @@ async def mark_deleted_alert_viewed(
         },
         _links=LinkSet(
             self=Link(href="/api/v1/requests/deleted-alerts/viewed", method="PATCH"),
-            available_actions=_request_actions(current_user),
         ),
     )
+
+
+def _build_content_disposition(filename: str) -> str:
+    quoted = quote(Path(filename).name, safe="")
+    return f"attachment; filename*=UTF-8''{quoted}"
 
 
 @router.get("/files/{file_id}/download")
@@ -653,21 +505,22 @@ async def download_file(
     file_id: int = PathParam(..., ge=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
-) -> FileResponse:
-    can_download = False
-    try:
-        UserPolicy.can_view_requests(current_user)
-        can_download = True
-    except Forbidden:
-        UserPolicy.can_create_offer(current_user)
+) -> StreamingResponse:
+    if not has_permission(current_user, PermissionCodes.FILES_DOWNLOAD):
+        raise Forbidden("Insufficient permissions for file download")
+
+    can_download_without_scope_check = has_permission(current_user, PermissionCodes.REQUESTS_READ)
 
     async with uow:
         db_file = await uow.files.get_by_id(file_id)
         if db_file is None:
             raise NotFound("File not found")
 
-        if not can_download:
-            linked_to_open_request = await uow.requests.is_file_linked_to_open_request(file_id=file_id)
+        if not can_download_without_scope_check:
+            linked_to_open_request = await uow.requests.is_file_linked_to_visible_open_request(
+                contractor_user_id=current_user.user_id,
+                file_id=file_id,
+            )
             linked_to_own_offer = await uow.offers.is_file_linked_to_contractor(
                 contractor_user_id=current_user.user_id,
                 file_id=file_id,
@@ -679,8 +532,15 @@ async def download_file(
             if not linked_to_open_request and not linked_to_own_offer and not linked_to_own_message:
                 raise Forbidden("Insufficient permissions for file download")
 
-    file_path = Path(db_file.path)
-    if not file_path.exists() or not file_path.is_file():
-        raise NotFound("File content not found")
-
-    return FileResponse(path=file_path, filename=db_file.name, media_type="application/octet-stream")
+    file_service = FileService()
+    content = await file_service.read_bytes(db_file=db_file)
+    media_type = db_file.mime_type or "application/octet-stream"
+    headers = {
+        "Content-Disposition": _build_content_disposition(db_file.original_name),
+        "Content-Length": str(len(content)),
+    }
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=media_type,
+        headers=headers,
+    )

@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
+    access_token_ttl_seconds: int = Field(default=300, validation_alias="ACCESS_TOKEN_TTL_SECONDS")
+    refresh_token_idle_ttl_seconds: int = Field(default=1800, validation_alias="REFRESH_TOKEN_IDLE_TTL_SECONDS")
+    refresh_token_max_ttl_seconds: int = Field(default=43200, validation_alias="REFRESH_TOKEN_MAX_TTL_SECONDS")
+    refresh_cookie_name: str = Field(default="acom_refresh_token", validation_alias="REFRESH_COOKIE_NAME")
+    refresh_cookie_secure: bool = Field(default=False, validation_alias="REFRESH_COOKIE_SECURE")
+    refresh_cookie_samesite: str = Field(default="lax", validation_alias="REFRESH_COOKIE_SAMESITE")
+    refresh_cookie_domain: str | None = Field(default=None, validation_alias="REFRESH_COOKIE_DOMAIN")
+    refresh_token_secret: str | None = Field(default=None, validation_alias="REFRESH_TOKEN_SECRET")
     superadmin_role_id: int = 1
     admin_role_id: int = 2
     contractor_role_id: int = 3
@@ -44,7 +52,52 @@ class Settings(BaseSettings):
     )
     public_backend_base_url: str | None = Field(default=None, validation_alias="PUBLIC_BACKEND_BASE_URL")
     web_base_url: str | None = Field(default=None, validation_alias="WEB_BASE_URL")
+    tg_bot_public_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("TG_BOT_PUBLIC_URL", "TG_BOT_LINK"),
+    )
+    email_address: str = Field(..., validation_alias="EMAIL_ADDRESS")
+    email_from_name: str = Field(default="AcomOfferDesk", validation_alias="EMAIL_FROM_NAME")
+    email_app_password: str = Field(..., validation_alias="EMAIL_APP_PASSWORD")
+    smtp_host: str = Field(..., validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=465, validation_alias="SMTP_PORT")
+    rabbitmq_url: str = Field(default="amqp://guest:guest@rabbitmq:5672/", validation_alias="RABBITMQ_URL")
+    email_verification_secret: str = Field(..., validation_alias="EMAIL_VERIFICATION_SECRET")
+    email_verification_ttl_seconds: int = Field(default=3600, validation_alias="EMAIL_VERIFICATION_TTL_SECONDS")
+    reply_email_token_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("REPLY_EMAIL_TOKEN_SECRET", "EMAIL_REPLY_SECRET"),
+    )
+    reply_email_ttl_seconds: int = Field(
+        default=604800,
+        validation_alias=AliasChoices("REPLY_EMAIL_TTL_SECONDS", "EMAIL_REPLY_TTL_SECONDS"),
+    )
+    imap_host: str | None = Field(default=None, validation_alias="IMAP_HOST")
+    imap_port: int = Field(default=993, validation_alias="IMAP_PORT")
+    imap_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("IMAP_USERNAME", "EMAIL_ADDRESS"),
+    )
+    imap_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("IMAP_PASSWORD", "EMAIL_APP_PASSWORD"),
+    )
+    imap_mailbox: str = Field(default="INBOX", validation_alias="IMAP_MAILBOX")
+    request_mailbox_poll_limit: int = Field(default=20, validation_alias="REQUEST_MAILBOX_POLL_LIMIT")
+    request_mailbox_poll_interval_seconds: int = Field(
+        default=60,
+        validation_alias="REQUEST_MAILBOX_POLL_INTERVAL_SECONDS",
+    )
+    s3_endpoint: str = Field(..., validation_alias="S3_ENDPOINT")
+    s3_public_endpoint: str | None = Field(default=None, validation_alias="S3_PUBLIC_ENDPOINT")
+    s3_access_key: str = Field(..., validation_alias="S3_ACCESS_KEY")
+    s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
+    s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
+    s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
+    s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
+    max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
+    tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
     allowed_creation_role_ids: list[int] = Field(default_factory=lambda: [2, 3, 4, 5, 6, 7])
     cors_allow_origins: list[str] = Field(
@@ -72,6 +125,23 @@ class Settings(BaseSettings):
         self.lead_economist_role_id = 5
         self.economist_role_id = 6
         self.operator_role_id = 7
+        self.refresh_cookie_samesite = self.refresh_cookie_samesite.lower().strip() or "lax"
+        if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
+            self.refresh_cookie_samesite = "lax"
+        if not self.refresh_token_secret:
+            self.refresh_token_secret = self.jwt_secret
+        self.s3_endpoint = self.s3_endpoint.strip()
+        if self.s3_public_endpoint is not None:
+            self.s3_public_endpoint = self.s3_public_endpoint.strip() or None
+        self.s3_bucket = self.s3_bucket.strip()
+        if not self.s3_endpoint:
+            raise ValueError("S3_ENDPOINT must not be blank")
+        if not self.s3_bucket:
+            raise ValueError("S3_BUCKET must not be blank")
+        if self.s3_presigned_get_ttl_seconds <= 0:
+            self.s3_presigned_get_ttl_seconds = 300
+        if self.max_upload_size_bytes <= 0:
+            self.max_upload_size_bytes = 10 * 1024 * 1024
         return self
 
     @property
@@ -80,6 +150,10 @@ class Settings(BaseSettings):
         if self.web_base_url and self.web_base_url not in origins:
             origins.append(self.web_base_url)
         return origins
+
+    @property
+    def resolved_refresh_token_secret(self) -> str:
+        return self.refresh_token_secret or self.jwt_secret
 
 
 settings = Settings()

@@ -21,9 +21,14 @@ import {
   getResponsibilityDashboard,
   type ResponsibilityEmployeeNode,
   type ResponsibilityStatusCounter,
-  type ResponsibilityDashboardRequest
-} from '@shared/api/getResponsibilityDashboard';
-import { updateRequestDetails } from '@shared/api/updateRequestDetails';
+  type ResponsibilityDashboardRequest,
+  type ResponsibilityUpcomingUnavailability
+} from '@shared/api/users/getResponsibilityDashboard';
+import { useAuth } from '@app/providers/AuthProvider';
+import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
+import { ROLE } from '@shared/constants/roles';
+import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
+import { formatUnavailabilityDate, getUnavailabilityStatusLabel, getUnavailabilityTooltip, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Сбор КП',
@@ -52,6 +57,115 @@ const formatDate = (value: string) =>
     month: '2-digit',
     year: 'numeric'
   }).format(new Date(value));
+
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const getDaysUntil = (value: string) => {
+  const targetDate = new Date(value);
+  if (Number.isNaN(targetDate.getTime())) {
+    return null;
+  }
+
+  const today = startOfDay(new Date());
+  const target = startOfDay(targetDate);
+  return Math.round((target.getTime() - today.getTime()) / MS_IN_DAY);
+};
+
+const getRelativeAvailabilityLabel = (value: string) => {
+  const daysUntil = getDaysUntil(value);
+  if (daysUntil === null) {
+    return null;
+  }
+
+  if (daysUntil <= 0) {
+    return 'сегодня';
+  }
+
+  if (daysUntil === 1) {
+    return 'завтра';
+  }
+
+  if (daysUntil === 2) {
+    return 'послезавтра';
+  }
+
+  return `через ${daysUntil} дн.`;
+};
+
+const getUpcomingUrgency = (value: string) => {
+  const daysUntil = getDaysUntil(value);
+  if (daysUntil === null) {
+    return 'planned' as const;
+  }
+
+  if (daysUntil <= 7) {
+    return 'soon' as const;
+  }
+
+  return 'planned' as const;
+};
+
+const getActiveUnavailability = (
+  userId: string,
+  periods: Array<{ user_id: string; status: string; started_at: string; ended_at: string }>
+): UnavailabilityPeriodInfo | null => {
+  const now = new Date();
+  const activePeriod = periods.find((item) => {
+    if (item.user_id !== userId) {
+      return false;
+    }
+
+    const startedAt = new Date(item.started_at);
+    const endedAt = new Date(item.ended_at);
+    return startedAt <= now && endedAt >= now;
+  });
+
+  if (!activePeriod) {
+    return null;
+  }
+
+  return {
+    status: activePeriod.status,
+    startedAt: activePeriod.started_at,
+    endedAt: activePeriod.ended_at
+  };
+};
+
+const toPeriodInfo = (period: ResponsibilityUpcomingUnavailability): UnavailabilityPeriodInfo => ({
+  status: period.status,
+  startedAt: period.started_at,
+  endedAt: period.ended_at
+});
+
+const formatUnavailabilityRange = (period: UnavailabilityPeriodInfo) =>
+  `${formatUnavailabilityDate(period.startedAt)} — ${formatUnavailabilityDate(period.endedAt)}`;
+
+const formatUnavailabilitySummary = (fullName: string, period: UnavailabilityPeriodInfo, prefix: string) => {
+  const relativeLabel = getRelativeAvailabilityLabel(period.startedAt);
+  const suffix = relativeLabel ? `, ${relativeLabel}` : '';
+  const prefixPart = prefix ? `${prefix}: ` : '';
+  return `${prefixPart}${fullName}, ${getUnavailabilityStatusLabel(period.status)} (${formatUnavailabilityRange(period)}${suffix})`;
+};
+
+const getRequestOwnerWarningTooltip = ({
+  activePeriod,
+  upcomingPeriod,
+}: {
+  activePeriod: UnavailabilityPeriodInfo | null;
+  upcomingPeriod: UnavailabilityPeriodInfo | null;
+}) => {
+  if (activePeriod) {
+    return `Сотрудник сейчас недоступен. ${getUnavailabilityTooltip(activePeriod)}`;
+  }
+
+  if (upcomingPeriod) {
+    return `Скоро будет недоступен. ${getUnavailabilityTooltip(upcomingPeriod)}`;
+  }
+
+  return null;
+};
 
 const flattenEmployees = (nodes: ResponsibilityEmployeeNode[]): ResponsibilityEmployeeNode[] =>
   nodes.flatMap((node) => [node, ...flattenEmployees(node.children)]);
@@ -104,6 +218,7 @@ const SegmentedProgressBar = ({
 
   if (total === 0) {
     return (
+
       <Box
         sx={{
           height,
@@ -414,24 +529,31 @@ const EmployeeWorkloadChart = ({
   );
 };
 
-
 const EmployeeNodeCard = ({
   node,
   level,
   expanded,
   onToggle,
-  statusColors
+  statusColors,
+  activeUnavailabilityByUser,
+  upcomingUnavailabilityByUser
 }: {
   node: ResponsibilityEmployeeNode;
   level: number;
   expanded: ExpandedState;
   onToggle: (userId: string) => void;
   statusColors: Record<string, string>;
+  activeUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
+  upcomingUnavailabilityByUser: Record<string, UnavailabilityPeriodInfo>;
 }) => {
   const ownTotals = getNodeTotals(node.statuses);
   const subordinatesTotals = collectDescendantTotals(node);
   const hasSubordinates = node.children.length > 0;
   const isExpanded = expanded[node.user_id] ?? false;
+  const activeUnavailability = activeUnavailabilityByUser[node.user_id] ?? null;
+  const upcomingUnavailability = upcomingUnavailabilityByUser[node.user_id] ?? null;
+  const upcomingUrgency = upcomingUnavailability ? getUpcomingUrgency(upcomingUnavailability.startedAt) : null;
+  const upcomingRelativeLabel = upcomingUnavailability ? getRelativeAvailabilityLabel(upcomingUnavailability.startedAt) : null;
 
   return (
     <Card
@@ -448,6 +570,24 @@ const EmployeeNodeCard = ({
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1}>
             <Stack spacing={0.5}>
               <Typography fontWeight={700}>{node.full_name || node.user_id}</Typography>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                {activeUnavailability ? (
+                  <Chip
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    label={`${getUnavailabilityStatusLabel(activeUnavailability.status)} до ${formatUnavailabilityDate(activeUnavailability.endedAt)}`}
+                  />
+                ) : null}
+                {upcomingUnavailability ? (
+                  <Chip
+                    size="small"
+                    color={upcomingUrgency === 'soon' ? 'warning' : 'default'}
+                    variant="outlined"
+                    label={`${getUnavailabilityStatusLabel(upcomingUnavailability.status)} с ${formatUnavailabilityDate(upcomingUnavailability.startedAt)}`}
+                  />
+                ) : null}
+              </Stack>
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                 <Chip size="small" label={node.role_name} />
                 <Typography variant="caption" color="text.secondary">
@@ -484,6 +624,17 @@ const EmployeeNodeCard = ({
               Личная загрузка
             </Typography>
             <SegmentedProgressBar totals={ownTotals} statusColors={statusColors} />
+            {activeUnavailability ? (
+              <Typography variant="caption" color="error.main">
+                Сейчас недоступен: {getUnavailabilityStatusLabel(activeUnavailability.status)} ({formatUnavailabilityRange(activeUnavailability)})
+              </Typography>
+            ) : null}
+            {upcomingUnavailability ? (
+              <Typography variant="caption" color={upcomingUrgency === 'soon' ? 'warning.main' : 'text.secondary'}>
+                Будет недоступен: {getUnavailabilityStatusLabel(upcomingUnavailability.status)} ({formatUnavailabilityRange(upcomingUnavailability)})
+                {upcomingRelativeLabel ? `, ${upcomingRelativeLabel}` : ''}
+              </Typography>
+            ) : null}
           </Stack>
 
           {hasSubordinates ? (
@@ -507,6 +658,8 @@ const EmployeeNodeCard = ({
               expanded={expanded}
               onToggle={onToggle}
               statusColors={statusColors}
+              activeUnavailabilityByUser={activeUnavailabilityByUser}
+              upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}
             />
           ))}
         </Stack>
@@ -516,23 +669,36 @@ const EmployeeNodeCard = ({
 };
 
 export const ProjectManagerDashboard = () => {
+  const { session } = useAuth();
   const theme = useTheme();
   const statusColors = useMemo<Record<string, string>>(() => ({
     open: theme.palette.dashboard.status.open,
     review: theme.palette.dashboard.status.review
   }), [theme]);
   const workloadColors = useMemo(() => theme.palette.dashboard.workload, [theme]);
+  const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
 
   const [tree, setTree] = useState<ResponsibilityEmployeeNode[]>([]);
   const [unassignedRequests, setUnassignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
+  const [myRequests, setMyRequests] = useState<ResponsibilityDashboardRequest[]>([]);
   const [assignedRequests, setAssignedRequests] = useState<ResponsibilityDashboardRequest[]>([]);
-  const [requestsTab, setRequestsTab] = useState<'unassigned' | 'assigned'>('unassigned');
+  const [activeUnavailability, setActiveUnavailability] = useState<ResponsibilityUpcomingUnavailability[]>([]);
+  const [upcomingUnavailability, setUpcomingUnavailability] = useState<Array<{
+    user_id: string;
+    full_name: string | null;
+    role_name: string;
+    status: string;
+    started_at: string;
+    ended_at: string;
+  }>>([]);
+  const [requestsTab, setRequestsTab] = useState<'unassigned' | 'mine' | 'assigned'>('unassigned');
   const [assignmentState, setAssignmentState] = useState<AssignmentState>({});
   const [expandedNodes, setExpandedNodes] = useState<ExpandedState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [dismissedWarningKey, setDismissedWarningKey] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setIsLoading(true);
@@ -541,7 +707,10 @@ export const ProjectManagerDashboard = () => {
       const response = await getResponsibilityDashboard();
       setTree(response.tree);
       setUnassignedRequests(response.unassignedRequests);
+      setMyRequests(response.myRequests);
       setAssignedRequests(response.assignedRequests);
+      setActiveUnavailability(response.activeUnavailability);
+      setUpcomingUnavailability(response.upcomingUnavailability);
       setExpandedNodes((prev) => {
         const next = { ...prev };
         for (const node of flattenEmployees(response.tree)) {
@@ -562,6 +731,12 @@ export const ProjectManagerDashboard = () => {
     void loadDashboard();
   }, [loadDashboard]);
 
+  useEffect(() => {
+    if (!isLeadEconomist && requestsTab === 'mine') {
+      setRequestsTab('unassigned');
+    }
+  }, [isLeadEconomist, requestsTab]);
+
   const allSubordinates = useMemo(() => flattenEmployees(tree), [tree]);
   const globalTotals = useMemo(() => collectGlobalTotals(tree), [tree]);
   const inProgressTotal = useMemo(() => sumTotals(globalTotals), [globalTotals]);
@@ -578,9 +753,94 @@ export const ProjectManagerDashboard = () => {
     }, {});
   }, [allSubordinates]);
 
-  const visibleRequests = requestsTab === 'unassigned' ? unassignedRequests : assignedRequests;
+  const resolveAssigneeLabel = useCallback((request: ResponsibilityDashboardRequest, userId: string) => {
+    if (!userId) {
+      return 'Выберите ответственного';
+    }
+
+    const employee = allSubordinates.find((item) => item.user_id === userId);
+    if (employee) {
+      return `${employee.full_name || employee.user_id} (${employee.role_name})`;
+    }
+
+    return request.owner_full_name || employeeNameById[userId] || userId;
+  }, [allSubordinates, employeeNameById]);
+
+  const activeUnavailabilityByUser = useMemo(
+    () =>
+      activeUnavailability.reduce<Record<string, UnavailabilityPeriodInfo>>((acc, period) => {
+        acc[period.user_id] = toPeriodInfo(period);
+        return acc;
+      }, {}),
+    [activeUnavailability]
+  );
+
+  const upcomingUnavailabilityByUser = useMemo(
+    () =>
+      upcomingUnavailability.reduce<Record<string, UnavailabilityPeriodInfo>>((acc, period) => {
+        if (!acc[period.user_id]) {
+          acc[period.user_id] = toPeriodInfo(period);
+        }
+        return acc;
+      }, {}),
+    [upcomingUnavailability]
+  );
+
+  const warningGroups = useMemo(
+    () => ({
+      active: activeUnavailability.map((period) => ({
+        key: `active-${period.user_id}-${period.started_at}-${period.ended_at}`,
+        text: formatUnavailabilitySummary(period.full_name || period.user_id, toPeriodInfo(period), '')
+      })),
+      upcoming: upcomingUnavailability.flatMap((period) => {
+        const daysUntil = getDaysUntil(period.started_at);
+        if (daysUntil !== 7 && (daysUntil === null || daysUntil > 3)) {
+          return [];
+        }
+
+        return [{
+          key: `upcoming-${period.user_id}-${period.started_at}-${period.ended_at}-${daysUntil}`,
+          text: formatUnavailabilitySummary(period.full_name || period.user_id, toPeriodInfo(period), '')
+        }];
+      })
+    }),
+    [activeUnavailability, upcomingUnavailability]
+  );
+
+  const warningEntries = useMemo(
+    () => [...warningGroups.active, ...warningGroups.upcoming],
+    [warningGroups]
+  );
+
+  const warningKey = useMemo(
+    () => warningEntries.map((entry) => entry.key).join('|'),
+    [warningEntries]
+  );
+
+  const isWarningVisible = warningEntries.length > 0 && warningKey !== dismissedWarningKey;
+
+  const visibleRequests = useMemo(() => {
+    if (requestsTab === 'unassigned') {
+      return unassignedRequests;
+    }
+    if (requestsTab === 'mine') {
+      return myRequests;
+    }
+    return assignedRequests;
+  }, [assignedRequests, myRequests, requestsTab, unassignedRequests]);
 
   const handleAssigneeChange = (requestId: number, ownerId: string) => {
+    if (ownerId) {
+      const active = getActiveUnavailability(ownerId, activeUnavailability);
+
+      if (active) {
+        const start = formatUnavailabilityDate(active.startedAt);
+        const end = formatUnavailabilityDate(active.endedAt);
+        setErrorMessage(`Нельзя назначить ответственного: сотрудник сейчас недоступен (${start} — ${end})`);
+        return;
+      }
+    }
+
     setAssignmentState((prev) => ({ ...prev, [requestId]: ownerId }));
   };
 
@@ -639,6 +899,16 @@ export const ProjectManagerDashboard = () => {
     await applyAssignments(pendingAssignmentIds);
   };
 
+  useEffect(() => {
+    if (!warningKey || dismissedWarningKey === null) {
+      return;
+    }
+
+    if (warningKey !== dismissedWarningKey) {
+      setDismissedWarningKey(null);
+    }
+  }, [dismissedWarningKey, warningKey]);
+
   return (
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -658,8 +928,49 @@ export const ProjectManagerDashboard = () => {
         <EmployeeWorkloadChart employees={allSubordinates} workloadColors={workloadColors} />
       </Box>
 
-      {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-      {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
+      {errorMessage ? (
+        <Alert severity="error" onClose={() => setErrorMessage(null)}>
+          {errorMessage}
+        </Alert>
+      ) : null}
+      {successMessage ? (
+        <Alert severity="success" onClose={() => setSuccessMessage(null)}>
+          {successMessage}
+        </Alert>
+      ) : null}
+      {isWarningVisible ? (
+        <Alert severity="warning" onClose={() => setDismissedWarningKey(warningKey)}>
+          <Stack spacing={0.5}>
+            <Typography variant="body2" fontWeight={600}>
+              Внимание: кто-то из сотрудников сейчас недоступен или скоро будет недоступен.
+            </Typography>
+            {warningGroups.active.length > 0 ? (
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  Сейчас недоступны:
+                </Typography>
+                {warningGroups.active.map((entry) => (
+                  <Typography key={entry.key} variant="body2">
+                    {entry.text}
+                  </Typography>
+                ))}
+              </Box>
+            ) : null}
+            {warningGroups.upcoming.length > 0 ? (
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  Будут недоступны:
+                </Typography>
+                {warningGroups.upcoming.map((entry) => (
+                  <Typography key={entry.key} variant="body2">
+                    {entry.text}
+                  </Typography>
+                ))}
+              </Box>
+            ) : null}
+          </Stack>
+        </Alert>
+      ) : null}
 
       <Box
         sx={{
@@ -687,6 +998,8 @@ export const ProjectManagerDashboard = () => {
                     expanded={expandedNodes}
                     onToggle={toggleNode}
                     statusColors={statusColors}
+                    activeUnavailabilityByUser={activeUnavailabilityByUser}
+                    upcomingUnavailabilityByUser={upcomingUnavailabilityByUser}
                   />
                 ))}
               </Stack>
@@ -699,24 +1012,48 @@ export const ProjectManagerDashboard = () => {
             <Typography variant="h6" sx={{ mb: 0, fontWeight: 700 }}>
               Заявки
             </Typography>
-            <Tabs
-              value={requestsTab}
-              onChange={(_, value: 'unassigned' | 'assigned') => setRequestsTab(value)}
-              sx={{ mb: 2 }}
-            >
-              <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
-              <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
-            </Tabs>
+            {isLeadEconomist ? (
+              <Tabs
+                value={requestsTab}
+                onChange={(_, value: 'unassigned' | 'mine' | 'assigned') => setRequestsTab(value)}
+                sx={{ mb: 2 }}
+              >
+                <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
+                <Tab value="mine" label={`Мои (${myRequests.length})`} />
+                <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
+              </Tabs>
+            ) : (
+              <Tabs
+                value={requestsTab}
+                onChange={(_, value: 'unassigned' | 'mine' | 'assigned') => setRequestsTab(value)}
+                sx={{ mb: 2 }}
+              >
+                <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
+                <Tab value="assigned" label={`Распределённые (${assignedRequests.length})`} />
+              </Tabs>
+            )}
             <Stack spacing={1.5}>
               {visibleRequests.length === 0 ? (
-                <Typography color="text.secondary">
-                  {requestsTab === 'unassigned'
-                    ? 'Все заявки уже распределены по ответственным'
-                    : 'Нет распределённых заявок в работе'}
-                </Typography>
+                requestsTab === 'mine' ? (
+                  <Typography color="text.secondary">
+                    Нет моих заявок в работе
+                  </Typography>
+                ) : (
+                  <Typography color="text.secondary">
+                    {requestsTab === 'unassigned'
+                      ? 'Все заявки уже распределены по ответственным'
+                      : 'Нет распределённых заявок в работе'}
+                  </Typography>
+                )
               ) : (
                 visibleRequests.map((request) => {
-                  const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'assigned' ? request.owner_user_id : '');
+                  const selectedOwner = assignmentState[request.request_id] ?? (requestsTab === 'unassigned' ? '' : request.owner_user_id);
+                  const requestOwnerActiveUnavailability = activeUnavailabilityByUser[request.owner_user_id] ?? null;
+                  const requestOwnerUpcomingUnavailability = upcomingUnavailabilityByUser[request.owner_user_id] ?? null;
+                  const requestOwnerWarningTooltip = getRequestOwnerWarningTooltip({
+                    activePeriod: requestOwnerActiveUnavailability,
+                    upcomingPeriod: requestOwnerUpcomingUnavailability,
+                  });
                   return (
                     <Card key={`${requestsTab}-${request.request_id}`} variant="outlined" sx={{ borderRadius: 2 }}>
                       <CardContent>
@@ -741,10 +1078,36 @@ export const ProjectManagerDashboard = () => {
                             <Typography variant="caption" color="text.secondary">
                               Дедлайн: {formatDate(request.deadline_at)}
                             </Typography>
-                            {requestsTab === 'assigned' ? (
-                              <Typography variant="caption" color="text.secondary">
-                                Ответственный: {employeeNameById[request.owner_user_id] ?? request.owner_user_id}
-                              </Typography>
+                            {requestsTab !== 'unassigned' ? (
+                              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                                <Typography variant="caption" color="text.secondary">
+                                  Ответственный: {request.owner_full_name || employeeNameById[request.owner_user_id] || request.owner_user_id}
+                                </Typography>
+                                {requestOwnerWarningTooltip ? (
+                                  <Tooltip title={requestOwnerWarningTooltip} arrow>
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
+                                        border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
+                                        color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                        lineHeight: 1,
+                                        cursor: 'help'
+                                      }}
+                                    >
+                                      !
+                                    </Box>
+                                  </Tooltip>
+                                ) : null}
+                              </Stack>
                             ) : null}
                           </Stack>
 
@@ -757,13 +1120,17 @@ export const ProjectManagerDashboard = () => {
                               displayEmpty
                               fullWidth
                               value={selectedOwner}
+                              renderValue={(value) => resolveAssigneeLabel(request, String(value ?? ''))}
                               onChange={(event) => handleAssigneeChange(request.request_id, String(event.target.value))}
                             >
                               <MenuItem value="">Выберите ответственного</MenuItem>
                               {allSubordinates.map((employee) => (
-                                <MenuItem key={`${request.request_id}-${employee.user_id}`} value={employee.user_id}>
-                                  {employee.full_name || employee.user_id} ({employee.role_name})
-                                </MenuItem>
+                                <UnavailableAwareMenuItem
+                                  key={`${request.request_id}-${employee.user_id}`}
+                                  value={employee.user_id}
+                                  label={`${employee.full_name || employee.user_id} (${employee.role_name})`}
+                                  unavailablePeriod={getActiveUnavailability(employee.user_id, activeUnavailability)}
+                                />
                               ))}
                             </Select>
 

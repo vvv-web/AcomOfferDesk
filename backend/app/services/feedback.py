@@ -21,11 +21,11 @@ class FeedBackService:
         self._feedback = feedback
 
     async def create_feedback(self, *, current_user: CurrentUser, text: str) -> FeedBackCreateResult:
-        _ = current_user
+        UserPolicy.ensure_can_create_feedback(current_user)
         item = await self._feedback.create(text=text)
         return FeedBackCreateResult(feedback_id=item.id)
 
     async def list_feedback(self, *, current_user: CurrentUser) -> list[FeedBackItem]:
-        UserPolicy.can_view_feedback(current_user)
+        UserPolicy.ensure_can_view_feedback(current_user)
         items = await self._feedback.list_items()
         return [FeedBackItem(id=item.id, text=item.text) for item in items]
