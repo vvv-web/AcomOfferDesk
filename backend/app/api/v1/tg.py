@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.dependencies import get_uow
@@ -10,9 +11,10 @@ from app.core.config import settings
 from app.core.tg_links import decode_token
 from app.core.tg_shortcodes import TgShortcodeCodec
 from app.core.uow import UnitOfWork
-from app.domain.exceptions import Forbidden
+from app.domain.exceptions import Conflict, Forbidden
 from app.models.orm_models import TgUser
 from app.schemas.contractor_registration import (
+    ContractorEmailVerificationRequest,
     ContractorRegistrationRequest,
     ContractorRegistrationResponse,
     ContractorRegistrationData,
@@ -32,6 +34,7 @@ from app.services.tg_notifications import notify_expired_link, notify_registrati
 from app.services.tg_start import TgStartService
 from app.services.tg_users import TgUserRegistrationService
 from app.services.users import ContractorRegistrationService
+from app.services.email_verification import EmailVerificationService
 
 router = APIRouter(prefix="/tg")
 
@@ -116,6 +119,47 @@ async def handle_tg_start(
     )
 
 
+@router.post("/register/request-email-verification")
+@router.post("/register/request-email-verification/", include_in_schema=False)
+async def request_tg_registration_email_verification(
+    payload: ContractorEmailVerificationRequest,
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict[str, str]:
+    tg_id = await _resolve_tg_id_from_registration_token(payload.token)
+    async with uow:
+        service = EmailVerificationService(uow.profiles)
+        await service.request_tg_registration_verification(
+            tg_id=tg_id,
+            email=payload.mail.strip(),
+            tg_token=payload.token,
+        )
+    return {"detail": "Письмо для подтверждения email отправлено"}
+
+class TgLoginAvailabilityResponse(BaseModel):
+    available: bool
+    detail: str
+
+
+@router.get("/register/login-availability", response_model=TgLoginAvailabilityResponse)
+@router.get("/register/login-availability/", response_model=TgLoginAvailabilityResponse, include_in_schema=False)
+async def check_tg_registration_login_availability(
+    token: str = Query(..., min_length=1),
+    login: str = Query(..., min_length=3, max_length=128),
+    uow: UnitOfWork = Depends(get_uow),
+) -> TgLoginAvailabilityResponse:
+    await _resolve_tg_id_from_registration_token(token)
+    normalized_login = login.strip()
+    if not normalized_login:
+        return TgLoginAvailabilityResponse(available=False, detail="Введите логин")
+
+    async with uow:
+        exists = await uow.users.exists(normalized_login)
+
+    if exists:
+        return TgLoginAvailabilityResponse(available=False, detail="Логин уже занят")
+    return TgLoginAvailabilityResponse(available=True, detail="Логин свободен")
+
+
 @router.post("/register/complete", response_model=ContractorRegistrationResponse)
 @router.post("/register/complete/", response_model=ContractorRegistrationResponse, include_in_schema=False)
 async def complete_tg_registration(
@@ -123,6 +167,9 @@ async def complete_tg_registration(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorRegistrationResponse:
     tg_id = await _resolve_tg_id_from_registration_token(payload.token)
+    normalized_mail_raw = payload.mail.strip()
+    normalized_mail = "" if normalized_mail_raw in {"", "Не указано"} else normalized_mail_raw
+
     async with uow:
         service = ContractorRegistrationService(
             uow.users,
@@ -136,14 +183,21 @@ async def complete_tg_registration(
             password=payload.password.strip(),
             full_name=payload.full_name.strip(),
             phone=payload.phone.strip(),
-            mail=payload.mail.strip(),
             company_name=payload.company_name.strip(),
             inn=payload.inn.strip(),
             company_phone=payload.company_phone.strip(),
-            company_mail=payload.company_mail.strip(),
+            company_mail=payload.company_mail.strip() if payload.company_mail.strip() else "Не указано",
             address=payload.address.strip(),
             note=payload.note.strip(),
         )
+
+    if normalized_mail:
+        try:
+            async with uow:
+                verification_service = EmailVerificationService(uow.profiles)
+                await verification_service.request_profile_verification(user_id=user.id, email=normalized_mail)
+        except Conflict:
+            pass
 
     await notify_registration_completed(tg_id)
 
@@ -187,7 +241,7 @@ async def redirect_tg_auth(
     token: str = Query(...),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RedirectResponse:
-    tg_id = await _resolve_tg_id_from_auth_token(token)
+    tg_id = await resolve_tg_id_from_auth_token(token)
     async with uow:
         tg_user = await uow.tg_users.get_by_id(tg_id)
         linked_user = await uow.users.get_by_tg_user_id(tg_id)
@@ -199,7 +253,7 @@ async def redirect_tg_auth(
         raise Forbidden("Access denied")
     if not settings.web_base_url:
         raise Forbidden("Invalid token")
-    url = f"{settings.web_base_url.rstrip('/')}/auth/login?token={token}"
+    url = f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={token}"
     return RedirectResponse(url=url, status_code=302)
 
 
@@ -223,7 +277,7 @@ async def _resolve_tg_id_from_registration_token(token: str) -> int:
     return shortcode_payload.tg_id
 
 
-async def _resolve_tg_id_from_auth_token(token: str) -> int:
+async def resolve_tg_id_from_auth_token(token: str) -> int:
     try:
         token_payload = await _validate_tg_token(token, purpose="tg_auth")
         return token_payload.tg_id

@@ -27,7 +27,6 @@ async def create_feedback(
         data={"feedback_id": result.feedback_id},
         _links=LinkSet(
             self=Link(href="/api/v1/feedback", method="POST"),
-            available_actions=[Link(href="/api/v1/feedback", method="POST")],
         ),
     )
 
@@ -46,6 +45,5 @@ async def list_feedback(
         data={"items": serialized_items},
         _links=LinkSet(
             self=Link(href="/api/v1/feedback", method="GET"),
-            available_actions=[Link(href="/api/v1/feedback", method="GET")],
         ),
     )

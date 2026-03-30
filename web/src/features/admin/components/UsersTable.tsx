@@ -11,13 +11,22 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
+import { alpha, type Theme } from '@mui/material/styles';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import type { UserListItem } from '@shared/api/getUsers';
-import { updateUserStatus } from '@shared/api/updateUserStatus';
-import { updateUserRole } from '@shared/api/updateUserRole';
+import type { UserListItem } from '@entities/user';
+import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodOverlapByDate } from '@entities/unavailability';
+import { updateUserStatus } from '@shared/api/users/updateUserStatus';
+import { updateUserManager } from '@shared/api/users/updateUserManager';
+import { updateUserRole } from '@shared/api/users/updateUserRole';
+import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { DataTable } from '@shared/components/DataTable';
+import {
+  getSubordinateProfile,
+  setSubordinateUnavailabilityPeriod,
+  type SubordinateProfile
+} from '@shared/api/users/getSubordinateProfile';
 
 const contractorColumns = [
   { key: 'login', label: 'Логин', minWidth: 170, fraction: 1.1 },
@@ -30,10 +39,10 @@ const contractorColumns = [
 ];
 
 const defaultColumns = [
-  { key: 'id', label: 'id', minWidth: 120, fraction: 1 },
-  { key: 'password', label: 'password', minWidth: 180, fraction: 1.4 },
-  { key: 'id_role', label: 'id_role', minWidth: 120, fraction: 1 },
-  { key: 'role', label: 'role', minWidth: 180, fraction: 1.4 },
+  { key: 'id', label: 'ID', minWidth: 120, fraction: 1 },
+  { key: 'password', label: 'Пароль', minWidth: 180, fraction: 1.4 },
+  { key: 'id_role', label: 'ID роли', minWidth: 120, fraction: 1 },
+  { key: 'role', label: 'Роль', minWidth: 180, fraction: 1.4 },
   { key: 'status', label: 'Статус профиля', minWidth: 170, fraction: 1.2 }
 ];
 
@@ -42,6 +51,19 @@ const statusSchema = z.object({
 });
 
 type StatusFormValues = z.infer<typeof statusSchema>;
+
+const subordinateUnavailabilitySchema = z
+  .object({
+    status: z.enum(['sick', 'vacation', 'fired', 'maternity', 'business_trip', 'unavailable']),
+    started_at: z.string().min(1, 'Выберите дату начала'),
+    ended_at: z.string().min(1, 'Выберите дату окончания')
+  })
+  .refine((values) => new Date(values.ended_at).getTime() >= new Date(values.started_at).getTime(), {
+    message: 'Дата окончания должна быть не раньше даты начала',
+    path: ['ended_at']
+  });
+
+type SubordinateUnavailabilityFormValues = z.infer<typeof subordinateUnavailabilitySchema>;
 
 type UsersTableProps = {
   users: UserListItem[];
@@ -167,7 +189,7 @@ const InfoRow = ({ label, value }: { label: string; value: string | number | nul
     <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
       {label}
     </Typography>
-    <Typography variant="body1" sx={{ fontWeight: 500, color: '#1f2a44', overflowWrap: 'anywhere' }}>
+    <Typography variant="body1" sx={{ fontWeight: 500, color: 'text.primary', overflowWrap: 'anywhere' }}>
       {value ?? '—'}
     </Typography>
   </Stack>
@@ -184,15 +206,16 @@ const SourceSection = ({
 }) => (
   <Box
     sx={{
-      border: '1px solid #d6dfef',
-      borderRadius: 2,
+      border: '1px solid',
+      borderColor: 'divider',
+      borderRadius: 1,
       p: { xs: 1.4, sm: 1.8 },
-      backgroundColor: '#ffffff'
+      backgroundColor: 'background.paper'
     }}
   >
     <Stack spacing={1.2}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" rowGap={0.6}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1f2a44' }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }}>
           {title}
         </Typography>
         <Box
@@ -201,9 +224,10 @@ const SourceSection = ({
             px: 1,
             py: 0.2,
             borderRadius: 99,
-            border: '1px solid #d9e3f4',
-            backgroundColor: '#eef4ff',
-            color: '#3d5a86',
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'background.default',
+            color: 'text.secondary',
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: '0.03em'
@@ -235,6 +259,7 @@ const resolveTgStatusForUpdate = (
 
 const inlineStatusOptions: Array<StatusFormValues['user_status']> = ['review', 'active', 'inactive', 'blacklist'];
 
+
 const statusMemoText = `Связь статусов users и tg_users:
 
 1) users: review  → tg_users: review
@@ -248,6 +273,26 @@ const statusMemoText = `Связь статусов users и tg_users:
 
 4) users: blacklist → tg_users: disapproved
    Пользователь в чёрном списке, доступ запрещён.`;
+
+const dialogPaperSx = (theme: Theme) => ({
+  borderRadius: 2,
+  px: { xs: 2.5, sm: 3.5 },
+  py: { xs: 3, sm: 3.5 },
+  backgroundColor: theme.palette.background.default,
+  maxHeight: 'min(760px, calc(100vh - 32px))',
+  overflow: 'hidden',
+  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
+});
+
+const dialogContentSx = {
+  p: 0,
+  overflowX: 'hidden',
+  overflowY: 'auto',
+  scrollbarWidth: 'none',
+  '&::-webkit-scrollbar': {
+    display: 'none'
+  }
+};
 
 export const UsersTable = ({
   users,
@@ -266,6 +311,13 @@ export const UsersTable = ({
   const [inlineStatusError, setInlineStatusError] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [inlineRoleError, setInlineRoleError] = useState<string | null>(null);
+  const [subordinateProfile, setSubordinateProfile] = useState<SubordinateProfile | null>(null);
+  const [subordinateError, setSubordinateError] = useState<string | null>(null);
+  const [managerOptions, setManagerOptions] = useState<UserListItem[]>([]);
+  const [managerError, setManagerError] = useState<string | null>(null);
+  const [managerUserId, setManagerUserId] = useState('');
+  const [isUpdatingManager, setIsUpdatingManager] = useState(false);
+  const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
 
   const {
     register,
@@ -287,6 +339,58 @@ export const UsersTable = ({
     }
   }, [reset, selectedUser]);
 
+  const {
+    register: registerSubordinateUnavailability,
+    handleSubmit: handleSubordinateUnavailabilitySubmit,
+    watch: watchSubordinateUnavailability,
+    setValue: setSubordinateUnavailabilityValue,
+    formState: { errors: subordinateUnavailabilityErrors, isSubmitting: isSubmittingSubordinateUnavailability },
+    reset: resetSubordinateUnavailability
+  } = useForm<SubordinateUnavailabilityFormValues>({
+    resolver: zodResolver(subordinateUnavailabilitySchema),
+    defaultValues: { status: 'unavailable', started_at: '', ended_at: '' }
+  });
+
+  useEffect(() => {
+    if (!subordinateProfile) {
+      return;
+    }
+    resetSubordinateUnavailability({
+      status: 'unavailable',
+      started_at: '',
+      ended_at: ''
+    });
+  }, [subordinateProfile, resetSubordinateUnavailability]);
+
+  useEffect(() => {
+    setManagerUserId(selectedUser?.id_parent ?? '');
+  }, [selectedUser?.id_parent]);
+
+  useEffect(() => {
+    if (!selectedUser?.actions.update_manager) {
+      setManagerOptions([]);
+      return;
+    }
+
+    let isCancelled = false;
+    setManagerError(null);
+    void getManagerCandidates(selectedUser.role_id)
+      .then((result) => {
+        if (!isCancelled) {
+          setManagerOptions(result.items);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setManagerError(error instanceof Error ? error.message : 'Не удалось загрузить список руководителей');
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUser?.actions.update_manager, selectedUser?.role_id, selectedUser?.user_id]);
+
   const rows: UserRow[] = useMemo(
     () =>
       users.map((user) => ({
@@ -298,6 +402,14 @@ export const UsersTable = ({
       })),
     [getRoleLabel, users]
   );
+
+  const canEditUserStatus = (userId: string) => {
+    const user = users.find((item) => item.user_id === userId);
+    if (!canUpdateStatus || !user || !user.actions.update_status) {
+      return false;
+    }
+    return true;
+  };
 
   const handleStatusSubmit = async (values: StatusFormValues) => {
     if (!selectedUser) return;
@@ -348,6 +460,25 @@ export const UsersTable = ({
     }
   };
 
+  const handleManagerUpdate = async () => {
+    if (!selectedUser || !managerUserId || managerUserId === selectedUser.id_parent) {
+      return;
+    }
+
+    setManagerError(null);
+    setIsUpdatingManager(true);
+    try {
+      await updateUserManager(selectedUser.user_id, { manager_user_id: managerUserId });
+      await onStatusUpdated();
+      setSelectedUser(null);
+      setSubordinateProfile(null);
+    } catch (error) {
+      setManagerError(error instanceof Error ? error.message : 'Не удалось обновить руководителя');
+    } finally {
+      setIsUpdatingManager(false);
+    }
+  };
+
   if (!isContractorsTab) {
     return (
       <>
@@ -365,38 +496,53 @@ export const UsersTable = ({
               const clickedUser = users.find((item) => item.user_id === row.id);
               if (clickedUser) {
                 setSelectedUser(clickedUser);
+                setSubordinateProfile(null);
+                setSubordinateError(null);
+                setManagerOptions([]);
+                setManagerError(null);
+                setManagerUserId(clickedUser.id_parent ?? '');
+                setOpenSubordinateUnavailability(false);
+                void getSubordinateProfile(clickedUser.user_id)
+                  .then((profile) => setSubordinateProfile(profile))
+                  .catch((error) => {
+                    setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
+                  });
               }
             }}
             renderRow={(row) => [
               <Typography variant="body2">{row.id}</Typography>,
               <Typography variant="body2">{row.password}</Typography>,
               <Typography variant="body2">{row.id_role}</Typography>,
-              <TextField
-                select
-                size="small"
-                value={row.id_role}
-                disabled={!canUpdateRole || updatingUserId === row.id}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  const nextRoleId = Number(event.target.value);
-                  if (nextRoleId === row.id_role) {
-                    return;
-                  }
-                  void handleInlineRoleChange(row.id, nextRoleId);
-                }}
-                sx={{ minWidth: 140 }}
-              >
-                {allowedRoleOptions.map((roleId) => (
-                  <MenuItem key={roleId} value={roleId}>
-                    {getRoleLabel(roleId)}
-                  </MenuItem>
-                ))}
-              </TextField>,
+              allowedRoleOptions.includes(row.id_role) ? (
+                <TextField
+                  select
+                  size="small"
+                  value={row.id_role}
+                  disabled={!canUpdateRole || updatingUserId === row.id || !users.find((item) => item.user_id === row.id)?.actions.update_role}
+                  onChange={(event) => {
+                    event.stopPropagation();
+                    const nextRoleId = Number(event.target.value);
+                    if (nextRoleId === row.id_role) {
+                      return;
+                    }
+                    void handleInlineRoleChange(row.id, nextRoleId);
+                  }}
+                  sx={{ minWidth: 140 }}
+                >
+                  {allowedRoleOptions.map((roleId) => (
+                    <MenuItem key={roleId} value={roleId}>
+                      {getRoleLabel(roleId)}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              ) : (
+                <Typography variant="body2">{row.role}</Typography>
+              ),
               <TextField
                 select
                 size="small"
                 value={row.status}
-                disabled={!canUpdateStatus || updatingUserId === row.id}
+                disabled={!canEditUserStatus(row.id) || updatingUserId === row.id}
                 onChange={(event) => {
                   event.stopPropagation();
                   const nextStatus = event.target.value as StatusFormValues['user_status'];
@@ -419,30 +565,30 @@ export const UsersTable = ({
 
         <Dialog
           open={Boolean(selectedUser)}
-          onClose={() => setSelectedUser(null)}
+          onClose={() => {
+            setSelectedUser(null);
+            setOpenSubordinateUnavailability(false);
+          }}
           maxWidth="sm"
           fullWidth
           PaperProps={{
-            sx: {
-              borderRadius: 2,
-              p: { xs: 2, md: 2.5 },
-              maxHeight: '92vh'
-            }
+            sx: dialogPaperSx
           }}
         >
-          <DialogContent sx={{ p: 0 }}>
+          <DialogContent sx={dialogContentSx}>
             {selectedUser ? (
-              <Stack spacing={1.8}>
-                <Typography variant="h5" fontWeight={700} textAlign="center">
+              <Stack spacing={2}>
+                <Typography variant="h5" fontWeight={600} lineHeight={1}>
                   Карточка пользователя
                 </Typography>
 
                 <Box
                   sx={{
-                    border: '1px solid #d3dbe7',
+                    border: '1px solid',
+                    borderColor: 'divider',
                     borderRadius: 1,
                     p: { xs: 1.4, sm: 1.6 },
-                    backgroundColor: '#f8fbff'
+                    backgroundColor: 'background.paper'
                   }}
                 >
                   <Stack spacing={1.2}>
@@ -482,8 +628,142 @@ export const UsersTable = ({
                   </Stack>
                 </Box>
 
+                {subordinateProfile ? (
+                  <Stack spacing={1.2}>
+                    {subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
+                    <UnavailabilityManagementSection
+                      currentPeriod={subordinateProfile.unavailablePeriod}
+                      periods={subordinateProfile.unavailablePeriods}
+                      canEdit={subordinateProfile.actions.manage_subordinate_unavailability}
+                      isDialogOpen={openSubordinateUnavailability}
+                      onOpenDialog={() => setOpenSubordinateUnavailability(true)}
+                      onCloseDialog={() => setOpenSubordinateUnavailability(false)}
+                      onSubmit={handleSubordinateUnavailabilitySubmit(async (values) => {
+                        if (!selectedUser) {
+                          return;
+                        }
+
+                        const newPeriodStart = new Date(values.started_at).toISOString();
+                        const newPeriodEnd = new Date(values.ended_at).toISOString();
+
+                        const overlapPeriod = subordinateProfile.unavailablePeriods.find((period) =>
+                          hasPeriodOverlapByDate(newPeriodStart, newPeriodEnd, period.startedAt, period.endedAt)
+                        );
+                        if (overlapPeriod) {
+                          const startedAt = new Date(overlapPeriod.startedAt).toLocaleDateString('ru-RU');
+                          const endedAt = new Date(overlapPeriod.endedAt).toLocaleDateString('ru-RU');
+                          setSubordinateError(`Период пересекается с уже существующим периодом (${startedAt} — ${endedAt})`);
+                          return;
+                        }
+
+                        setSubordinateError(null);
+                        const nextProfile = await setSubordinateUnavailabilityPeriod(selectedUser.user_id, {
+                          status: values.status,
+                          started_at: newPeriodStart,
+                          ended_at: newPeriodEnd
+                        });
+                        setSubordinateProfile(nextProfile);
+                        setOpenSubordinateUnavailability(false);
+                      })}
+                      isSubmitting={isSubmittingSubordinateUnavailability}
+                      dialogTitle="Установить нерабочий период"
+                      triggerLabel="Установить нерабочий период"
+                      submitLabel="Сохранить период"
+                      dialogNotice={subordinateError ? <Alert severity="warning">{subordinateError}</Alert> : null}
+                      editor={
+                        <UnavailabilityPeriodEditor
+                          statusField={registerSubordinateUnavailability('status')}
+                          startedAtField={registerSubordinateUnavailability('started_at')}
+                          endedAtField={registerSubordinateUnavailability('ended_at')}
+                          startedAtValue={watchSubordinateUnavailability('started_at') ?? ''}
+                          endedAtValue={watchSubordinateUnavailability('ended_at') ?? ''}
+                          onStartedAtChange={(value: string) =>
+                            setSubordinateUnavailabilityValue('started_at', value, { shouldValidate: true, shouldDirty: true })
+                          }
+                          onEndedAtChange={(value: string) =>
+                            setSubordinateUnavailabilityValue('ended_at', value, { shouldValidate: true, shouldDirty: true })
+                          }
+                          statusError={subordinateUnavailabilityErrors.status?.message}
+                          startedAtError={subordinateUnavailabilityErrors.started_at?.message}
+                          endedAtError={subordinateUnavailabilityErrors.ended_at?.message}
+                        />
+                      }
+                    />
+                  </Stack>
+                ) : subordinateError ? (
+                  <Alert severity="info">{subordinateError}</Alert>
+                ) : null}
+
+                {selectedUser.actions.update_manager ? (
+                  <Stack
+                    spacing={1.2}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: { xs: 1.4, sm: 1.8 },
+                      backgroundColor: 'background.paper'
+                    }}
+                  >
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      Смена руководителя
+                    </Typography>
+                    {managerError ? <Alert severity="warning">{managerError}</Alert> : null}
+                    <TextField
+                      select
+                      size="small"
+                      label="Новый руководитель"
+                      value={managerUserId}
+                      onChange={(event) => setManagerUserId(event.target.value)}
+                      disabled={isUpdatingManager || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0}
+                      helperText={
+                        managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length
+                          ? ''
+                          : 'Нет доступных руководителей'
+                      }
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 1,
+                          backgroundColor: 'background.paper'
+                        }
+                      }}
+                    >
+                      {managerOptions
+                        .filter((manager) => manager.user_id !== selectedUser.user_id)
+                        .map((manager) => (
+                        <MenuItem key={manager.user_id} value={manager.user_id}>
+                          {manager.full_name ? `${manager.full_name} (${manager.user_id})` : manager.user_id}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <Stack direction="row" justifyContent="flex-end">
+                      <Button
+                        variant="outlined"
+                        onClick={() => void handleManagerUpdate()}
+                        disabled={
+                          !managerUserId
+                          || managerUserId === selectedUser.id_parent
+                          || isUpdatingManager
+                          || managerOptions.filter((manager) => manager.user_id !== selectedUser.user_id).length === 0
+                        }
+                        sx={{ borderRadius: 1, textTransform: 'none' }}
+                      >
+                        {isUpdatingManager ? 'Сохранение...' : 'Сохранить руководителя'}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                ) : null}
+
+
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
-                  <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 999, textTransform: 'none' }}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setSelectedUser(null);
+                      setOpenSubordinateUnavailability(false);
+                    }}
+                    sx={{ borderRadius: 1, textTransform: 'none' }}
+                  >
                     Закрыть
                   </Button>
                 </Stack>
@@ -526,26 +806,23 @@ export const UsersTable = ({
         maxWidth="md"
         fullWidth
         PaperProps={{
-          sx: {
-            borderRadius: 2,
-            p: { xs: 2, md: 2.5 },
-            maxHeight: '92vh'
-          }
+          sx: dialogPaperSx
         }}
       >
-        <DialogContent sx={{ p: 0 }}>
+        <DialogContent sx={dialogContentSx}>
           {selectedUser ? (
-            <Stack spacing={1.8}>
-              <Typography variant="h5" fontWeight={700} textAlign="center">
+            <Stack spacing={2}>
+              <Typography variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
 
               <Box
                 sx={{
-                  border: '1px solid #d3dbe7',
+                  border: '1px solid',
+                  borderColor: 'divider',
                   borderRadius: 1,
                   p: { xs: 1.4, sm: 1.6 },
-                  backgroundColor: '#f8fbff'
+                  backgroundColor: 'background.paper'
                 }}
               >
                 <Stack spacing={1.2}>
@@ -606,7 +883,7 @@ export const UsersTable = ({
                         <InfoRow label="Телефон компании" value={selectedUser.company_phone} />
                         <InfoRow label="E-mail компании" value={selectedUser.company_mail} />
                         <InfoRow label="Адрес" value={selectedUser.address} />
-                      </Box>                      
+                      </Box>
                       <InfoRow label="Примечание" value={selectedUser.note} />
                     </Stack>
                   </SourceSection>
@@ -635,14 +912,14 @@ export const UsersTable = ({
                 <Stack
                   spacing={1.2}
                   sx={{
-                    border: '2px solid #bcd0f5',
-                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
                     p: { xs: 1.4, sm: 1.8 },
-                    background: 'linear-gradient(180deg, #f4f8ff 0%, #ffffff 100%)',
-                    boxShadow: '0 8px 24px rgba(39, 87, 171, 0.12)'
+                    backgroundColor: 'background.paper'
                   }}
                 >
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1f2a44' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                     Изменение статуса
                   </Typography>
                   <Stack direction="row" alignItems="center" spacing={1}>
@@ -654,7 +931,8 @@ export const UsersTable = ({
                       {...register('user_status')}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          borderRadius: 2
+                          borderRadius: 1,
+                          backgroundColor: 'background.paper'
                         }
                       }}
                     >
@@ -694,8 +972,9 @@ export const UsersTable = ({
                           width: 24,
                           height: 24,
                           borderRadius: '50%',
-                          border: '1px solid #2f6fd6',
-                          color: '#2f6fd6',
+                          border: '1px solid',
+                          borderColor: 'primary.main',
+                          color: 'primary.main',
                           fontSize: 14,
                           fontWeight: 700,
                           display: 'inline-flex',
@@ -713,14 +992,14 @@ export const UsersTable = ({
                   {submitSuccess ? <Alert severity="success">{submitSuccess}</Alert> : null}
 
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} justifyContent="flex-end">
-                    <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 999, textTransform: 'none' }}>
+                    <Button variant="outlined" onClick={() => setSelectedUser(null)} sx={{ borderRadius: 1, textTransform: 'none' }}>
                       Закрыть
                     </Button>
                     <Button
                       variant="contained"
                       onClick={handleSubmit(handleStatusSubmit)}
                       disabled={isSubmitting}
-                      sx={{ borderRadius: 999, textTransform: 'none', minWidth: 180, boxShadow: 'none' }}
+                      sx={{ borderRadius: 1, textTransform: 'none', minWidth: 180, boxShadow: 'none' }}
                     >
                       {isSubmitting ? 'Сохранение...' : 'Сохранить статус'}
                     </Button>

@@ -1,18 +1,82 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.security import hash_password, verify_password
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import CurrentUser, UserPolicy
-from app.models.orm_models import CompanyContact, Profile, TgUser, User
+from app.models.orm_models import CompanyContact, Profile, TgUser, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.tg_users import TgUserRepository
+from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.tg_notifications import notify_access_closed, notify_access_opened
 
+ROLE_NAME_SUPERADMIN = "Суперадмин"
+ROLE_NAME_ADMIN = "Администратор"
+ROLE_NAME_PROJECT_MANAGER = "Руководитель Проекта"
+ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
+ROLE_NAME_ECONOMIST = "Экономист"
+ROLE_NAME_OPERATOR = "Оператор"
+
+def _normalize_db_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+async def _is_descendant_user(
+    users: UserRepository,
+    *,
+    ancestor_user_id: str,
+    target_user_id: str,
+) -> bool:
+    cursor_id: str | None = target_user_id
+    visited: set[str] = set()
+
+    while cursor_id is not None and cursor_id not in visited:
+        visited.add(cursor_id)
+        if cursor_id == ancestor_user_id:
+            return True
+        cursor_user = await users.get_by_id(cursor_id)
+        if cursor_user is None:
+            return False
+        cursor_id = cursor_user.id_parent
+
+    return False
+
+
+def _collect_descendant_user_ids(
+    *,
+    manager_user_id: str,
+    rows: list[tuple[User, Profile | None, Role]],
+) -> set[str]:
+    by_id = {user.id: user for user, _, _ in rows}
+    descendant_ids: set[str] = set()
+
+    for user_id in by_id:
+        cursor_id: str | None = user_id
+        visited: set[str] = set()
+        while cursor_id is not None and cursor_id not in visited:
+            visited.add(cursor_id)
+            if cursor_id == manager_user_id:
+                descendant_ids.add(user_id)
+                break
+            cursor_user = by_id.get(cursor_id)
+            cursor_id = cursor_user.id_parent if cursor_user is not None else None
+
+    return descendant_ids
+
+
+def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -> bool:
+    if current_role_id == settings.project_manager_role_id:
+        return target_role_id in {settings.lead_economist_role_id, settings.economist_role_id}
+    if current_role_id in {settings.lead_economist_role_id, settings.economist_role_id}:
+        return target_role_id == settings.economist_role_id
+    return False
 
 class UserRegistrationService:
     def __init__(self, users: UserRepository):
@@ -25,23 +89,76 @@ class UserRegistrationService:
         user_id: str,
         password: str,
         role_id: int,
+        id_parent: str | None,
         full_name: str | None,
         phone: str | None,
         mail: str | None,
     ) -> User:
-        UserPolicy.can_register_user(current_user)
-        if role_id == settings.superadmin_role_id or role_id not in settings.allowed_creation_role_ids:
+        UserPolicy.ensure_can_register_user(current_user)
+        target_role = await self._users.get_role_by_id(role_id)
+        if target_role is None:
             raise Conflict("Role is not allowed for creation")
-        if current_user.role_id == settings.superadmin_role_id and role_id not in {
-            settings.admin_role_id,
-            settings.lead_economist_role_id,
-            settings.economist_role_id,
-        }:
-            raise Forbidden("Superadmin can create only admin, lead economist and economist users")
+        if current_user.role_id == settings.superadmin_role_id and role_id == settings.superadmin_role_id:
+            raise Forbidden("Superadmin cannot create superadmin users")
         if current_user.role_id == settings.lead_economist_role_id and role_id != settings.economist_role_id:
             raise Forbidden("Lead economist can create only economist users")
-        if current_user.role_id == settings.admin_role_id and role_id not in {settings.admin_role_id, settings.economist_role_id}:
-            raise Forbidden("Admin can create only admin and economist users")
+        current_role = await self._users.get_role_by_id(current_user.role_id)
+        if current_role is None:
+            raise Forbidden("Access denied")
+
+        if current_role.role not in {
+            ROLE_NAME_SUPERADMIN,
+            ROLE_NAME_ADMIN,
+            ROLE_NAME_LEAD_ECONOMIST,
+        }:
+            raise Forbidden("Access denied")
+
+        if target_role.role == ROLE_NAME_SUPERADMIN:
+            raise Forbidden("Superadmin cannot create superadmin users")
+
+        if current_role.role == ROLE_NAME_ADMIN and target_role.role not in {
+            ROLE_NAME_ECONOMIST,
+            ROLE_NAME_OPERATOR,
+        }:
+            raise Forbidden("Admin can create only economist and operator users")
+
+        if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
+            raise Forbidden("Lead economist can create only economist users")
+        if target_role.role == ROLE_NAME_ECONOMIST:
+            if id_parent is None:
+                raise Conflict("Economist user must have an economist or lead economist manager")
+            parent_user = await self._users.get_by_id(id_parent)
+            if parent_user is None:
+                raise NotFound("Parent user not found")
+            parent_role = await self._users.get_role_by_id(parent_user.id_role)
+            if parent_role is None or parent_role.role not in {ROLE_NAME_ECONOMIST, ROLE_NAME_LEAD_ECONOMIST}:
+                raise Conflict("Economist user can have only economist or lead economist manager")
+            if current_user.role_id == settings.lead_economist_role_id:
+                rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                    role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+                )
+                descendant_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
+                allowed_parent_ids = {current_user.user_id} | {
+                    user.id
+                    for user, _, _ in rows
+                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
+                }
+                if id_parent not in allowed_parent_ids:
+                    raise Forbidden("Economist manager must belong to current user's responsibility")
+        elif target_role.role == ROLE_NAME_LEAD_ECONOMIST:
+            if id_parent is None:
+                raise Conflict("Lead economist user must have a project manager")
+            parent_user = await self._users.get_by_id(id_parent)
+            if parent_user is None:
+                raise NotFound("Parent user not found")
+            parent_role = await self._users.get_role_by_id(parent_user.id_role)
+            if parent_role is None or parent_role.role != ROLE_NAME_PROJECT_MANAGER:
+                raise Conflict("Lead economist user can have only project manager")
+        else:
+            id_parent = None
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
         
@@ -50,6 +167,7 @@ class UserRegistrationService:
             id=user_id,
             password_hash=password_hash,
             id_role=role_id,
+            id_parent=id_parent,
             status="active",
         )
 
@@ -78,7 +196,6 @@ class ContractorRegistrationService:
         password: str,
         full_name: str,
         phone: str,
-        mail: str,
         company_name: str,
         inn: str,
         company_phone: str,
@@ -107,7 +224,7 @@ class ContractorRegistrationService:
             id=login,
             full_name=full_name,
             phone=phone,
-            mail=mail,
+            mail="Не указано",
         )
         company_contact = CompanyContact(
             id=login,
@@ -128,6 +245,7 @@ class ContractorRegistrationService:
 class UserListItem:
     user_id: str
     role_id: int
+    id_parent: str | None
     status: str
     full_name: str | None
     phone: str | None
@@ -156,6 +274,16 @@ class RequestEconomistListItem:
     user_id: str
     full_name: str | None
     role: str
+    unavailable_period: UnavailabilityPeriodData | None = None
+
+
+@dataclass(frozen=True)
+class RequestContractorListItem:
+    user_id: str
+    full_name: str | None
+    company_name: str | None
+    mail: str | None
+    company_mail: str | None
 
 
 @dataclass(frozen=True)
@@ -164,6 +292,14 @@ class UserStatusUpdateResult:
     user_status: str
     tg_user_id: int | None
     tg_status: str | None
+
+
+@dataclass(frozen=True)
+class UnavailabilityPeriodData:
+    id: int
+    status: str
+    started_at: datetime
+    ended_at: datetime
 
 
 @dataclass(frozen=True)
@@ -181,18 +317,132 @@ class MeResult:
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    unavailable_period: UnavailabilityPeriodData | None = None
+    unavailable_periods: list[UnavailabilityPeriodData] = field(default_factory=list)
+
+@dataclass(frozen=True)
+class SubordinateProfileResult:
+    user_id: str
+    role_id: int
+    id_parent: str | None
+    status: str
+    full_name: str | None
+    phone: str | None
+    mail: str | None
+    unavailable_period: UnavailabilityPeriodData | None = None
+    unavailable_periods: list[UnavailabilityPeriodData] = field(default_factory=list)
 
 class UserQueryService:
-    def __init__(self, users: UserRepository):
+    def __init__(self, users: UserRepository, user_status_periods: UserStatusPeriodRepository):
         self._users = users
+        self._user_status_periods = user_status_periods
+
+    async def _is_descendant(self, *, manager_user_id: str, subordinate_user_id: str) -> bool:
+        return await _is_descendant_user(
+            self._users,
+            ancestor_user_id=manager_user_id,
+            target_user_id=subordinate_user_id,
+        )
+
+    async def _ensure_accessible_subordinate(
+        self,
+        *,
+        current_user: CurrentUser,
+        subordinate: User,
+    ) -> None:
+        if not _can_manage_subordinate_role(
+            current_role_id=current_user.role_id,
+            target_role_id=subordinate.id_role,
+        ):
+            raise Conflict("Subordinate profile is available only for permitted subordinate roles")
+
+        if subordinate.id == current_user.user_id:
+            raise Forbidden("You can manage subordinate data only for your subordinates")
+
+        is_subordinate = await self._is_descendant(
+            manager_user_id=current_user.user_id,
+            subordinate_user_id=subordinate.id,
+        )
+        if not is_subordinate:
+            raise Forbidden("You can manage subordinate data only for your subordinates")
 
     async def list_users(self, current_user: CurrentUser, role_id: int | None = None) -> list[UserListItem]:
-        UserPolicy.can_list_users(current_user)
+        UserPolicy.ensure_can_list_users(current_user)
+
+        if current_user.role_id in {
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+            settings.economist_role_id,
+        }:
+            if role_id is not None and role_id != settings.economist_role_id:
+                raise Forbidden("Project manager, lead economist and economist can view only economist users")
+            role_id = settings.economist_role_id
+
+        if current_user.role_id == settings.economist_role_id:
+            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.economist_role_id],
+            )
+            descendant_ids = _collect_descendant_user_ids(
+                manager_user_id=current_user.user_id,
+                rows=rows,
+            )
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile, _ in rows
+                if user.id in descendant_ids and user.id_role == settings.economist_role_id
+            ]
 
         if current_user.role_id == settings.lead_economist_role_id:
-            if role_id is not None and role_id != settings.economist_role_id:
-                raise Forbidden("Lead economist can view only economist users")
-            role_id = settings.economist_role_id
+            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+            )
+            descendant_ids = _collect_descendant_user_ids(
+                manager_user_id=current_user.user_id,
+                rows=rows,
+            )
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile, _ in rows
+                if user.id in descendant_ids and user.id_role == settings.economist_role_id
+            ]
+
+        if current_user.role_id == settings.project_manager_role_id:
+            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+            )
+            descendant_ids = _collect_descendant_user_ids(
+                manager_user_id=current_user.user_id,
+                rows=rows,
+            )
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile, _ in rows
+                if user.id in descendant_ids
+            ]
 
         if role_id == settings.contractor_role_id:
             rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
@@ -200,6 +450,7 @@ class UserQueryService:
                 UserListItem(
                     user_id=user.id,
                     role_id=user.id_role,
+                    id_parent=user.id_parent,
                     status=user.status,
                     full_name=profile.full_name if profile else None,
                     phone=profile.phone if profile else None,
@@ -221,6 +472,7 @@ class UserQueryService:
             UserListItem(
                 user_id=user.id,
                 role_id=user.id_role,
+                id_parent=user.id_parent,
                 status=user.status,
                 full_name=profile.full_name if profile else None,
                 phone=profile.phone if profile else None,
@@ -228,9 +480,108 @@ class UserQueryService:
             )
             for user, profile in rows
         ]
+
+    async def list_manager_candidates(
+        self,
+        current_user: CurrentUser,
+        *,
+        target_role_id: int,
+    ) -> list[UserListItem]:
+        if not (
+            UserPolicy.can_register_user(current_user)
+            or UserPolicy.can_update_user_manager(current_user)
+        ):
+            raise Forbidden("Insufficient permissions to view manager candidates")
+
+        if current_user.role_id == settings.lead_economist_role_id and target_role_id != settings.economist_role_id:
+            raise Forbidden("Lead economist can manage only economist users")
+        if current_user.role_id == settings.economist_role_id and target_role_id != settings.economist_role_id:
+            raise Forbidden("Economist can manage only economist users")
+        if current_user.role_id == settings.project_manager_role_id and target_role_id not in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            raise Forbidden("Project manager can manage only lead economist and economist users")
+
+        if target_role_id == settings.economist_role_id:
+            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+            )
+            if current_user.role_id == settings.lead_economist_role_id:
+                descendant_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
+                allowed_ids = {current_user.user_id} | {
+                    user.id
+                    for user, _, _ in rows
+                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
+                }
+                rows = [row for row in rows if row[0].id in allowed_ids]
+            elif current_user.role_id == settings.project_manager_role_id:
+                descendant_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
+                rows = [
+                    row for row in rows
+                    if row[0].id in descendant_ids
+                ]
+            elif current_user.role_id == settings.economist_role_id:
+                descendant_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
+                allowed_ids = {current_user.user_id} | {
+                    user.id
+                    for user, _, _ in rows
+                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
+                }
+                cursor_id = current_user.user_id
+                visited: set[str] = set()
+                while cursor_id is not None and cursor_id not in visited:
+                    visited.add(cursor_id)
+                    cursor_user = await self._users.get_by_id(cursor_id)
+                    if cursor_user is None:
+                        break
+                    if cursor_user.id_role in {settings.economist_role_id, settings.lead_economist_role_id}:
+                        allowed_ids.add(cursor_user.id)
+                    cursor_id = cursor_user.id_parent
+                rows = [row for row in rows if row[0].id in allowed_ids]
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile, _ in rows
+            ]
+
+        if target_role_id == settings.lead_economist_role_id:
+            if current_user.role_id not in {settings.superadmin_role_id, settings.project_manager_role_id}:
+                raise Forbidden("Only superadmin and project manager can manage lead economist manager")
+            rows = await self._users.list_users_with_profiles(role_id=settings.project_manager_role_id)
+            return [
+                UserListItem(
+                    user_id=user.id,
+                    role_id=user.id_role,
+                    id_parent=user.id_parent,
+                    status=user.status,
+                    full_name=profile.full_name if profile else None,
+                    phone=profile.phone if profile else None,
+                    mail=profile.mail if profile else None,
+                )
+                for user, profile in rows
+            ]
+
+        return []
     
     async def list_economists(self, current_user: CurrentUser) -> list[EconomistListItem]:
-        UserPolicy.can_list_users(current_user)
+        UserPolicy.ensure_can_list_users(current_user)
 
         rows = await self._users.list_users_with_profiles(role_id=settings.economist_role_id)
         return [
@@ -245,28 +596,117 @@ class UserQueryService:
         ]
     
     async def list_request_economists(self, current_user: CurrentUser) -> list[RequestEconomistListItem]:
-        UserPolicy.can_manage_requests(current_user)
+        if not (
+            current_user.role_id == settings.superadmin_role_id
+            or current_user.role_id == settings.lead_economist_role_id
+            or current_user.role_id == settings.project_manager_role_id
+        ):
+            raise Forbidden("Insufficient permissions to view request economists")
 
         rows = await self._users.list_by_role_ids_with_profiles_and_roles(
             role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
         )
+        if current_user.role_id in {
+            settings.lead_economist_role_id,
+            settings.project_manager_role_id,
+        }:
+            descendant_ids = _collect_descendant_user_ids(
+                manager_user_id=current_user.user_id,
+                rows=rows,
+            )
+            rows = [
+                row for row in rows
+                if row[0].id in descendant_ids
+            ]
+
+        user_ids = [user.id for user, _, _ in rows]
+        active_unavailability_by_user = await self._user_status_periods.list_active_for_users(user_ids=user_ids)
+
         return [
             RequestEconomistListItem(
                 user_id=user.id,
                 full_name=profile.full_name if profile else None,
                 role=role.role,
+                unavailable_period=self._period_to_data(active_unavailability_by_user[user.id]) if user.id in active_unavailability_by_user else None,
             )
             for user, profile, role in rows
         ]
+
+    async def list_request_contractors(self, current_user: CurrentUser) -> list[RequestContractorListItem]:
+        UserPolicy.ensure_can_create_request(current_user)
+
+        rows = await self._users.list_contractors(contractor_role_id=settings.contractor_role_id)
+        return [
+            RequestContractorListItem(
+                user_id=user.id,
+                full_name=profile.full_name if profile else None,
+                company_name=company.company_name if company else None,
+                mail=profile.mail if profile else None,
+                company_mail=company.mail if company else None,
+            )
+            for user, profile, company, _ in rows
+            if user.status == "active"
+        ]
+    
+    def _period_to_data(self, period: UserStatusPeriod) -> UnavailabilityPeriodData:
+        return UnavailabilityPeriodData(
+            id=period.id,
+            status=period.status,
+            started_at=period.started_at,
+            ended_at=period.ended_at,
+        )
+
+    async def get_subordinate_profile(
+        self,
+        *,
+        current_user: CurrentUser,
+        subordinate_user_id: str,
+    ) -> SubordinateProfileResult:
+        UserPolicy.ensure_can_list_users(current_user)
+
+        subordinate = await self._users.get_by_id(subordinate_user_id)
+        if subordinate is None:
+            raise NotFound("User not found")
+
+        await self._ensure_accessible_subordinate(
+            current_user=current_user,
+            subordinate=subordinate,
+        )
+
+        profile = None
+        descendant_rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+        )
+        for user, user_profile, _ in descendant_rows:
+            if user.id == subordinate_user_id:
+                profile = user_profile
+                break
+
+        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=subordinate_user_id)
+        unavailable_periods = await self._user_status_periods.list_for_user(user_id=subordinate_user_id)
+
+        return SubordinateProfileResult(
+            user_id=subordinate.id,
+            role_id=subordinate.id_role,
+            id_parent=subordinate.id_parent,
+            status=subordinate.status,
+            full_name=profile.full_name if profile else None,
+            phone=profile.phone if profile else None,
+            mail=profile.mail if profile else None,
+            unavailable_period=self._period_to_data(unavailable_period) if unavailable_period is not None else None,
+            unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
+        )
     
     async def get_me(self, current_user: CurrentUser) -> MeResult:
-        UserPolicy.can_manage_own_profile(current_user)
+        UserPolicy.ensure_can_manage_own_profile(current_user)
 
         row = await self._users.get_with_profile_and_company_contacts(user_id=current_user.user_id)
         if row is None:
             raise NotFound("User not found")
 
         user, profile, company_contact = row
+        unavailable_period = await self._user_status_periods.get_active_for_user(user_id=current_user.user_id)
+        unavailable_periods = await self._user_status_periods.list_for_user(user_id=current_user.user_id)
 
         return MeResult(
             user_id=user.id,
@@ -282,12 +722,20 @@ class UserQueryService:
             company_mail=company_contact.mail if company_contact else None,
             address=company_contact.address if company_contact else None,
             note=company_contact.note if company_contact else None,
+            unavailable_period=self._period_to_data(unavailable_period) if unavailable_period is not None else None,
+            unavailable_periods=[self._period_to_data(period) for period in unavailable_periods],
         )
 
 @dataclass(frozen=True)
 class UserRoleUpdateResult:
     user_id: str
     role_id: int
+
+
+@dataclass(frozen=True)
+class UserManagerUpdateResult:
+    user_id: str
+    manager_user_id: str
 
 
 class UserRoleService:
@@ -301,7 +749,7 @@ class UserRoleService:
         user_id: str,
         role_id: int,
     ) -> UserRoleUpdateResult:
-        UserPolicy.can_update_user_role(current_user)
+        UserPolicy.ensure_can_update_user_role(current_user)
 
         if role_id not in {settings.admin_role_id, settings.economist_role_id}:
             raise Conflict("Only admin and economist roles are allowed for update")
@@ -315,6 +763,85 @@ class UserRoleService:
 
         await self._users.update_role(user, role_id)
         return UserRoleUpdateResult(user_id=user.id, role_id=user.id_role)
+
+
+class UserManagerService:
+    def __init__(self, users: UserRepository):
+        self._users = users
+
+    async def update_manager(
+        self,
+        *,
+        current_user: CurrentUser,
+        user_id: str,
+        manager_user_id: str,
+    ) -> UserManagerUpdateResult:
+        UserPolicy.ensure_can_update_user_manager(current_user)
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("User not found")
+
+        if not _can_manage_subordinate_role(
+            current_role_id=current_user.role_id,
+            target_role_id=user.id_role,
+        ):
+            raise Forbidden("You can update manager only for permitted subordinate roles")
+
+        if user.id == current_user.user_id:
+            raise Forbidden("You can update manager only for your subordinates")
+
+        is_subordinate = await _is_descendant_user(
+            self._users,
+            ancestor_user_id=current_user.user_id,
+            target_user_id=user.id,
+        )
+        if not is_subordinate:
+            raise Forbidden("You can update manager only for your subordinates")
+
+        manager_user = await self._users.get_by_id(manager_user_id)
+        if manager_user is None:
+            raise NotFound("Manager user not found")
+        if manager_user.id == user.id:
+            raise Conflict("User cannot be own manager")
+
+        if user.id_role == settings.economist_role_id:
+            allowed_manager_role_ids = {
+                settings.economist_role_id,
+                settings.lead_economist_role_id,
+            }
+        elif user.id_role == settings.lead_economist_role_id:
+            allowed_manager_role_ids = {settings.project_manager_role_id}
+        else:
+            raise Conflict("Manager can be updated only for lead economist and economist users")
+
+        if manager_user.id_role not in allowed_manager_role_ids:
+            raise Conflict("Selected manager role is not allowed for this user")
+
+        candidate_query = UserQueryService(
+            self._users,
+            UserStatusPeriodRepository(self._users._session),
+        )
+        allowed_manager_ids = {
+            item.user_id
+            for item in await candidate_query.list_manager_candidates(
+                current_user=current_user,
+                target_role_id=user.id_role,
+            )
+        }
+        if manager_user.id not in allowed_manager_ids:
+            raise Forbidden("Selected manager is outside the allowed management scope")
+
+        would_create_cycle = await _is_descendant_user(
+            self._users,
+            ancestor_user_id=user.id,
+            target_user_id=manager_user.id,
+        )
+        if would_create_cycle:
+            raise Conflict("Selected manager would create a hierarchy cycle")
+
+        await self._users.update_parent(user, manager_user.id)
+        return UserManagerUpdateResult(user_id=user.id, manager_user_id=user.id_parent or manager_user.id)
 
 
 class UserStatusService:
@@ -333,7 +860,7 @@ class UserStatusService:
         user_status: str,
         tg_status: str | None,
     ) -> UserStatusUpdateResult:
-        UserPolicy.can_update_user_status(current_user)
+        UserPolicy.ensure_can_update_user_status(current_user)
 
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Unsupported users.status value")
@@ -343,9 +870,26 @@ class UserStatusService:
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise NotFound("User not found")
-        
-        if current_user.role_id == settings.lead_economist_role_id and user.id_role != settings.economist_role_id:
-            raise Forbidden("Lead economist can update status only for economist users")
+
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            if not _can_manage_subordinate_role(
+                current_role_id=current_user.role_id,
+                target_role_id=user.id_role,
+            ):
+                raise Forbidden("You can update status only for permitted subordinate roles")
+            if user.id == current_user.user_id:
+                raise Forbidden("You can update status only for your subordinates")
+            is_subordinate = await _is_descendant_user(
+                self._users,
+                ancestor_user_id=current_user.user_id,
+                target_user_id=user.id,
+            )
+            if not is_subordinate:
+                raise Forbidden("You can update status only for your subordinates")
 
         tg_user: TgUser | None = None
         if user.tg_user_id is not None:
@@ -382,15 +926,71 @@ class UserStatusService:
         return result
     
 class UserSelfService:
+    VALID_UNAVAILABILITY_STATUSES = {"sick", "vacation", "fired", "maternity", "business_trip", "unavailable"}
+
     def __init__(
         self,
         users: UserRepository,
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
+        user_status_periods: UserStatusPeriodRepository,
     ):
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
+        self._user_status_periods = user_status_periods
+
+    async def _ensure_accessible_subordinate(
+        self,
+        *,
+        current_user: CurrentUser,
+        subordinate: User,
+    ) -> None:
+        if not _can_manage_subordinate_role(
+            current_role_id=current_user.role_id,
+            target_role_id=subordinate.id_role,
+        ):
+            raise Conflict("Subordinate data can be managed only for permitted subordinate roles")
+        if subordinate.id == current_user.user_id:
+            raise Forbidden("You can manage subordinate data only for your subordinates")
+        is_subordinate = await _is_descendant_user(
+            self._users,
+            ancestor_user_id=current_user.user_id,
+            target_user_id=subordinate.id,
+        )
+        if not is_subordinate:
+            raise Forbidden("You can manage subordinate data only for your subordinates")
+
+    async def _ensure_no_period_overlap(
+        self,
+        *,
+        user_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> None:
+        overlapping = await self._user_status_periods.get_overlapping_for_user(
+            user_id=user_id,
+            started_at=started_at,
+            ended_at=ended_at,
+        )
+        if overlapping is not None:
+            raise Conflict(
+                "User already has unavailability period in this time range "
+                f"{overlapping.started_at.isoformat()} - {overlapping.ended_at.isoformat()}"
+            )
+
+        existing_periods = await self._user_status_periods.list_for_user(user_id=user_id)
+        new_start_date = started_at.date()
+        new_end_date = ended_at.date()
+        for period in existing_periods:
+            period_start_date = period.started_at.date()
+            period_end_date = period.ended_at.date()
+            has_date_overlap = period_start_date <= new_end_date and period_end_date >= new_start_date
+            if has_date_overlap:
+                raise Conflict(
+                    "User already has unavailability period in this time range "
+                    f"{period.started_at.isoformat()} - {period.ended_at.isoformat()}"
+                )
 
     async def update_my_credentials(
         self,
@@ -399,7 +999,7 @@ class UserSelfService:
         current_password: str,
         new_password: str,
     ) -> None:
-        UserPolicy.can_manage_own_profile(current_user)
+        UserPolicy.ensure_can_manage_own_profile(current_user)
 
         user = await self._users.get_by_id(current_user.user_id)
         if user is None:
@@ -419,7 +1019,7 @@ class UserSelfService:
         phone: str | None,
         mail: str | None,
     ) -> None:
-        UserPolicy.can_manage_own_profile(current_user)
+        UserPolicy.ensure_can_manage_own_profile(current_user)
 
         profile = await self._profiles.get_by_id(current_user.user_id)
         if profile is None:
@@ -451,7 +1051,7 @@ class UserSelfService:
         address: str | None,
         note: str | None,
     ) -> None:
-        UserPolicy.can_manage_own_company_contacts(current_user)
+        UserPolicy.ensure_can_manage_own_company_contacts(current_user)
 
         company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
         if company_contacts is None:
@@ -469,3 +1069,85 @@ class UserSelfService:
             company_contacts.address = address
         if note is not None:
             company_contacts.note = note
+
+    async def set_subordinate_unavailability_period(
+        self,
+        *,
+        current_user: CurrentUser,
+        subordinate_user_id: str,
+        status: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> None:
+        UserPolicy.ensure_can_manage_subordinate_unavailability(current_user)
+
+        if status not in self.VALID_UNAVAILABILITY_STATUSES:
+            raise Conflict("Unsupported user_status_periods.status value")
+
+        normalized_started_at = _normalize_db_timestamp(started_at)
+        normalized_ended_at = _normalize_db_timestamp(ended_at)
+
+        if normalized_ended_at < normalized_started_at:
+            raise Conflict("Period end date must be greater than or equal to start date")
+
+        subordinate = await self._users.get_by_id(subordinate_user_id)
+        if subordinate is None:
+            raise NotFound("User not found")
+
+        await self._ensure_accessible_subordinate(
+            current_user=current_user,
+            subordinate=subordinate,
+        )
+
+        await self._ensure_no_period_overlap(
+            user_id=subordinate_user_id,
+            started_at=normalized_started_at,
+            ended_at=normalized_ended_at,
+        )
+
+        await self._user_status_periods.add(
+            UserStatusPeriod(
+                id_user=subordinate_user_id,
+                status=status,
+                started_at=normalized_started_at,
+                ended_at=normalized_ended_at,
+            )
+        )
+
+    async def set_my_unavailability_period(
+        self,
+        current_user: CurrentUser,
+        *,
+        status: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> None:
+        UserPolicy.ensure_can_manage_own_unavailability(current_user)
+
+        if status not in self.VALID_UNAVAILABILITY_STATUSES:
+            raise Conflict("Unsupported user_status_periods.status value")
+
+        normalized_started_at = _normalize_db_timestamp(started_at)
+        normalized_ended_at = _normalize_db_timestamp(ended_at)
+
+        if normalized_ended_at < normalized_started_at:
+            raise Conflict("Period end date must be greater than or equal to start date")
+
+        user = await self._users.get_by_id(current_user.user_id)
+        if user is None:
+            raise NotFound("User not found")
+
+        await self._ensure_no_period_overlap(
+            user_id=current_user.user_id,
+            started_at=normalized_started_at,
+            ended_at=normalized_ended_at,
+        )
+
+        await self._user_status_periods.add(
+            UserStatusPeriod(
+                id_user=current_user.user_id,
+                status=status,
+                started_at=normalized_started_at,
+                ended_at=normalized_ended_at,
+            )
+        )

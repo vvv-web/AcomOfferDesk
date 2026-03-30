@@ -3,7 +3,7 @@
 version: "2"
 
 tunnels:
-  public:
+  web:
     proto: http
     addr: gateway:80
     # Разрешает объединение с другим туннелем на том же URL (load balance)
