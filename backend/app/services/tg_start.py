@@ -12,7 +12,7 @@ from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
 
 REGISTER_TTL_SECONDS = int(timedelta(hours=24).total_seconds())
-AUTH_LINK_TTL_SECONDS = int(timedelta(days=7).total_seconds())
+AUTH_LINK_TTL_SECONDS = int(timedelta(minutes=10).total_seconds())
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class TgStartService:
 
         linked_user = await self._users.get_by_tg_user_id(tg_id)
         if linked_user and linked_user.id_role == settings.contractor_role_id and linked_user.status == "active" and tg_user.status == "approved":
-            open_requests = await self._requests.list_open()
+            open_requests = await self._requests.list_open_for_contractor(contractor_user_id=linked_user.id)
             request_items = [
                 TgOpenRequestItem(
                     request_id=request.id,
@@ -92,7 +92,7 @@ class TgStartService:
         )
 
     def _build_registration_link(self, *, tg_id: int) -> str:
-        if not settings.tg_link_secret or not settings.public_backend_base_url:
+        if not settings.tg_link_secret or not (settings.web_base_url or settings.public_backend_base_url):
             raise Conflict("TG links are not configured")
         payload = TgShortcodeCodec.build(
             tg_id=tg_id,
@@ -111,4 +111,6 @@ class TgStartService:
             ttl_seconds=AUTH_LINK_TTL_SECONDS,
         )
         code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
+        if settings.web_base_url:
+            return f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={code}"
         return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/auth?token={code}"

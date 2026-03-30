@@ -9,6 +9,7 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Pagination,
   Select,
   Stack,
   Typography,
@@ -41,6 +42,7 @@ type DataTableProps<T> = {
 
   stickyFirstColumn?: boolean;
   stickyLastColumn?: boolean;
+  pageSize?: number;
 };
 
 const tablePalette = {
@@ -188,6 +190,7 @@ export const DataTable = <T,>({
   storageKey,
   stickyFirstColumn = true,
   stickyLastColumn = true,
+  pageSize = 8,
 }: DataTableProps<T>) => {
   const hasRows = rows.length > 0;
 
@@ -203,6 +206,7 @@ export const DataTable = <T,>({
       return JSON.parse(raw) as {
         visibleColumnKeys?: string[];
         columnWidths?: Record<string, number>;
+        currentPage?: number;
       };
     } catch {
       return null;
@@ -221,6 +225,13 @@ export const DataTable = <T,>({
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(
     () => storedState?.columnWidths ?? {}
   );
+  const [currentPage, setCurrentPage] = useState<number>(() => {
+    const storedPage = storedState?.currentPage;
+    if (typeof storedPage === 'number' && Number.isFinite(storedPage) && storedPage >= 1) {
+      return Math.floor(storedPage);
+    }
+    return 1;
+  });
   const [settingsAnchor, setSettingsAnchor] = useState<HTMLElement | null>(null);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -228,6 +239,19 @@ export const DataTable = <T,>({
   const resizeRef = useRef<ResizeSession | null>(null);
 
   const [scrollerWidth, setScrollerWidth] = useState<number>(0);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(rows.length / pageSize)),
+    [pageSize, rows.length]
+  );
+
+  const pagedRows = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return rows.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, pageSize, rows]);
+
+  const currentRangeStart = hasRows ? (currentPage - 1) * pageSize + 1 : 0;
+  const currentRangeEnd = hasRows ? Math.min(currentPage * pageSize, rows.length) : 0;
 
   const columnsWithIndex = useMemo(() => columns.map((column, index) => ({ ...column, index })), [columns]);
 
@@ -255,8 +279,12 @@ export const DataTable = <T,>({
 
   useEffect(() => {
     if (!storageKeyValue) return;
-    sessionStorage.setItem(storageKeyValue, JSON.stringify({ visibleColumnKeys, columnWidths }));
-  }, [columnWidths, storageKeyValue, visibleColumnKeys]);
+    sessionStorage.setItem(storageKeyValue, JSON.stringify({ visibleColumnKeys, columnWidths, currentPage }));
+  }, [columnWidths, currentPage, storageKeyValue, visibleColumnKeys]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(Math.max(prev, 1), totalPages));
+  }, [totalPages]);
 
   const handleVisibleColumnsChange = (event: SelectChangeEvent<string[]>) => {
     const value = event.target.value;
@@ -274,6 +302,12 @@ export const DataTable = <T,>({
 
   const handleShowAllColumns = () => setVisibleColumnKeys(columnOrder);
   const handleResetWidths = () => setColumnWidths({});
+  const handlePageChange = useCallback(
+    (page: number) => {
+      setCurrentPage(Math.min(Math.max(Math.round(page), 1), totalPages));
+    },
+    [totalPages]
+  );
 
   const updateScrollerWidth = useCallback((el: HTMLDivElement) => {
     setScrollerWidth(el.clientWidth);
@@ -430,7 +464,7 @@ export const DataTable = <T,>({
       );
     }
 
-    return rows.map((row) => {
+    return pagedRows.map((row) => {
       const cells = renderRow(row);
 
       return (
@@ -474,6 +508,8 @@ export const DataTable = <T,>({
       );
     });
   };
+
+  const showPagination = hasRows && totalPages > 1;
 
   return (
     <Box
@@ -623,6 +659,54 @@ export const DataTable = <T,>({
             {content()}
           </Box>
         </Box>
+
+        {showPagination ? (
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={2}
+            alignItems={{ xs: 'stretch', md: 'center' }}
+            justifyContent="space-between"
+            sx={{
+              borderTop: `1px solid ${tablePalette.border}`,
+              pt: 1.5,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Показаны строки {currentRangeStart}-{currentRangeEnd} из {rows.length}
+            </Typography>
+
+            <Box sx={{ display: 'flex', justifyContent: { xs: 'center', md: 'flex-end' } }}>
+              <Pagination
+                count={totalPages}
+                page={currentPage}
+                onChange={(_, page) => handlePageChange(page)}
+                variant="outlined"
+                shape="rounded"
+                size="small"
+                siblingCount={1}
+                boundaryCount={1}
+                sx={{
+                  '& .MuiPaginationItem-root': {
+                    color: '#6b7280',
+                    borderColor: tablePalette.border,
+                    minWidth: 32,
+                    height: 32,
+                    borderRadius: 1,
+                    fontWeight: 600,
+                  },
+                  '& .MuiPaginationItem-root.Mui-selected': {
+                    backgroundColor: tablePalette.accent,
+                    borderColor: tablePalette.accent,
+                    color: '#fff',
+                    '&:hover': {
+                      backgroundColor: '#245bb5',
+                    },
+                  },
+                }}
+              />
+            </Box>
+          </Stack>
+        ) : null}
       </Box>
     </Box>
   );

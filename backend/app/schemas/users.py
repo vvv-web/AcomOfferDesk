@@ -1,11 +1,15 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.actions import UserActionsSchema
 from app.schemas.links import LinkSet
 
 
 class UserListItemSchema(BaseModel):
     user_id: str
     role_id: int
+    id_parent: str | None = None
     status: str
     full_name: str | None = None
     phone: str | None = None
@@ -18,10 +22,12 @@ class UserListItemSchema(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class UserListData(BaseModel):
     items: list[UserListItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class UserListResponse(BaseModel):
@@ -37,10 +43,12 @@ class EconomistListItemSchema(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class EconomistListData(BaseModel):
     items: list[EconomistListItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class EconomistListResponse(BaseModel):
@@ -63,6 +71,22 @@ class UserRoleUpdateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: UserRoleUpdateData
+    links: LinkSet = Field(alias="_links")
+
+
+class UserManagerUpdateRequest(BaseModel):
+    manager_user_id: str = Field(min_length=1)
+
+
+class UserManagerUpdateData(BaseModel):
+    user_id: str
+    manager_user_id: str
+
+
+class UserManagerUpdateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: UserManagerUpdateData
     links: LinkSet = Field(alias="_links")
 
 
@@ -89,10 +113,12 @@ class RequestEconomistItemSchema(BaseModel):
     user_id: str
     full_name: str | None
     role: str
+    unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
 
 
 class RequestEconomistListData(BaseModel):
     items: list[RequestEconomistItemSchema]
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RequestEconomistListResponse(BaseModel):
@@ -102,10 +128,39 @@ class RequestEconomistListResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
+class RequestContractorItemSchema(BaseModel):
+    user_id: str
+    full_name: str | None = None
+    company_name: str | None = None
+    mail: str | None = None
+    company_mail: str | None = None
+
+
+class RequestContractorListData(BaseModel):
+    items: list[RequestContractorItemSchema]
+    permissions: list[str] = Field(default_factory=list)
+
+
+class RequestContractorListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: RequestContractorListData
+    links: LinkSet = Field(alias="_links")
+
+
+class UserUnavailabilityPeriodSchema(BaseModel):
+    id: int
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
 class MeData(BaseModel):
     user_id: str
     role_id: int
     status: str
+    unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
+    unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
     tg_user_id: int | None = None
     full_name: str | None = None
     phone: str | None = None
@@ -116,12 +171,47 @@ class MeData(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
 
 
 class MeResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: MeData
+    links: LinkSet = Field(alias="_links")
+
+
+class SubordinateProfileData(BaseModel):
+    user_id: str
+    role_id: int
+    id_parent: str | None = None
+    status: str
+    full_name: str | None = None
+    phone: str | None = None
+    mail: str | None = None
+    unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
+    unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
+    actions: UserActionsSchema = Field(default_factory=UserActionsSchema)
+
+
+class SubordinateProfileResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: SubordinateProfileData
+    links: LinkSet = Field(alias="_links")
+
+
+class SetSubordinateUnavailabilityPeriodRequest(BaseModel):
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
+class SetSubordinateUnavailabilityPeriodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: SubordinateProfileData
     links: LinkSet = Field(alias="_links")
 
 
@@ -143,3 +233,16 @@ class UpdateMyCompanyContactsRequest(BaseModel):
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+
+
+class SetMyUnavailabilityPeriodRequest(BaseModel):
+    status: str
+    started_at: datetime
+    ended_at: datetime
+
+
+class SetMyUnavailabilityPeriodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: MeData
+    links: LinkSet = Field(alias="_links")
