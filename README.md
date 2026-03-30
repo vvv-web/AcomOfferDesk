@@ -25,6 +25,8 @@
 
 Команды: `cp compose.env.example .env`, `cp backend/env.example backend/.env`, `cp tg_bot/env.example tg_bot/.env`, затем отредактировать значения (секреты не коммитить).
 
+**Два бота в Telegram:** продуктовый **AcomOfferDesk** (тест/прод) и отдельный **DevOfferDesk** для разработки. На стенде **`test`** используйте токен и ссылки **AcomOfferDesk**, публичные URL своего хоста или туннеля — не подставляйте слепо dev-бота и чужой ngrok из чужих `.env`.
+
 Подробная шпаргалка — в `docs/AcomOfferDesk_DEPLOYMENT_SUCCESS.md` (devops_manual).
 
 **Кратко: шаги по ролям**
