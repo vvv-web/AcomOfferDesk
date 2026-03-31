@@ -15,6 +15,10 @@ docker compose up -d --force-recreate --no-deps gateway
 
 Скрипт **`scripts/install-order-database-vps.sh`** после обновления **`DATABASE_URL`** пересоздаёт **`backend`**, **`notifications_worker`** и **`gateway`**.
 
+## Чат (WebSocket) с домена не работает, с IP:8080 — работает
+
+Внутренний nginx **`gateway`** уже пробрасывает **`Upgrade`** для **`/api/`**. Если **`wss://ваш-домен/api/v1/ws/chat`** даёт **404**, а **`ws://IP:8080/api/v1/ws/chat?token=…`** подключается — чинить **внешний** TLS/reverse proxy (проброс WS на порт приложения).
+
 ## Почта не уходит
 
 **Не задавать** **`SMTP_HOST=127.0.0.1`** в **`backend/.env`** для контейнеров — это не хост VPS. Для Яндекса: **`smtp.yandex.com`**, порт **465**, затем **`docker compose up -d --force-recreate backend notifications_worker`**.
