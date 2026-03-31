@@ -11,7 +11,7 @@
 **Что добавлено:**
 
 - **Localtunnel** вместо ngrok (ngrok даёт ERR_NGROK_9040 при блокировке IP; localtunnel — рабочий вариант).
-- **order_database** — отдельный compose с PostgreSQL; его нужно поднимать первым, создать сеть `project_net`.
+- **order_database** — отдельный compose с PostgreSQL; его нужно поднимать первым, создать сеть `project_net`. Для **VPS** и приватного репозитория БД: **[docs/order-database-vps.md](docs/order-database-vps.md)** и скрипт **[scripts/install-order-database-vps.sh](scripts/install-order-database-vps.sh)** (нужен `GITHUB_TOKEN` / см. документ).
 - **Критично:** при перезапуске localtunnel URL меняется → обновить `PUBLIC_BACKEND_BASE_URL` и `WEB_BASE_URL` в `backend/.env` и `tg_bot/.env`, затем `docker compose up -d --force-recreate backend tg_bot` (restart не перечитывает .env).
 - **Доступ с другого ПК:** после ввода Tunnel Password (публичный IP машины с туннелем) доступ по тому же URL.
 
@@ -27,7 +27,7 @@
 
 **Два бота в Telegram:** продуктовый **AcomOfferDesk** (тест/прод) и отдельный **DevOfferDesk** для разработки. На стенде **`test`** используйте токен и ссылки **AcomOfferDesk**, публичные URL своего хоста или туннеля — не подставляйте слепо dev-бота и чужой ngrok из чужих `.env`.
 
-Подробная шпаргалка — в `docs/AcomOfferDesk_DEPLOYMENT_SUCCESS.md` (devops_manual).
+Шпаргалка по пересозданию БД на сервере — в репозитории: **[docs/order-database-vps.md](docs/order-database-vps.md)**. Дополнительный внутренний журнал может жить в `devops_manual`, если ведёте его отдельно.
 
 **Кратко: шаги по ролям**
 
