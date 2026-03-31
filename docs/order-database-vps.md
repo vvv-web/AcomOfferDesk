@@ -35,6 +35,8 @@ ssh root@VPS "export GITHUB_TOKEN='$TOKEN'; bash /root/install-order-database-vp
 
 В логе в конце должно быть **`INSTALL_SUCCESS`**.
 
+После пересоздания **`backend`** вручную всегда пересоздавайте **`gateway`**, иначе возможен **502** на API (см. **[vps-troubleshooting.md](./vps-troubleshooting.md)**).
+
 ## Ожидания по данным (как в задаче)
 
 | Проверка | Ожидание |

@@ -27,7 +27,7 @@
 
 **Два бота в Telegram:** продуктовый **AcomOfferDesk** (тест/прод) и отдельный **DevOfferDesk** для разработки. На стенде **`test`** используйте токен и ссылки **AcomOfferDesk**, публичные URL своего хоста или туннеля — не подставляйте слепо dev-бота и чужой ngrok из чужих `.env`.
 
-Шпаргалка по пересозданию БД на сервере — в репозитории: **[docs/order-database-vps.md](docs/order-database-vps.md)**. Дополнительный внутренний журнал может жить в `devops_manual`, если ведёте его отдельно.
+Шпаргалка по пересозданию БД на сервере — **[docs/order-database-vps.md](docs/order-database-vps.md)**. Типовые сбои VPS (502 после recreate `backend`, SMTP, superadmin, `.env`) — **[docs/vps-troubleshooting.md](docs/vps-troubleshooting.md)**; развёрнутый журнал — в **`devops_manual`** (`docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md`).
 
 **Кратко: шаги по ролям**
 
