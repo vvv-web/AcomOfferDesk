@@ -59,6 +59,18 @@ proxy_read_timeout 86400;
 
 ---
 
+## Ответ по почте (IMAP): `Reply token decoded`, затем `AttachmentFileInput` / `content_sha256`
+
+**Симптом (до исправления):** в логах после **`Created new offer from email`** — **`AttributeError: 'AttachmentFileInput' object has no attribute 'content_sha256'`** при **`attachments=1`**.
+
+**Причина:** вложения из письма передавались в **`FileService._store`** как **`AttachmentFileInput`**, тогда как слой хранения ожидает **`PreparedUpload`** (с полем **`content_sha256`** и проверками типа/размера через **`prepare_bytes`**).
+
+**Исправление в коде:** в **`process_request_reply_use_case`** перед **`create_offer_file`** / **`create_chat_message_file`** вызывается **`file_service.prepare_bytes(...)`**, как в **`offers.py`** для загрузок из API.
+
+После выката: **`docker compose build --no-cache backend`** и **`docker compose up -d --force-recreate --no-deps backend gateway`**.
+
+---
+
 ## Superadmin после пересоздания БД
 
 Пароль задаётся при инициализации **`order_database`**. На VPS (root): **`/root/.acom_order_db_superadmin_password`**. Пароли из старых заметок после нового тома могут не совпадать.
