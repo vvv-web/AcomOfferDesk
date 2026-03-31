@@ -19,6 +19,8 @@ docker compose up -d --force-recreate --no-deps gateway
 
 **Не задавать** **`SMTP_HOST=127.0.0.1`** в **`backend/.env`** для контейнеров — это не хост VPS. Для Яндекса: **`smtp.yandex.com`**, порт **465**, затем **`docker compose up -d --force-recreate backend notifications_worker`**.
 
+Если в логах **`notifications_worker`** видно **`SMTPAuthenticationError: 535 Invalid user or password`** — проверьте **`EMAIL_ADDRESS`**: должен быть **реальный ящик** (например **`@yandex.ru`**), а не **`noreply@localhost`**, и **`EMAIL_APP_PASSWORD`** — **пароль приложения** именно для этого ящика. После смены — пересоздать **`backend`**, **`notifications_worker`** и **`gateway`**.
+
 ## Superadmin после пересоздания БД
 
 Пароль на VPS (root): **`/root/.acom_order_db_superadmin_password`**.
