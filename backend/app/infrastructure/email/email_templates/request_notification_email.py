@@ -76,6 +76,27 @@ def _request_header(*, request_id: int, description: str | None, deadline_at: da
     return deadline_label, request_description
 
 
+def _reply_token_mail_footer_text(*, reply_token: str) -> str:
+    """Строка с токеном в теле письма — чтобы ответы с Gmail и др. клиентов не теряли +rt- в Reply-To."""
+    return (
+        "\n\n---\n"
+        "Ответ по почте: при ответе не удаляйте строку ниже целиком (можно оставить в цитате).\n"
+        f"{reply_token}\n"
+    )
+
+
+def _reply_token_mail_footer_html(*, reply_token: str) -> str:
+    escaped_token = escape(reply_token)
+    return f"""
+            <tr>
+              <td style="padding:16px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:13px;line-height:20px;border-top:1px solid #e6e8eb;">
+                <strong>Ответ по почте:</strong> при ответе не удаляйте следующую строку целиком (допустимо оставить в цитате).<br/>
+                <span style="display:block;margin-top:8px;padding:10px 12px;background:#f3f4f6;border-radius:6px;font-family:ui-monospace,Consolas,monospace;word-break:break-all;">{escaped_token}</span>
+              </td>
+            </tr>
+    """.rstrip()
+
+
 def _build_standard_text(
     *,
     request_id: int,
@@ -107,7 +128,8 @@ def _build_standard_text(
         "Вариант 1. Откройте веб-сервис по ссылке ниже и оставьте отклик самостоятельно.\n"
         f"{reply_block}"
         f"Открыть заявку: {request_url}"
-        f"{warning_block}\n"
+        f"{warning_block}"
+        f"{_reply_token_mail_footer_text(reply_token=reply_token) if reply_token else ''}\n"
     )
 
 
@@ -173,6 +195,7 @@ def _build_standard_html(
         if reply_token
         else ""
     )
+    reply_token_footer_html = _reply_token_mail_footer_html(reply_token=reply_token) if reply_token else ""
 
     return f"""
 <!DOCTYPE html>
@@ -221,6 +244,7 @@ def _build_standard_html(
                 <a href="{escaped_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_url}</a>
               </td>
             </tr>
+            {reply_token_footer_html}
           </table>
         </td>
       </tr>

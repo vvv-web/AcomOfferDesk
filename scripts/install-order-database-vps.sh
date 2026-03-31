@@ -133,6 +133,8 @@ if [[ -d "$APP_DIR" && -f "$APP_DIR/backend/.env" ]]; then
   fi
   log "пересоздание backend и notifications_worker"
   (cd "$APP_DIR" && docker compose up -d --force-recreate backend notifications_worker)
+  log "пересоздание gateway — иначе nginx может держать старый IP backend → 502 на API"
+  (cd "$APP_DIR" && docker compose up -d --force-recreate --no-deps gateway)
 else
   log "нет $APP_DIR/backend/.env — пропуск привязки приложения"
 fi
