@@ -44,10 +44,7 @@ class TgStartService:
         self._requests = requests
 
     async def handle_start(self, tg_id: int) -> TgStartResult:
-        tg_user = await self._tg_users.get_by_id(tg_id)
-        if tg_user is None:
-            tg_user = TgUser(id=tg_id, status="review")
-            await self._tg_users.add(tg_user)
+        tg_user = await self._tg_users.get_or_create(tg_id)
 
         linked_user = await self._users.get_by_tg_user_id(tg_id)
         if linked_user and linked_user.id_role == settings.contractor_role_id and linked_user.status == "active" and tg_user.status == "approved":

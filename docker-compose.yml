@@ -128,10 +128,35 @@ services:
     networks:
       - project_net
 
+  # TryCloudflare — 530 при нестабильном QUIC/HTTP2, ngrok — ERR_NGROK_9040 (блокировка IP)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://gateway:80"]
+    profiles:
+      - tunnel
+    depends_on:
+      - gateway
+    networks:
+      - project_net
+
+  # LocalTunnel — работает когда cloudflared 530, ngrok 9040 (блокировка IP)
+  # URL: docker logs localtunnel 2>&1 | grep -E "your url|https://"
+  localtunnel:
+    image: node:20-alpine
+    container_name: localtunnel
+    command: ["sh", "-c", "npx -y localtunnel --port 80 --local-host gateway 2>&1 | tee /dev/stderr"]
+    profiles:
+      - tunnel
+    depends_on:
+      - gateway
+    networks:
+      - project_net
+
 networks:
   project_net:
-    external: true
     name: project_net
+    external: true
 
 volumes:
   minio_data:

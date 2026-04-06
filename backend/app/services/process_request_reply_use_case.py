@@ -14,7 +14,6 @@ from app.repositories.messages import (
     build_email_message_text,
 )
 from app.services.files import FileService
-from app.services.offers import AttachmentFileInput
 
 logger = logging.getLogger("gunicorn.error")
 
@@ -293,13 +292,14 @@ class ProcessRequestReplyUseCase:
                         )
 
                     for attachment in incoming.attachments:
+                        prepared = await file_service.prepare_bytes(
+                            original_name=attachment.original_name,
+                            content_bytes=attachment.content_bytes,
+                            mime_type=attachment.content_type,
+                        )
                         db_file = await file_service.create_offer_file(
                             offer_id=offer.id,
-                            upload=AttachmentFileInput(
-                                original_name=attachment.original_name,
-                                content_bytes=attachment.content_bytes,
-                                mime_type=attachment.content_type,
-                            ),
+                            upload=prepared,
                         )
                         await uow.offers.attach_file(offer_id=offer.id, file_id=db_file.id)
                         logger.info(
@@ -345,13 +345,14 @@ class ProcessRequestReplyUseCase:
                 message_created = True
 
                 for attachment in incoming.attachments:
+                    prepared = await file_service.prepare_bytes(
+                        original_name=attachment.original_name,
+                        content_bytes=attachment.content_bytes,
+                        mime_type=attachment.content_type,
+                    )
                     db_file = await file_service.create_chat_message_file(
                         offer_id=offer.id,
-                        upload=AttachmentFileInput(
-                            original_name=attachment.original_name,
-                            content_bytes=attachment.content_bytes,
-                            mime_type=attachment.content_type,
-                        ),
+                        upload=prepared,
                     )
                     await uow.messages.attach_file(message_id=message.id, file_id=db_file.id)
                     logger.info(

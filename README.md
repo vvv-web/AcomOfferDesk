@@ -2,6 +2,63 @@
 
 Этот репозиторий можно поднять одной командой через корневой `docker-compose.yml`.
 
+---
+
+## ⚡ Обновлённая версия (дополнения для внешнего доступа)
+
+Данная секция дополняет основной README с учётом проверенного развёртывания (февраль 2026).
+
+**Что добавлено:**
+
+- **Localtunnel** вместо ngrok (ngrok даёт ERR_NGROK_9040 при блокировке IP; localtunnel — рабочий вариант).
+- **order_database** — отдельный compose с PostgreSQL; его нужно поднимать первым, создать сеть `project_net`. Для **VPS** и приватного репозитория БД: **[docs/order-database-vps.md](docs/order-database-vps.md)** и скрипт **[scripts/install-order-database-vps.sh](scripts/install-order-database-vps.sh)** (нужен `GITHUB_TOKEN` / см. документ).
+- **Критично:** при перезапуске localtunnel URL меняется → обновить `PUBLIC_BACKEND_BASE_URL` и `WEB_BASE_URL` в `backend/.env` и `tg_bot/.env`, затем `docker compose up -d --force-recreate backend tg_bot` (restart не перечитывает .env).
+- **Доступ с другого ПК:** после ввода Tunnel Password (публичный IP машины с туннелем) доступ по тому же URL.
+
+**Шаблоны переменных окружения (этап перед `docker compose up`):**
+
+| Файл | Назначение |
+|------|------------|
+| `compose.env.example` | Скопировать в **корневой** `.env` — подстановка для MinIO в `docker-compose.yml`. |
+| `backend/env.example` | Скопировать в **`backend/.env`** — все переменные бэкенда (см. `backend/app/core/config.py`). |
+| `tg_bot/env.example` | Скопировать в **`tg_bot/.env`** — токен бота и URL шлюза/API. |
+
+Команды: `cp compose.env.example .env`, `cp backend/env.example backend/.env`, `cp tg_bot/env.example tg_bot/.env`, затем отредактировать значения (секреты не коммитить).
+
+**Два бота в Telegram:** продуктовый **AcomOfferDesk** (тест/прод) и отдельный **DevOfferDesk** для разработки. На стенде **`test`** используйте токен и ссылки **AcomOfferDesk**, публичные URL своего хоста или туннеля — не подставляйте слепо dev-бота и чужой ngrok из чужих `.env`.
+
+Шпаргалка по пересозданию БД на сервере — **[docs/order-database-vps.md](docs/order-database-vps.md)**. Типовые сбои VPS (502 после recreate `backend`, SMTP, superadmin, `.env`) — **[docs/vps-troubleshooting.md](docs/vps-troubleshooting.md)**; развёрнутый журнал — в **`devops_manual`** (`docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md`).
+
+**Кратко: шаги по ролям**
+
+**Разворачивающий** — команды для поднятия:
+
+```bash
+# заменить /path/to/ на свои каталоги (например /home/user/acom-project/)
+
+# 1. Сеть + order_database (PostgreSQL)
+docker network create project_net
+cd /path/to/order_database && docker compose up -d
+
+# 2. AcomOfferDesk + localtunnel
+cd /path/to/AcomOfferDesk && docker compose up -d --build
+docker compose --profile tunnel up -d localtunnel
+
+# 3. URL туннеля → обновить .env → пересоздать backend и tg_bot
+docker logs localtunnel 2>&1 | grep "your url"
+# Вписать URL в backend/.env и tg_bot/.env (PUBLIC_BACKEND_BASE_URL, WEB_BASE_URL)
+docker compose up -d --force-recreate backend tg_bot
+
+# 4. В веб-админке: Контрагенты → active, создать заявки
+```
+
+| Роль | Шаги |
+|------|------|
+| **Контрагент** | 1. Зарегистрироваться в @AcomOfferDeskBot. 2. Дождаться активации (сообщение «Доступ открыт»). 3. `/start` — увидеть заявки и ссылки. 4. Войти в веб по ссылке (логин/пароль с регистрации). |
+| **Экономист** | 1. Получить логин/пароль от суперадмина. 2. Войти в веб (URL от разворачивающего). 3. Создавать и вести заявки, просматривать контрагентов. |
+
+---
+
 ## Сводка: как проходит запрос пользователя
 
 ### Если пользователь работает через веб (`http://localhost:8080`)
@@ -343,3 +400,25 @@ docker compose up -d --build backend gateway
 - `tg_bot/docker-compose.yml`
 
 Они используют ту же сеть `project_net`, поэтому сервисы видят друг друга по именам контейнеров и сервисов.
+
+---
+
+## Управление пользователями
+
+### Добавление экономиста или администратора
+
+- Через веб: войти как superadmin → «Пользователи» → «Экономисты» или «Администраторы» → «Добавить пользователя».
+- Через API: `POST /api/v1/users/register` с токеном superadmin и телом `{login, password, role_id}` (role_id: 2 — админ, 3 — ведущий экономист, 4 — экономист).
+
+### Регистрация контрагента через бота
+
+1. Бот отправляет ссылку на регистрацию.
+2. Контрагент проходит её — профиль появляется во вкладке «Контрагенты» (статус `review`).
+3. Суперадмин переводит статус в `active` — в Telegram приходит подтверждение о выдаче прав.
+4. Контрагент вызывает `/start` — получает открытые заявки и ссылки на авторизацию.
+
+### Создание заявки
+
+Нужна минимум одна открытая заявка. Создать можно через суперадмина или под экономистом.
+
+> Подробный план и последние изменения — в `DEPLOYMENT_PLAN.md` (корень acom-project).
