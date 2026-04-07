@@ -1,7 +1,20 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orm_models import CompanyContact, Profile, Role, TgUser, User
+from app.models.orm_models import (
+    ChatParticipant,
+    CompanyContact,
+    Message,
+    MessageReceipt,
+    Offer,
+    Profile,
+    Request,
+    RequestHiddenContractor,
+    Role,
+    TgUser,
+    User,
+    UserStatusPeriod,
+)
 
 
 class UserRepository:
@@ -25,6 +38,11 @@ class UserRepository:
 
     async def add(self, user: User) -> None:
         self._session.add(user)
+
+    async def delete_by_id(self, *, user_id: str) -> None:
+        user = await self.get_by_id(user_id)
+        if user is not None:
+            await self._session.delete(user)
 
     async def list_subordinates_with_profiles(self, *, manager_user_id: str) -> list[tuple[User, Profile | None]]:
         stmt = (
@@ -117,6 +135,40 @@ class UserRepository:
 
     async def update_parent(self, user: User, parent_user_id: str | None) -> None:
         user.id_parent = parent_user_id
+
+    async def reassign_user_id(self, *, old_user_id: str, new_user_id: str) -> None:
+        await self._session.execute(
+            update(Profile).where(Profile.id == old_user_id).values(id=new_user_id)
+        )
+        await self._session.execute(
+            update(CompanyContact).where(CompanyContact.id == old_user_id).values(id=new_user_id)
+        )
+        await self._session.execute(
+            update(Request).where(Request.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(RequestHiddenContractor)
+            .where(RequestHiddenContractor.contractor_user_id == old_user_id)
+            .values(contractor_user_id=new_user_id)
+        )
+        await self._session.execute(
+            update(Offer).where(Offer.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(Message).where(Message.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(ChatParticipant).where(ChatParticipant.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(MessageReceipt).where(MessageReceipt.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(UserStatusPeriod).where(UserStatusPeriod.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(User).where(User.id_parent == old_user_id).values(id_parent=new_user_id)
+        )
 
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int) -> int | None:
         stmt = (

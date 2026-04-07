@@ -28,6 +28,7 @@ type UsersRow = {
     can_update_role?: boolean;
     can_update_manager?: boolean;
     can_manage_subordinate_unavailability?: boolean;
+    can_manage_manual_contractor?: boolean;
   };
   users?: {
     id?: string;

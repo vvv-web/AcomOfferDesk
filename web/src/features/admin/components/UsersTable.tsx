@@ -1,4 +1,4 @@
-import { zodResolver } from '@hookform/resolvers/zod';
+﻿import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Alert,
   Box,
@@ -20,8 +20,10 @@ import { UnavailabilityManagementSection, UnavailabilityPeriodEditor, hasPeriodO
 import { updateUserStatus } from '@shared/api/users/updateUserStatus';
 import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
+import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { DataTable } from '@shared/components/DataTable';
+import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import {
   getSubordinateProfile,
   setSubordinateUnavailabilityPeriod,
@@ -241,6 +243,169 @@ const SourceSection = ({
   </Box>
 );
 
+const formatPhoneForView = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+  const formatted = formatRuPhone(value);
+  return formatted || value;
+};
+
+type ManualContractorDraft = {
+  login: string;
+  full_name: string;
+  phone: string;
+  mail: string;
+  company_name: string;
+  inn: string;
+  company_phone: string;
+  company_mail: string;
+  address: string;
+  note: string;
+};
+
+type ManualContractorField = keyof ManualContractorDraft | 'password';
+type ManualContractorFieldErrors = Partial<Record<ManualContractorField, string>>;
+
+const buildManualContractorDraft = (user: UserListItem): ManualContractorDraft => ({
+  login: user.user_id,
+  full_name: user.full_name ?? '',
+  phone: formatPhoneForView(user.phone) ?? '',
+  mail: user.mail ?? '',
+  company_name: user.company_name ?? '',
+  inn: user.inn ?? '',
+  company_phone: formatPhoneForView(user.company_phone) ?? '',
+  company_mail: user.company_mail ?? '',
+  address: user.address ?? '',
+  note: user.note ?? ''
+});
+
+const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const utf8ByteLength = (value: string) => new TextEncoder().encode(value).length;
+
+const buildManualContractorPayload = (
+  user: UserListItem,
+  draft: ManualContractorDraft,
+  password: string
+) => {
+  const trimmedDraft: ManualContractorDraft = {
+    login: draft.login.trim(),
+    full_name: draft.full_name.trim(),
+    phone: draft.phone.trim(),
+    mail: draft.mail.trim(),
+    company_name: draft.company_name.trim(),
+    inn: draft.inn.trim(),
+    company_phone: draft.company_phone.trim(),
+    company_mail: draft.company_mail.trim(),
+    address: draft.address.trim(),
+    note: draft.note.trim()
+  };
+  const trimmedPassword = password.trim();
+
+  const payload = {
+    ...(trimmedDraft.login !== user.user_id ? { login: trimmedDraft.login } : {}),
+    ...(trimmedPassword ? { password: trimmedPassword } : {}),
+    ...(trimmedDraft.full_name !== (user.full_name ?? '') ? { full_name: trimmedDraft.full_name } : {}),
+    ...(trimmedDraft.phone !== (user.phone ?? '') ? { phone: trimmedDraft.phone } : {}),
+    ...(trimmedDraft.mail !== (user.mail ?? '') ? { mail: trimmedDraft.mail } : {}),
+    ...(trimmedDraft.company_name !== (user.company_name ?? '') ? { company_name: trimmedDraft.company_name } : {}),
+    ...(trimmedDraft.inn !== (user.inn ?? '') ? { inn: trimmedDraft.inn } : {}),
+    ...(trimmedDraft.company_phone !== (user.company_phone ?? '') ? { company_phone: trimmedDraft.company_phone } : {}),
+    ...(trimmedDraft.company_mail !== (user.company_mail ?? '') ? { company_mail: trimmedDraft.company_mail } : {}),
+    ...(trimmedDraft.address !== (user.address ?? '') ? { address: trimmedDraft.address } : {}),
+    ...(trimmedDraft.note !== (user.note ?? '') ? { note: trimmedDraft.note } : {})
+  } as Parameters<typeof updateManualContractor>[1];
+
+  return { trimmedDraft, payload };
+};
+
+const validateManualContractorPayload = (
+  payload: Parameters<typeof updateManualContractor>[1]
+): { fieldErrors: ManualContractorFieldErrors; firstError: string | null } => {
+  const fieldErrors: ManualContractorFieldErrors = {};
+
+  const setFieldError = (field: ManualContractorField, message: string) => {
+    if (!fieldErrors[field]) {
+      fieldErrors[field] = message;
+    }
+  };
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value === 'string' && !value.trim()) {
+      setFieldError(key as ManualContractorField, 'Поле не может быть пустым');
+    }
+  }
+
+  const loginValue = payload.login;
+  if (loginValue !== undefined && (loginValue.length < 3 || loginValue.length > 128)) {
+    setFieldError('login', 'Логин должен содержать от 3 до 128 символов');
+  }
+
+  const passwordValue = payload.password;
+  if (
+    passwordValue !== undefined
+    && (passwordValue.length < 6 || passwordValue.length > 72 || utf8ByteLength(passwordValue) > 72)
+  ) {
+    setFieldError('password', 'Пароль должен содержать от 6 до 72 символов (не более 72 байт)');
+  }
+
+  const phoneValue = payload.phone;
+  if (phoneValue !== undefined && !isValidRuPhone(phoneValue)) {
+    setFieldError('phone', 'Некорректный формат телефона контакта');
+  }
+
+  const companyPhoneValue = payload.company_phone;
+  if (companyPhoneValue !== undefined && !isValidRuPhone(companyPhoneValue)) {
+    setFieldError('company_phone', 'Некорректный формат телефона компании');
+  }
+
+  const mailValue = payload.mail;
+  if (mailValue !== undefined && !emailRegex.test(mailValue)) {
+    setFieldError('mail', 'Некорректный формат e-mail контакта');
+  }
+
+  const companyMailValue = payload.company_mail;
+  if (companyMailValue !== undefined && !emailRegex.test(companyMailValue)) {
+    setFieldError('company_mail', 'Некорректный формат e-mail компании');
+  }
+
+  const innValue = payload.inn;
+  if (innValue !== undefined && !/^\d{10}$|^\d{12}$/.test(innValue)) {
+    setFieldError('inn', 'ИНН должен содержать 10 или 12 цифр');
+  }
+
+  if (payload.full_name !== undefined && payload.full_name.length > 256) {
+    setFieldError('full_name', 'Максимальная длина ФИО — 256 символов');
+  }
+  if (phoneValue !== undefined && phoneValue.length > 64) {
+    setFieldError('phone', 'Максимальная длина телефона — 64 символа');
+  }
+  if (mailValue !== undefined && mailValue.length > 256) {
+    setFieldError('mail', 'Максимальная длина e-mail — 256 символов');
+  }
+  if (payload.company_name !== undefined && payload.company_name.length > 256) {
+    setFieldError('company_name', 'Максимальная длина наименования — 256 символов');
+  }
+  if (innValue !== undefined && innValue.length > 32) {
+    setFieldError('inn', 'Максимальная длина ИНН — 32 символа');
+  }
+  if (companyPhoneValue !== undefined && companyPhoneValue.length > 64) {
+    setFieldError('company_phone', 'Максимальная длина телефона — 64 символа');
+  }
+  if (companyMailValue !== undefined && companyMailValue.length > 256) {
+    setFieldError('company_mail', 'Максимальная длина e-mail — 256 символов');
+  }
+  if (payload.address !== undefined && payload.address.length > 256) {
+    setFieldError('address', 'Максимальная длина адреса — 256 символов');
+  }
+  if (payload.note !== undefined && payload.note.length > 1024) {
+    setFieldError('note', 'Максимальная длина примечания — 1024 символа');
+  }
+
+  const firstError = Object.values(fieldErrors)[0] ?? null;
+  return { fieldErrors, firstError };
+};
+
 const mapUserStatusToTgStatus = (status: StatusFormValues['user_status']) => {
   if (status === 'review') return 'review';
   if (status === 'active') return 'approved';
@@ -318,6 +483,22 @@ export const UsersTable = ({
   const [managerUserId, setManagerUserId] = useState('');
   const [isUpdatingManager, setIsUpdatingManager] = useState(false);
   const [openSubordinateUnavailability, setOpenSubordinateUnavailability] = useState(false);
+  const [manualContractorDraft, setManualContractorDraft] = useState<ManualContractorDraft>(() => ({
+    login: '',
+    full_name: '',
+    phone: '',
+    mail: '',
+    company_name: '',
+    inn: '',
+    company_phone: '',
+    company_mail: '',
+    address: '',
+    note: ''
+  }));
+  const [manualContractorPassword, setManualContractorPassword] = useState('');
+  const [manualContractorError, setManualContractorError] = useState<string | null>(null);
+  const [manualContractorSuccess, setManualContractorSuccess] = useState<string | null>(null);
+  const [isUpdatingManualContractor, setIsUpdatingManualContractor] = useState(false);
 
   const {
     register,
@@ -365,6 +546,69 @@ export const UsersTable = ({
   useEffect(() => {
     setManagerUserId(selectedUser?.id_parent ?? '');
   }, [selectedUser?.id_parent]);
+
+  useEffect(() => {
+    if (!selectedUser) {
+      return;
+    }
+    setManualContractorDraft(buildManualContractorDraft(selectedUser));
+    setManualContractorPassword('');
+    setManualContractorError(null);
+    setManualContractorSuccess(null);
+  }, [selectedUser]);
+
+  const manualContractorValidation = useMemo(() => {
+    if (!selectedUser || !selectedUser.actions.manage_manual_contractor) {
+      return {
+        hasChanges: false,
+        payload: {} as Parameters<typeof updateManualContractor>[1],
+        trimmedDraft: {
+          login: '',
+          full_name: '',
+          phone: '',
+          mail: '',
+          company_name: '',
+          inn: '',
+          company_phone: '',
+          company_mail: '',
+          address: '',
+          note: ''
+        } as ManualContractorDraft,
+        fieldErrors: {} as ManualContractorFieldErrors,
+        firstError: null as string | null
+      };
+    }
+
+    const { payload, trimmedDraft } = buildManualContractorPayload(
+      selectedUser,
+      manualContractorDraft,
+      manualContractorPassword
+    );
+    const { fieldErrors, firstError } = validateManualContractorPayload(payload);
+
+    return {
+      hasChanges: Object.keys(payload).length > 0,
+      payload,
+      trimmedDraft,
+      fieldErrors,
+      firstError
+    };
+  }, [manualContractorDraft, manualContractorPassword, selectedUser]);
+
+  const updateManualContractorField = <K extends keyof ManualContractorDraft>(
+    field: K,
+    value: ManualContractorDraft[K]
+  ) => {
+    setManualContractorError(null);
+    setManualContractorSuccess(null);
+    setManualContractorDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleManualContractorPasswordChange = (value: string) => {
+    setManualContractorError(null);
+    setManualContractorSuccess(null);
+    setManualContractorPassword(value);
+  };
 
   useEffect(() => {
     if (!selectedUser?.actions.update_manager) {
@@ -478,6 +722,51 @@ export const UsersTable = ({
       setIsUpdatingManager(false);
     }
   };
+
+  const handleManualContractorSave = async () => {
+    if (!selectedUser || !selectedUser.actions.manage_manual_contractor) {
+      return;
+    }
+
+    if (!manualContractorValidation.hasChanges) {
+      setManualContractorError('Изменений не обнаружено');
+      setManualContractorSuccess(null);
+      return;
+    }
+
+    if (manualContractorValidation.firstError) {
+      setManualContractorError(manualContractorValidation.firstError);
+      setManualContractorSuccess(null);
+      return;
+    }
+
+    setIsUpdatingManualContractor(true);
+    setManualContractorError(null);
+    setManualContractorSuccess(null);
+
+    try {
+      await updateManualContractor(selectedUser.user_id, manualContractorValidation.payload);
+
+      setManualContractorPassword('');
+      setManualContractorSuccess('Данные контрагента обновлены');
+      await onStatusUpdated();
+      setSelectedUser((prev) => (
+        prev
+          ? {
+              ...prev,
+              ...manualContractorValidation.trimmedDraft,
+              user_id: manualContractorValidation.trimmedDraft.login
+            }
+          : prev
+      ));
+    } catch (error) {
+      setManualContractorError(error instanceof Error ? error.message : 'Не удалось обновить данные контрагента');
+    } finally {
+      setIsUpdatingManualContractor(false);
+    }
+  };
+
+  const manualContractorFieldErrors = manualContractorValidation.fieldErrors;
 
   if (!isContractorsTab) {
     return (
@@ -620,7 +909,7 @@ export const UsersTable = ({
                             gap: 1.2
                           }}
                         >
-                          <InfoRow label="Телефон" value={selectedUser.phone} />
+                          <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
                           <InfoRow label="E-mail" value={selectedUser.mail} />
                         </Box>
                       </Stack>
@@ -792,9 +1081,9 @@ export const UsersTable = ({
         renderRow={(row) => [
           <Typography variant="body2">{row.user_id}</Typography>,
           <Typography variant="body2">{row.full_name ?? '—'}</Typography>,
-          <Typography variant="body2">{row.phone ?? '—'}</Typography>,
+          <Typography variant="body2">{formatPhoneForView(row.phone) ?? '—'}</Typography>,
           <Typography variant="body2">{row.mail ?? '—'}</Typography>,
-          <Typography variant="body2">{row.company_phone ?? '—'}</Typography>,
+          <Typography variant="body2">{formatPhoneForView(row.company_phone) ?? '—'}</Typography>,
           <Typography variant="body2">{row.company_mail ?? '—'}</Typography>,
           <StatusPill value={row.status} />
         ]}
@@ -854,7 +1143,7 @@ export const UsersTable = ({
                           gap: 1.2
                         }}
                       >
-                        <InfoRow label="Телефон" value={selectedUser.phone} />
+                        <InfoRow label="Телефон" value={formatPhoneForView(selectedUser.phone)} />
                         <InfoRow label="E-mail" value={selectedUser.mail} />
                       </Box>
                     </Stack>
@@ -880,7 +1169,7 @@ export const UsersTable = ({
                           gap: 1.2
                         }}
                       >
-                        <InfoRow label="Телефон компании" value={selectedUser.company_phone} />
+                        <InfoRow label="Телефон компании" value={formatPhoneForView(selectedUser.company_phone)} />
                         <InfoRow label="E-mail компании" value={selectedUser.company_mail} />
                         <InfoRow label="Адрес" value={selectedUser.address} />
                       </Box>
@@ -907,6 +1196,130 @@ export const UsersTable = ({
                   </SourceSection>
                 </Stack>
               </Box>
+
+              {selectedUser.actions.manage_manual_contractor ? (
+                <Stack
+                  spacing={1.2}
+                  sx={{
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    p: { xs: 1.4, sm: 1.8 },
+                    backgroundColor: 'background.paper'
+                  }}
+                >
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                    Редактирование данных
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                      gap: 1.2
+                    }}
+                  >
+                    <TextField
+                      label="Логин"
+                      value={manualContractorDraft.login}
+                      onChange={(event) => updateManualContractorField('login', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.login)}
+                      helperText={manualContractorFieldErrors.login}
+                    />
+                    <TextField
+                      label="Новый пароль"
+                      type="password"
+                      placeholder="Оставьте пустым, если без смены"
+                      value={manualContractorPassword}
+                      onChange={(event) => handleManualContractorPasswordChange(event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.password)}
+                      helperText={manualContractorFieldErrors.password}
+                    />
+                    <TextField
+                      label="ФИО"
+                      value={manualContractorDraft.full_name}
+                      onChange={(event) => updateManualContractorField('full_name', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.full_name)}
+                      helperText={manualContractorFieldErrors.full_name}
+                    />
+                    <TextField
+                      label="Телефон"
+                      value={manualContractorDraft.phone}
+                      onChange={(event) => updateManualContractorField('phone', formatRuPhone(event.target.value))}
+                      placeholder="+7 (900) 999-88-77"
+                      error={Boolean(manualContractorFieldErrors.phone)}
+                      helperText={manualContractorFieldErrors.phone}
+                    />
+                    <TextField
+                      label="E-mail"
+                      value={manualContractorDraft.mail}
+                      onChange={(event) => updateManualContractorField('mail', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.mail)}
+                      helperText={manualContractorFieldErrors.mail}
+                    />
+                    <TextField
+                      label="Компания"
+                      value={manualContractorDraft.company_name}
+                      onChange={(event) => updateManualContractorField('company_name', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.company_name)}
+                      helperText={manualContractorFieldErrors.company_name}
+                    />
+                    <TextField
+                      label="ИНН"
+                      value={manualContractorDraft.inn}
+                      onChange={(event) => updateManualContractorField('inn', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.inn)}
+                      helperText={manualContractorFieldErrors.inn}
+                    />
+                    <TextField
+                      label="Телефон компании"
+                      value={manualContractorDraft.company_phone}
+                      onChange={(event) => updateManualContractorField('company_phone', formatRuPhone(event.target.value))}
+                      placeholder="+7 (900) 999-88-77"
+                      error={Boolean(manualContractorFieldErrors.company_phone)}
+                      helperText={manualContractorFieldErrors.company_phone}
+                    />
+                    <TextField
+                      label="E-mail компании"
+                      value={manualContractorDraft.company_mail}
+                      onChange={(event) => updateManualContractorField('company_mail', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.company_mail)}
+                      helperText={manualContractorFieldErrors.company_mail}
+                    />
+                    <TextField
+                      label="Адрес"
+                      value={manualContractorDraft.address}
+                      onChange={(event) => updateManualContractorField('address', event.target.value)}
+                      error={Boolean(manualContractorFieldErrors.address)}
+                      helperText={manualContractorFieldErrors.address}
+                    />
+                  </Box>
+                  <TextField
+                    label="Примечание"
+                    value={manualContractorDraft.note}
+                    onChange={(event) => updateManualContractorField('note', event.target.value)}
+                    multiline
+                    minRows={2}
+                    error={Boolean(manualContractorFieldErrors.note)}
+                    helperText={manualContractorFieldErrors.note}
+                  />
+                  {manualContractorError ? <Alert severity="error">{manualContractorError}</Alert> : null}
+                  {manualContractorSuccess ? <Alert severity="success">{manualContractorSuccess}</Alert> : null}
+                  <Stack direction="row" justifyContent="flex-end">
+                    <Button
+                      variant="outlined"
+                      onClick={() => void handleManualContractorSave()}
+                      disabled={
+                        isUpdatingManualContractor
+                        || !manualContractorValidation.hasChanges
+                        || Boolean(manualContractorValidation.firstError)
+                      }
+                      sx={{ borderRadius: 1, textTransform: 'none' }}
+                    >
+                      {isUpdatingManualContractor ? 'Сохранение...' : 'Сохранить данные'}
+                    </Button>
+                  </Stack>
+                </Stack>
+              ) : null}
 
               {canUpdateStatus ? (
                 <Stack
@@ -1015,3 +1428,5 @@ export const UsersTable = ({
     </>
   );
 };
+
+

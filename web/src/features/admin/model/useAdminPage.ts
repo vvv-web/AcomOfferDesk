@@ -6,22 +6,148 @@ import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import type { UserListItem } from '@entities/user';
 import { registerUser } from '@shared/api/auth/registerUser';
+import { createManualContractor } from '@shared/api/users/createManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { getUsers } from '@shared/api/users/getUsers';
 import { hasPermission } from '@shared/auth/permissions';
 import { ROLE } from '@shared/constants/roles';
+import { isValidRuPhone } from '@shared/lib/phone';
 import { addUserButtonSx, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
 import { resolveUserTabFromParam } from './helpers';
 
+const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const innRegex = /^\d{10}$|^\d{12}$/;
+
 const schema = z
   .object({
-    login: z.string().min(3, 'Минимум 3 символа'),
-    password: z.string().min(6, 'Минимум 6 символов'),
-    confirmPassword: z.string().min(6, 'Минимум 6 символов'),
     role_id: z.number({ required_error: 'Выберите роль' }),
-    id_parent: z.string().optional()
+    login: z.string().optional(),
+    password: z.string().optional(),
+    confirmPassword: z.string().optional(),
+    id_parent: z.string().optional(),
+    company_name: z.string().optional(),
+    inn: z.string().optional(),
+    company_phone: z.string().optional(),
+    company_mail: z.string().optional(),
+    address: z.string().optional(),
+    note: z.string().optional()
   })
   .superRefine((data, ctx) => {
+    const isContractor = data.role_id === ROLE.CONTRACTOR;
+
+    if (isContractor) {
+      const companyName = data.company_name?.trim() ?? '';
+      const inn = data.inn?.trim() ?? '';
+      const companyPhone = data.company_phone?.trim() ?? '';
+      const companyMail = data.company_mail?.trim() ?? '';
+      const address = data.address?.trim() ?? '';
+      const note = data.note?.trim() ?? '';
+
+      if (!companyName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Наименование компании обязательно',
+          path: ['company_name']
+        });
+      } else if (companyName.length > 256) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Наименование компании не должно превышать 256 символов',
+          path: ['company_name']
+        });
+      }
+
+      if (!inn) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ИНН обязателен',
+          path: ['inn']
+        });
+      } else if (!innRegex.test(inn)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ИНН должен содержать 10 или 12 цифр',
+          path: ['inn']
+        });
+      }
+
+      if (!companyPhone) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Телефон компании обязателен',
+          path: ['company_phone']
+        });
+      } else if (!isValidRuPhone(companyPhone)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Некорректный формат телефона компании',
+          path: ['company_phone']
+        });
+      }
+
+      if (companyMail && !emailRegex.test(companyMail)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Некорректный формат e-mail компании',
+          path: ['company_mail']
+        });
+      }
+
+      if (address.length > 256) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Адрес не должен превышать 256 символов',
+          path: ['address']
+        });
+      }
+
+      if (note.length > 1024) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Дополнительная информация не должна превышать 1024 символа',
+          path: ['note']
+        });
+      }
+
+      return;
+    }
+
+    const login = data.login?.trim() ?? '';
+    const password = data.password ?? '';
+    const confirmPassword = data.confirmPassword ?? '';
+
+    if (login.length < 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Минимум 3 символа',
+        path: ['login']
+      });
+    }
+
+    if (password.length < 6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Минимум 6 символов',
+        path: ['password']
+      });
+    }
+
+    if (confirmPassword.length < 6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Минимум 6 символов',
+        path: ['confirmPassword']
+      });
+    }
+
+    if (password !== confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Пароли не совпадают',
+        path: ['confirmPassword']
+      });
+    }
+
     if ((data.role_id === ROLE.ECONOMIST || data.role_id === ROLE.LEAD_ECONOMIST) && !data.id_parent?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -29,10 +155,6 @@ const schema = z
         path: ['id_parent']
       });
     }
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Пароли не совпадают',
-    path: ['confirmPassword']
   });
 
 export type AdminUserFormValues = z.infer<typeof schema>;
@@ -92,17 +214,26 @@ export const useAdminPage = () => {
 
   const form = useForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
+    reValidateMode: 'onChange',
     defaultValues: {
+      role_id: roleOptions[0]?.id ?? ROLE.ADMIN,
       login: '',
       password: '',
       confirmPassword: '',
-      role_id: roleOptions[0]?.id ?? ROLE.ADMIN,
-      id_parent: ''
+      id_parent: '',
+      company_name: '',
+      inn: '',
+      company_phone: '',
+      company_mail: '',
+      address: '',
+      note: ''
     }
   });
 
   const { watch, setValue, reset } = form;
   const selectedRoleId = watch('role_id');
+  const isContractorRole = selectedRoleId === ROLE.CONTRACTOR;
   const requiresParent = selectedRoleId === ROLE.ECONOMIST || selectedRoleId === ROLE.LEAD_ECONOMIST;
   const managerOptions = selectedRoleId === ROLE.ECONOMIST ? economistAndLeadManagers : projectManagerManagers;
 
@@ -188,11 +319,17 @@ export const useAdminPage = () => {
 
   const resetForm = useCallback(() => {
     reset({
+      role_id: roleOptions[0]?.id ?? ROLE.ADMIN,
       login: '',
       password: '',
       confirmPassword: '',
-      role_id: roleOptions[0]?.id ?? ROLE.ADMIN,
-      id_parent: ''
+      id_parent: '',
+      company_name: '',
+      inn: '',
+      company_phone: '',
+      company_mail: '',
+      address: '',
+      note: ''
     });
   }, [reset, roleOptions]);
 
@@ -212,13 +349,28 @@ export const useAdminPage = () => {
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      const response = await registerUser({
-        login: values.login,
-        password: values.password,
-        role_id: values.role_id,
-        id_parent: values.id_parent?.trim() || undefined
-      });
-      setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
+      if (values.role_id === ROLE.CONTRACTOR) {
+        const response = await createManualContractor({
+          company_name: values.company_name?.trim() ?? '',
+          inn: values.inn?.trim() ?? '',
+          company_phone: values.company_phone?.trim() ?? '',
+          company_mail: values.company_mail?.trim() || undefined,
+          address: values.address?.trim() || undefined,
+          note: values.note?.trim() || undefined
+        });
+
+        setSuccessMessage(`Контрагент ${response.userId} создан.`);
+      } else {
+        const response = await registerUser({
+          login: values.login?.trim() ?? '',
+          password: values.password ?? '',
+          role_id: values.role_id,
+          id_parent: values.id_parent?.trim() || undefined
+        });
+
+        setSuccessMessage(`Пользователь ${response.data.user_id} создан.`);
+      }
+
       resetForm();
       await Promise.all([loadUsers(), loadManagers()]);
     } catch (error) {
@@ -244,6 +396,7 @@ export const useAdminPage = () => {
     userTabs,
     getRoleLabel,
     canCreateUser,
+    isContractorRole,
     requiresParent,
     managerOptions,
     loadUsers,

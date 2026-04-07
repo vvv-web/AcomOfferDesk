@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orm_models import Profile, User
+from app.models.orm_models import Profile, TgUser, User
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +48,10 @@ class ProfileRepository:
         stmt = (
             select(Profile.mail)
             .join(User, User.id == Profile.id)
+            .join(TgUser, TgUser.id == User.tg_user_id)
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
+            .where(TgUser.status == "approved")
             .order_by(User.id)
         )
         result = await self._session.execute(stmt)
@@ -66,8 +68,10 @@ class ProfileRepository:
         stmt = (
             select(Profile)
             .join(User, User.id == Profile.id)
+            .join(TgUser, TgUser.id == User.tg_user_id)
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
+            .where(TgUser.status == "approved")
             .order_by(User.id)
         )
         result = await self._session.execute(stmt)
@@ -88,8 +92,10 @@ class ProfileRepository:
         stmt = (
             select(User.id, User.tg_user_id, Profile.mail)
             .join(Profile, Profile.id == User.id)
+            .join(TgUser, TgUser.id == User.tg_user_id)
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
+            .where(TgUser.status == "approved")
             .order_by(User.id)
         )
         result = await self._session.execute(stmt)

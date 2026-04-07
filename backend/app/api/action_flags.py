@@ -11,6 +11,7 @@ from app.domain.policies import OfferPolicy, RequestPolicy, UserPolicy
 from app.repositories.chats import ChatRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
+from app.repositories.users import UserRepository
 from app.schemas.actions import (
     ChatActionsSchema,
     OfferActionsSchema,
@@ -77,6 +78,7 @@ class OfferActionBuilder:
         request_owner_user_id: str,
         contractor_user_id: str,
         offer_status: str,
+        offer_is_manual: bool = False,
     ) -> OfferActionsSchema:
         can_manage_request_offer = RequestPolicy.can_edit(
             current_user,
@@ -85,6 +87,30 @@ class OfferActionBuilder:
         can_manage_own_offer = OfferPolicy.can_access_contractor_offer(
             current_user,
             offer_owner_user_id=offer_owner_user_id,
+        )
+        can_manage_offer = OfferPolicy.can_manage_offer(
+            current_user,
+            offer_owner_user_id=offer_owner_user_id,
+            request_owner_user_id=request_owner_user_id,
+        )
+        is_contractor = current_user.role_id == settings.contractor_role_id
+        can_manage_manual_offer_files = (
+            not is_contractor
+            and OfferPolicy.can_manage_manual_offer_files(
+                current_user,
+                request_owner_user_id=request_owner_user_id,
+                offer_is_manual=offer_is_manual,
+            )
+        )
+        can_upload_files_by_permission = (
+            not is_contractor
+            and has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
+            and can_manage_offer
+        )
+        can_delete_files_by_permission = (
+            not is_contractor
+            and has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
+            and can_manage_offer
         )
         can_update_status = has_permission(current_user, PermissionCodes.OFFERS_STATUS_UPDATE)
         return OfferActionsSchema(
@@ -98,9 +124,10 @@ class OfferActionBuilder:
             ),
             can_edit_amount=(
                 has_permission(current_user, PermissionCodes.OFFERS_UPDATE)
+                and can_manage_offer
                 and (
-                    (can_manage_own_offer and offer_status not in {"accepted", "rejected"})
-                    or can_manage_request_offer
+                    current_user.role_id != settings.contractor_role_id
+                    or offer_status not in {"accepted", "rejected"}
                 )
             ),
             can_accept=can_update_status and can_manage_request_offer and offer_status != "accepted",
@@ -111,13 +138,21 @@ class OfferActionBuilder:
                 and (can_manage_request_offer or can_manage_own_offer)
             ),
             can_upload_files=(
-                has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
-                and can_manage_own_offer
-                and offer_status not in {"accepted", "rejected"}
+                (
+                    has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD)
+                    and can_manage_offer
+                    and offer_status not in {"accepted", "rejected"}
+                )
+                if is_contractor
+                else (can_upload_files_by_permission or can_manage_manual_offer_files)
             ),
             can_delete_files=(
-                has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
-                and can_manage_own_offer
+                (
+                    has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE)
+                    and can_manage_offer
+                )
+                if is_contractor
+                else (can_delete_files_by_permission or can_manage_manual_offer_files)
             ),
         )
 
@@ -161,6 +196,7 @@ class UserActionBuilder:
         *,
         target_user_id: str,
         target_role_id: int,
+        target_tg_user_id: int | None = None,
     ) -> UserActionsSchema:
         can_manage_subordinate_target = _can_manage_subordinate_target(
             current_user,
@@ -183,6 +219,11 @@ class UserActionBuilder:
             can_update_manager=(
                 UserPolicy.can_update_user_manager(current_user)
                 and can_manage_subordinate_target
+            ),
+            can_manage_manual_contractor=(
+                UserPolicy.can_manage_manual_contractors(current_user)
+                and target_role_id == settings.contractor_role_id
+                and target_tg_user_id is None
             ),
         )
 
@@ -229,6 +270,7 @@ class ResolvedOfferActionContext:
     offer_owner_user_id: str
     request_owner_user_id: str
     request_id: int
+    offer_is_manual: bool
     can_create_new_offer: bool
     can_acknowledge_messages: bool
     offer_actions: OfferActionsSchema
@@ -242,10 +284,12 @@ class OfferActionResolver:
         offers: OfferRepository,
         requests: RequestRepository,
         chats: ChatRepository,
+        users: UserRepository,
     ) -> None:
         self._offers = offers
         self._requests = requests
         self._chats = chats
+        self._users = users
 
     async def resolve_workspace_context(
         self,
@@ -260,6 +304,13 @@ class OfferActionResolver:
         request = await self._requests.get_by_id(request_id=offer.id_request)
         if request is None:
             raise NotFound("Request not found")
+        offer_owner = await self._users.get_by_id(user_id=offer.id_user)
+        if offer_owner is None:
+            raise NotFound("Offer owner not found")
+        offer_is_manual = (
+            offer_owner.id_role == settings.contractor_role_id
+            and offer_owner.tg_user_id is None
+        )
 
         can_create_new_offer = False
         if current_user.role_id == settings.contractor_role_id and current_user.user_id == offer.id_user:
@@ -284,6 +335,7 @@ class OfferActionResolver:
             request_owner_user_id=request.id_user,
             contractor_user_id=offer.id_user,
             offer_status=offer.status,
+            offer_is_manual=offer_is_manual,
         )
         chat_actions = ChatActionBuilder.build(
             current_user,
@@ -295,6 +347,7 @@ class OfferActionResolver:
             offer_owner_user_id=offer.id_user,
             request_owner_user_id=request.id_user,
             request_id=request.id,
+            offer_is_manual=offer_is_manual,
             can_create_new_offer=can_create_new_offer,
             can_acknowledge_messages=can_acknowledge_messages,
             offer_actions=offer_actions,

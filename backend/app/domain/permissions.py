@@ -26,6 +26,7 @@ class PermissionCodes:
     REQUESTS_EMAIL_NOTIFICATIONS_SEND = "requests.email_notifications.send"
     REQUESTS_DELETED_ALERTS_MARK_VIEWED = "requests.deleted_alerts.mark_viewed"
     OFFERS_CREATE = "offers.create"
+    OFFERS_MANUAL_CREATE = "offers.manual.create"
     OFFERS_WORKSPACE_READ = "offers.workspace.read"
     OFFERS_UPDATE = "offers.update"
     OFFERS_STATUS_UPDATE = "offers.status.update"
@@ -44,6 +45,7 @@ class PermissionCodes:
     FILES_DOWNLOAD = "files.download"
     UNAVAILABILITY_MANAGE_OWN = "unavailability.manage_own"
     UNAVAILABILITY_MANAGE_SUBORDINATE = "unavailability.manage_subordinate"
+    CONTRACTORS_MANUAL_MANAGE = "contractors.manual.manage"
 
 
 @lru_cache(maxsize=1)
@@ -119,6 +121,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_CREATE,
                 PermissionCodes.USERS_STATUS_UPDATE,
                 PermissionCodes.USERS_ROLE_UPDATE,
+                PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
             }
         ),
         settings.contractor_role_id: frozenset(common_permissions | contractor_permissions),
@@ -144,6 +147,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
             | {
                 PermissionCodes.NORMATIVE_FILES_MANAGE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
+                PermissionCodes.OFFERS_MANUAL_CREATE,
             }
         ),
         settings.economist_role_id: frozenset(
@@ -156,6 +160,7 @@ def get_role_permissions_map() -> dict[int, frozenset[str]]:
                 PermissionCodes.USERS_MANAGER_UPDATE,
                 PermissionCodes.UNAVAILABILITY_MANAGE_OWN,
                 PermissionCodes.UNAVAILABILITY_MANAGE_SUBORDINATE,
+                PermissionCodes.OFFERS_MANUAL_CREATE,
             }
         ),
         settings.operator_role_id: frozenset(
