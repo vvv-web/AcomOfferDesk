@@ -242,7 +242,7 @@ export const ProfileButton = () => {
   };
 
   const showCompanyInfo = (profile?.roleId ?? session?.roleId) === ROLE.CONTRACTOR;
-  const canEditCredentials = Boolean(profile?.actions.manage_credentials);
+  const canEditCredentials = Boolean(profile?.actions.manage_credentials) && session?.authProvider === 'legacy';
   const canEditProfile = Boolean(profile?.actions.manage_own_profile);
   const canEditCompany = Boolean(profile?.actions.manage_company_contacts);
   const canSetUnavailability = Boolean(profile?.actions.manage_own_unavailability);

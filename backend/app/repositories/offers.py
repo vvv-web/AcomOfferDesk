@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import Select, delete, select
+from sqlalchemy import BigInteger, Select, and_, cast, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.orm_models import Chat, File, Message, MessageFile, Offer, OfferFile, TgUser, User
+from app.models.auth_models import UserAuthAccount, UserContactChannel
+from app.models.orm_models import Chat, File, Message, MessageFile, Offer, OfferFile, User
 
 
 class OfferRepository:
@@ -109,17 +110,32 @@ class OfferRepository:
 
     async def list_contractor_tg_ids_for_request(self, *, request_id: int, contractor_role_id: int) -> list[int]:
         stmt = (
-            select(User.tg_user_id)
+            select(cast(UserAuthAccount.external_subject_id, BigInteger))
             .select_from(Offer)
             .join(User, User.id == Offer.id_user)
-            .join(TgUser, TgUser.id == User.tg_user_id)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "telegram",
+                    UserAuthAccount.is_active.is_(True),
+                ),
+            )
+            .join(
+                UserContactChannel,
+                and_(
+                    UserContactChannel.id_user == User.id,
+                    UserContactChannel.channel_type == "telegram",
+                    UserContactChannel.channel_value == UserAuthAccount.external_subject_id,
+                    UserContactChannel.is_active.is_(True),
+                    UserContactChannel.is_verified.is_(True),
+                ),
+            )
             .where(Offer.id_request == request_id)
             .where(User.id_role == contractor_role_id)
             .where(User.status == "active")
-            .where(User.tg_user_id.is_not(None))
-            .where(TgUser.status == "approved")
             .distinct()
-            .order_by(User.tg_user_id.asc())
+            .order_by(cast(UserAuthAccount.external_subject_id, BigInteger).asc())
         )
         result = await self._session.execute(stmt)
         return [tg_id for tg_id in result.scalars().all() if tg_id is not None]

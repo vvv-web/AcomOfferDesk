@@ -26,6 +26,9 @@ export type AuthSession = {
   roleId: number;
   role: string;
   status: string;
+  authProvider: string;
+  businessAccess: boolean;
+  onboardingState: string | null;
   permissions: string[];
 };
 
@@ -33,7 +36,9 @@ type AuthContextValue = {
   status: AuthStatus;
   session: AuthSession | null;
   isAuthenticated: boolean;
-  login: (payload: LoginWebUserPayload) => Promise<AuthSession>;
+  loginLegacy: (payload: LoginWebUserPayload) => Promise<AuthSession>;
+  beginLogin: (nextPath?: string) => void;
+  beginRegistration: () => void;
   exchangeTelegramToken: (token: string) => Promise<AuthSession>;
   refresh: (reason: RefreshReason) => Promise<boolean>;
   logout: () => void;
@@ -52,8 +57,14 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   roleId: response.data.role_id,
   role: roleById[response.data.role_id] ?? `role_${response.data.role_id}`,
   status: response.data.status,
+  authProvider: response.data.auth_provider ?? 'legacy',
+  businessAccess: Boolean(response.data.business_access),
+  onboardingState: response.data.onboarding_state ?? null,
   permissions: response.data.permissions ?? []
 });
+
+const buildLoginUrl = (nextPath: string) => `/api/v1/auth/oidc/login?next_path=${encodeURIComponent(nextPath)}`;
+const buildRegisterUrl = () => `/api/v1/auth/oidc/register?next_path=${encodeURIComponent('/account')}`;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -101,7 +112,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         await logoutWebSession();
       } catch {
-        // Logout still succeeds locally if backend cookie cleanup fails.
+        // Local logout already happened.
       }
     }
 
@@ -149,13 +160,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return refreshPromiseRef.current;
   }, [applySession, canAttemptSilentRefresh, trackActivity]);
 
-  const login = useCallback(async (payload: LoginWebUserPayload) => {
+  const loginLegacy = useCallback(async (payload: LoginWebUserPayload) => {
     trackActivity();
     const response = await loginWebUser(payload);
     const nextSession = mapSession(response);
     applySession(nextSession, 'authenticated');
     return nextSession;
   }, [applySession, trackActivity]);
+
+  const beginLogin = useCallback((nextPath?: string) => {
+    const target = nextPath ?? location.pathname ?? '/';
+    window.location.assign(buildLoginUrl(target));
+  }, [location.pathname]);
+
+  const beginRegistration = useCallback(() => {
+    window.location.assign(buildRegisterUrl());
+  }, []);
 
   const exchangeTelegramToken = useCallback(async (token: string) => {
     trackActivity();
@@ -212,12 +232,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       status,
       session,
       isAuthenticated: (status === 'authenticated' || status === 'refreshing') && Boolean(session?.token),
-      login,
+      loginLegacy,
+      beginLogin,
+      beginRegistration,
       exchangeTelegramToken,
       refresh,
       logout
     }),
-    [exchangeTelegramToken, login, logout, refresh, session, status]
+    [beginLogin, beginRegistration, exchangeTelegramToken, loginLegacy, logout, refresh, session, status]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

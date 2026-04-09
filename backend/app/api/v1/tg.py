@@ -175,7 +175,8 @@ async def complete_tg_registration(
             uow.users,
             uow.profiles,
             uow.company_contacts,
-            uow.tg_users,
+            uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         user = await service.register_contractor(
             tg_user_id=tg_id,
@@ -221,10 +222,7 @@ async def redirect_tg_register(
 ) -> RedirectResponse:
     tg_id = await _resolve_tg_id_from_registration_token(token)
     async with uow:
-        tg_user = await uow.tg_users.get_by_id(tg_id)
         linked_user = await uow.users.get_by_tg_user_id(tg_id)
-    if tg_user is None:
-        raise Forbidden("Invalid token")
     if linked_user is not None:
         return HTMLResponse(
             content="<html><body><h3>Регистрация уже пройдена. Данные находятся на проверке.</h3></body></html>",

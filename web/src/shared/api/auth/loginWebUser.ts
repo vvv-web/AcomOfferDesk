@@ -23,6 +23,9 @@ export type AuthSessionResponse = {
     login: string;
     role_id: number;
     status: string;
+    auth_provider?: string;
+    business_access?: boolean;
+    onboarding_state?: string | null;
     permissions?: string[];
   };
   _links?: {

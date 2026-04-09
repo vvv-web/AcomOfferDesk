@@ -1,5 +1,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
+ARG VITE_ENABLE_LEGACY_LOGIN=true
+ENV VITE_ENABLE_LEGACY_LOGIN=$VITE_ENABLE_LEGACY_LOGIN
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .

@@ -8,7 +8,6 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.core.config import settings
-from app.core.security import hash_password
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.authorization import has_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
@@ -437,15 +436,11 @@ class OfferService:
         contractor_data: ManualContractorCreateInput,
     ) -> str:
         login = await self._build_manual_login(company_name=contractor_data.company_name)
-        password_hash = await hash_password(self._build_manual_password())
-
         await self._users.add(
             User(
                 id=login,
-                password_hash=password_hash,
                 id_role=settings.contractor_role_id,
                 status="active",
-                tg_user_id=None,
             )
         )
         await self._profiles.add(

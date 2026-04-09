@@ -6,13 +6,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.core.security import hash_password, verify_password
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.models.auth_models import UserAuthAccount, UserContactChannel
 from app.domain.policies import CurrentUser, UserPolicy
 from app.models.orm_models import CompanyContact, Profile, Role, TgUser, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
+from app.repositories.user_auth_accounts import UserAuthAccountRepository
+from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
@@ -203,10 +205,8 @@ class UserRegistrationService:
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
         
-        password_hash = await hash_password(password)
         user = User(
             id=user_id,
-            password_hash=password_hash,
             id_role=role_id,
             id_parent=id_parent,
             status="active",
@@ -222,12 +222,14 @@ class ContractorRegistrationService:
         users: UserRepository,
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
-        tg_users: TgUserRepository,
+        user_auth_accounts: UserAuthAccountRepository,
+        user_contact_channels: UserContactChannelRepository,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
-        self._tg_users = tg_users
+        self._user_auth_accounts = user_auth_accounts
+        self._user_contact_channels = user_contact_channels
 
     async def register_contractor(
         self,
@@ -244,22 +246,16 @@ class ContractorRegistrationService:
         address: str,
         note: str,
     ) -> User:
-        tg_user = await self._tg_users.get_by_id(tg_user_id)
-        if tg_user is None:
-            raise NotFound("TG user not found")
         if await self._users.exists(login):
             raise Conflict("User already exists")
         existing_by_tg = await self._users.get_by_tg_user_id(tg_user_id)
         if existing_by_tg is not None:
             raise Conflict("TG user already linked")
 
-        password_hash = await hash_password(password)
         user = User(
             id=login,
-            password_hash=password_hash,
             id_role=settings.contractor_role_id,
             status="review",
-            tg_user_id=tg_user_id,
         )
         profile = Profile(
             id=login,
@@ -279,6 +275,27 @@ class ContractorRegistrationService:
         await self._users.add(user)
         await self._profiles.add(profile)
         await self._company_contacts.add(company_contact)
+        await self._user_auth_accounts.add(
+            UserAuthAccount(
+                id_user=login,
+                provider="telegram",
+                external_subject_id=str(tg_user_id),
+                external_username=None,
+                external_email=None,
+                is_active=True,
+            )
+        )
+        await self._user_contact_channels.add(
+            UserContactChannel(
+                id_user=login,
+                channel_type="telegram",
+                channel_value=str(tg_user_id),
+                is_verified=False,
+                verified_at=None,
+                is_primary=True,
+                is_active=True,
+            )
+        )
         return user
 
 
@@ -920,15 +937,11 @@ class ManualContractorService:
 
     async def _create_manual_contractor(self, *, data: ManualContractorCreateInput) -> str:
         login = await self._build_manual_login(company_name=data.company_name)
-        password_hash = await hash_password(self._build_manual_password())
-
         await self._users.add(
             User(
                 id=login,
-                password_hash=password_hash,
                 id_role=settings.contractor_role_id,
                 status="active",
-                tg_user_id=None,
             )
         )
         await self._profiles.add(
@@ -1005,7 +1018,6 @@ class ManualContractorService:
 
             cloned_user = User(
                 id=next_login,
-                password_hash=user.password_hash,
                 id_role=user.id_role,
                 id_parent=user.id_parent,
                 status=user.status,
@@ -1021,7 +1033,7 @@ class ManualContractorService:
                 raise Conflict("Contractor profile data is inconsistent")
 
         if next_password is not None:
-            user.password_hash = await hash_password(next_password)
+            raise Forbidden("Password is managed by the identity provider")
 
         full_name = self._normalize_value(data.full_name)
         phone = self._normalize_value(data.phone)
@@ -1182,7 +1194,7 @@ class UserStatusService:
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Unsupported users.status value")
         if tg_status is not None and tg_status not in self.VALID_TG_STATUSES:
-            raise Conflict("Unsupported tg_users.status value")
+            raise Conflict("Unsupported Telegram status value")
 
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -1317,16 +1329,7 @@ class UserSelfService:
         new_password: str,
     ) -> None:
         UserPolicy.ensure_can_manage_own_profile(current_user)
-
-        user = await self._users.get_by_id(current_user.user_id)
-        if user is None:
-            raise NotFound("User not found")
-
-        is_valid_current_password = await verify_password(current_password, user.password_hash)
-        if not is_valid_current_password:
-            raise Forbidden("Current password is invalid")
-
-        user.password_hash = await hash_password(new_password)
+        raise Forbidden("Password is managed by the identity provider")
 
     async def update_my_profile(
         self,
@@ -1372,7 +1375,20 @@ class UserSelfService:
 
         company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
         if company_contacts is None:
-            raise NotFound("Company contacts not found")
+            if company_name is None or inn is None:
+                raise NotFound("Company contacts not found")
+            await self._company_contacts.add(
+                CompanyContact(
+                    id=current_user.user_id,
+                    company_name=company_name,
+                    inn=inn,
+                    phone=company_phone or PLACEHOLDER_TEXT,
+                    mail=company_mail or PLACEHOLDER_TEXT,
+                    address=address or PLACEHOLDER_TEXT,
+                    note=note or PLACEHOLDER_TEXT,
+                )
+            )
+            return
 
         if company_name is not None:
             company_contacts.company_name = company_name

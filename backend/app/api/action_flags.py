@@ -231,7 +231,7 @@ class UserActionBuilder:
     def build_me(current_user: CurrentUser) -> UserActionsSchema:
         return UserActionsSchema(
             can_manage_own_profile=UserPolicy.can_manage_own_profile(current_user),
-            can_manage_credentials=UserPolicy.can_manage_own_profile(current_user),
+            can_manage_credentials=False,
             can_manage_company_contacts=UserPolicy.can_manage_own_company_contacts(current_user),
             can_manage_own_unavailability=UserPolicy.can_manage_own_unavailability(current_user),
         )
