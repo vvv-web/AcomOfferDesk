@@ -40,6 +40,7 @@ class OidcAuthorizationStart:
     flow: str
     redirect_uri: str
     tg_registration_id: int | None
+    registration_email: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,7 @@ class OidcStateClaims:
     flow: str
     redirect_uri: str
     tg_registration_id: int | None
+    registration_email: str | None
     issued_at: int
     expires_at: int
 
@@ -60,6 +62,7 @@ def build_oidc_authorization_start(
     flow: str = "login",
     redirect_uri: str | None = None,
     tg_registration_id: int | None = None,
+    registration_email: str | None = None,
 ) -> OidcAuthorizationStart:
     now = datetime.now(timezone.utc)
     state = _urlsafe_random(24)
@@ -70,6 +73,7 @@ def build_oidc_authorization_start(
     expires_at = int((now + timedelta(seconds=OIDC_STATE_TTL_SECONDS)).timestamp())
     normalized_next_path = _sanitize_next_path(next_path)
     normalized_redirect_uri = (redirect_uri or settings.keycloak_callback_url).strip() or settings.keycloak_callback_url
+    normalized_registration_email = (registration_email or "").strip().lower() or None
     payload = {
         "state": state,
         "code_verifier": code_verifier,
@@ -77,6 +81,7 @@ def build_oidc_authorization_start(
         "flow": flow,
         "redirect_uri": normalized_redirect_uri,
         "tg_registration_id": tg_registration_id,
+        "registration_email": normalized_registration_email,
         "iat": int(now.timestamp()),
         "exp": expires_at,
         "type": "oidc_state",
@@ -92,6 +97,7 @@ def build_oidc_authorization_start(
         flow=flow,
         redirect_uri=normalized_redirect_uri,
         tg_registration_id=tg_registration_id,
+        registration_email=normalized_registration_email,
     )
 
 
@@ -116,6 +122,7 @@ def decode_oidc_state_token(token: str) -> OidcStateClaims:
             tg_registration_id = int(raw_tg_registration_id)
         except (TypeError, ValueError) as exc:
             raise Unauthorized("Invalid OIDC state") from exc
+    registration_email = str(payload.get("registration_email") or "").strip().lower() or None
     issued_at = payload.get("iat")
     expires_at = payload.get("exp")
     if not state or not code_verifier or not isinstance(issued_at, int) or not isinstance(expires_at, int):
@@ -128,6 +135,7 @@ def decode_oidc_state_token(token: str) -> OidcStateClaims:
         flow=flow,
         redirect_uri=redirect_uri,
         tg_registration_id=tg_registration_id,
+        registration_email=registration_email,
         issued_at=issued_at,
         expires_at=expires_at,
     )

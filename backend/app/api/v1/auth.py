@@ -24,6 +24,11 @@ from app.core.oidc_state_tokens import (
     build_oidc_authorization_start,
     decode_oidc_state_token,
 )
+from app.core.registration_invite_tokens import (
+    RegistrationInviteTokenCodec,
+    RegistrationInviteTokenExpiredError,
+    RegistrationInviteTokenInvalidError,
+)
 from app.core.session_tokens import build_refresh_fingerprint, decode_refresh_token
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser, build_current_user
@@ -315,6 +320,7 @@ async def begin_keycloak_registration(
     request: Request,
     next_path: str | None = Query(default="/account"),
     tg_token: str | None = Query(default=None),
+    invite_token: str | None = Query(default=None),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RedirectResponse:
     if not settings.keycloak_enabled:
@@ -323,6 +329,13 @@ async def begin_keycloak_registration(
     redirect_uri = f"{_resolve_oidc_public_base_url(request)}/api/v1/auth/callback"
     web_base = _extract_base_url_from_redirect_uri(redirect_uri)
     tg_registration_id: int | None = None
+    registration_email: str | None = None
+
+    if tg_token and invite_token:
+        return RedirectResponse(
+            url=_build_registration_link_status_url(web_base, reason="invalid"),
+            status_code=status.HTTP_302_FOUND,
+        )
 
     if tg_token:
         try:
@@ -345,12 +358,44 @@ async def begin_keycloak_registration(
                 url=_build_registration_link_status_url(web_base, reason="already_registered"),
                 status_code=status.HTTP_302_FOUND,
             )
+    elif invite_token:
+        invite_codec = RegistrationInviteTokenCodec(
+            secret=settings.email_verification_secret,
+            ttl_seconds=settings.tg_register_ttl_seconds,
+        )
+        try:
+            invite_claims = invite_codec.parse_token(invite_token)
+        except RegistrationInviteTokenExpiredError:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="expired"),
+                status_code=status.HTTP_302_FOUND,
+            )
+        except RegistrationInviteTokenInvalidError:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="invalid"),
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        registration_email = invite_claims.email
+        async with uow:
+            existing_users = await uow.users.list_by_email(email=registration_email)
+        if existing_users:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="already_registered"),
+                status_code=status.HTTP_302_FOUND,
+            )
+    else:
+        return RedirectResponse(
+            url=_build_registration_link_status_url(web_base, reason="invalid"),
+            status_code=status.HTTP_302_FOUND,
+        )
 
     start = build_oidc_authorization_start(
         next_path=next_path,
         flow="register",
         redirect_uri=redirect_uri,
         tg_registration_id=tg_registration_id,
+        registration_email=registration_email,
     )
     response = RedirectResponse(
         url=build_keycloak_login_url(
@@ -401,6 +446,16 @@ async def keycloak_callback(
     try:
         async with uow:
             token_claims = await decode_keycloak_access_token(bundle.access_token)
+            if claims.registration_email is not None:
+                normalized_invite_email = claims.registration_email.strip().lower()
+                normalized_token_email = (token_claims.email or "").strip().lower()
+                if not normalized_token_email or normalized_token_email != normalized_invite_email:
+                    raise Forbidden("Registration invite email mismatch")
+
+                existing_users = await uow.users.list_by_email(email=normalized_invite_email)
+                if existing_users:
+                    raise Conflict("Registration already completed")
+
             sync_service = IdentitySyncService(
                 users=uow.users,
                 user_auth_accounts=uow.user_auth_accounts,
@@ -417,10 +472,11 @@ async def keycloak_callback(
                     user_id=synced.user.id,
                     tg_id=claims.tg_registration_id,
                 )
-    except (Forbidden, Conflict):
-        if claims.tg_registration_id is not None:
+    except (Forbidden, Conflict) as exc:
+        if claims.tg_registration_id is not None or claims.registration_email is not None:
+            reason = "already_registered" if isinstance(exc, Conflict) else "invalid"
             response = RedirectResponse(
-                url=_build_registration_link_status_url(web_base, reason="already_registered"),
+                url=_build_registration_link_status_url(web_base, reason=reason),
                 status_code=status.HTTP_302_FOUND,
             )
         else:

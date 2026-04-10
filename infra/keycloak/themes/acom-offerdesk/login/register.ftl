@@ -9,7 +9,7 @@
     <#elseif section = "form">
         <div class="aod-page-copy aod-page-copy--quiet">
           <p>
-            Эта форма создаёт contractor-учётную запись. После подтверждения email вы попадёте в профиль приложения, где нужно заполнить данные компании для проверки.
+            Эта форма создаёт учётную запись для входа в систему. После подтверждения почты вы попадёте в профиль приложения, где нужно заполнить данные компании для проверки.
           </p>
         </div>
 
@@ -49,7 +49,7 @@
                       id="kc-submit"
                       data-loading-text="Создаём профиль..."
                     >
-                        Создать contractor-профиль
+                        Создать профиль
                     </button>
                 </div>
             <#else>
@@ -59,14 +59,13 @@
                       type="submit"
                       data-loading-text="Создаём профиль..."
                     >
-                      Создать contractor-профиль
+                      Создать профиль
                     </button>
                 </div>
             </#if>
 
             <div class="${properties.kcFormGroupClass!}">
               <div id="kc-form-options" class="aod-form-links">
-                <span class="aod-form-links__item">Сотрудников в систему подключает администратор.</span>
                 <a class="aod-link-button" href="${url.loginUrl}">Вернуться ко входу</a>
               </div>
             </div>
