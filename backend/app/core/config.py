@@ -194,6 +194,10 @@ class Settings(BaseSettings):
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
             self.refresh_cookie_samesite = "lax"
 
+        public_bases = [self.public_backend_base_url, self.web_base_url, self.keycloak_public_base_url, self.keycloak_issuer_url]
+        if any((base or "").strip().lower().startswith("https://") for base in public_bases):
+            self.refresh_cookie_secure = True
+
         if not self.refresh_token_secret:
             self.refresh_token_secret = self.jwt_secret
 

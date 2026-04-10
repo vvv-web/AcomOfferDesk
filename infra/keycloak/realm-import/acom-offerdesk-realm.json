@@ -2,6 +2,7 @@
   "realm": "acom-offerdesk",
   "enabled": true,
   "displayName": "AcomOfferDesk",
+  "loginTheme": "acom-offerdesk",
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": true,

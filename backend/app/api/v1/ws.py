@@ -33,6 +33,7 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
                 users=uow.users,
                 user_auth_accounts=uow.user_auth_accounts,
                 user_contact_channels=uow.user_contact_channels,
+                profiles=uow.profiles,
             )
             synced = await sync_service.sync_keycloak_identity(keycloak_claims, allow_user_creation=False)
             user = synced.user

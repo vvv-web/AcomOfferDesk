@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { AuthSessionResponse, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
-import { loginWebUser, logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
+import type { AuthSessionResponse } from '@shared/api/auth/loginWebUser';
+import { logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
 import { setAuthRuntime, setAuthToken } from '@shared/api/client';
 
 type AuthStatus = 'bootstrapping' | 'authenticated' | 'anonymous' | 'refreshing';
@@ -36,9 +36,7 @@ type AuthContextValue = {
   status: AuthStatus;
   session: AuthSession | null;
   isAuthenticated: boolean;
-  loginLegacy: (payload: LoginWebUserPayload) => Promise<AuthSession>;
   beginLogin: (nextPath?: string) => void;
-  beginRegistration: () => void;
   refresh: (reason: RefreshReason) => Promise<boolean>;
   logout: () => void;
 };
@@ -63,7 +61,6 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
 });
 
 const buildLoginUrl = (nextPath: string) => `/api/v1/auth/oidc/login?next_path=${encodeURIComponent(nextPath)}`;
-const buildRegisterUrl = () => `/api/v1/auth/oidc/register?next_path=${encodeURIComponent('/account')}`;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -159,22 +156,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return refreshPromiseRef.current;
   }, [applySession, canAttemptSilentRefresh, trackActivity]);
 
-  const loginLegacy = useCallback(async (payload: LoginWebUserPayload) => {
-    trackActivity();
-    const response = await loginWebUser(payload);
-    const nextSession = mapSession(response);
-    applySession(nextSession, 'authenticated');
-    return nextSession;
-  }, [applySession, trackActivity]);
-
   const beginLogin = useCallback((nextPath?: string) => {
     const target = nextPath ?? location.pathname ?? '/';
     window.location.assign(buildLoginUrl(target));
   }, [location.pathname]);
-
-  const beginRegistration = useCallback(() => {
-    window.location.assign(buildRegisterUrl());
-  }, []);
 
   const logout = useCallback(() => {
     void performLogout({ revokeRemote: true, redirectToLogin: true });
@@ -223,13 +208,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       status,
       session,
       isAuthenticated: (status === 'authenticated' || status === 'refreshing') && Boolean(session?.token),
-      loginLegacy,
       beginLogin,
-      beginRegistration,
       refresh,
       logout
     }),
-    [beginLogin, beginRegistration, loginLegacy, logout, refresh, session, status]
+    [beginLogin, logout, refresh, session, status]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

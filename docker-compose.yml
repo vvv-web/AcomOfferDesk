@@ -9,6 +9,7 @@ services:
       - --import-realm
     volumes:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
+      - ./infra/keycloak/themes:/opt/keycloak/themes:ro
       - keycloak_data:/opt/keycloak/data
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'HEAD /iam/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep '200' <&3"]
@@ -43,8 +44,6 @@ services:
   web:
     build:
       context: ./web
-      args:
-        VITE_ENABLE_LEGACY_LOGIN: ${VITE_ENABLE_LEGACY_LOGIN:-true}
     container_name: web
     depends_on:
       backend:

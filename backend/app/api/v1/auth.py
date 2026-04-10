@@ -42,7 +42,6 @@ from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import (
     decode_keycloak_access_token,
     exchange_code_for_tokens,
-    logout_refresh_token,
     refresh_tokens,
 )
 from app.services.users import UserRegistrationService
@@ -147,6 +146,7 @@ async def _build_keycloak_auth_response(
         users=uow.users,
         user_auth_accounts=uow.user_auth_accounts,
         user_contact_channels=uow.user_contact_channels,
+        profiles=uow.profiles,
     )
     synced = await sync_service.sync_keycloak_identity(claims, allow_user_creation=False)
     return _build_auth_response(
@@ -206,6 +206,7 @@ async def begin_keycloak_login(
             state=start.state,
             code_challenge=start.code_challenge,
             redirect_uri=start.redirect_uri,
+            prompt="login",
         ),
         status_code=status.HTTP_302_FOUND,
     )
@@ -280,6 +281,7 @@ async def keycloak_callback(
                 users=uow.users,
                 user_auth_accounts=uow.user_auth_accounts,
                 user_contact_channels=uow.user_contact_channels,
+                profiles=uow.profiles,
             )
             await sync_service.sync_keycloak_identity(
                 token_claims,
@@ -362,15 +364,7 @@ async def refresh_session(
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request, response: Response) -> Response:
-    keycloak_refresh_token = (request.cookies.get(settings.keycloak_refresh_cookie_name) or "").strip()
-    if settings.keycloak_enabled and keycloak_refresh_token:
-        try:
-            await logout_refresh_token(refresh_token=keycloak_refresh_token)
-        except Exception:
-            pass
-
     clear_keycloak_refresh_cookie(response)
-    clear_keycloak_state_cookie(response)
     clear_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

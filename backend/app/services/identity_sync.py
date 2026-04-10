@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from app.core.config import settings
 from app.domain.exceptions import Conflict, Forbidden
 from app.models.auth_models import UserAuthAccount
-from app.models.orm_models import User
+from app.models.orm_models import Profile, User
+from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.users import UserRepository
@@ -15,6 +16,7 @@ from app.services.keycloak_oidc import KeycloakAccessTokenClaims
 
 
 _LOCAL_USER_ID_PATTERN = re.compile(r"[^a-z0-9_]+")
+_PROFILE_PLACEHOLDER = "Не указано"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +39,23 @@ def _normalize_email(email: str | None) -> str | None:
     return normalized or None
 
 
+def _normalize_full_name(claims: KeycloakAccessTokenClaims) -> str | None:
+    explicit = (claims.full_name or "").strip()
+    if explicit:
+        return explicit
+
+    parts = [part.strip() for part in (claims.given_name, claims.family_name) if part and part.strip()]
+    if parts:
+        return " ".join(parts)
+
+    return None
+
+
+def _is_blank_profile_value(value: str | None) -> bool:
+    normalized = (value or "").strip().lower()
+    return normalized in {"", _PROFILE_PLACEHOLDER.lower(), "none", "null"}
+
+
 class IdentitySyncService:
     def __init__(
         self,
@@ -44,10 +63,12 @@ class IdentitySyncService:
         users: UserRepository,
         user_auth_accounts: UserAuthAccountRepository,
         user_contact_channels: UserContactChannelRepository,
+        profiles: ProfileRepository | None = None,
     ) -> None:
         self._users = users
         self._user_auth_accounts = user_auth_accounts
         self._user_contact_channels = user_contact_channels
+        self._profiles = profiles
 
     async def sync_keycloak_identity(
         self,
@@ -93,11 +114,44 @@ class IdentitySyncService:
                 is_primary=True,
             )
 
+        if self._profiles is not None:
+            await self._sync_profile_basics(user=user, claims=claims)
+
         return SyncedIdentity(
             user=user,
             auth_provider="keycloak",
             created_local_user=created_local_user,
         )
+
+    async def _sync_profile_basics(
+        self,
+        *,
+        user: User,
+        claims: KeycloakAccessTokenClaims,
+    ) -> None:
+        if self._profiles is None:
+            return
+
+        normalized_email = _normalize_email(claims.email)
+        normalized_full_name = _normalize_full_name(claims)
+        profile = await self._profiles.get_by_id(user.id)
+
+        if profile is None:
+            await self._profiles.add(
+                Profile(
+                    id=user.id,
+                    full_name=normalized_full_name or _PROFILE_PLACEHOLDER,
+                    phone=_PROFILE_PLACEHOLDER,
+                    mail=normalized_email or _PROFILE_PLACEHOLDER,
+                )
+            )
+            return
+
+        if normalized_full_name and _is_blank_profile_value(profile.full_name):
+            profile.full_name = normalized_full_name
+
+        if normalized_email and _is_blank_profile_value(profile.mail):
+            profile.mail = normalized_email
 
     async def _resolve_or_create_local_user(
         self,

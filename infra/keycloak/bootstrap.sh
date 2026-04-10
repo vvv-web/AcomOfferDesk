@@ -69,6 +69,7 @@ if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n
   cat >"$REALM_UPDATE_FILE" <<EOF
 {
   "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "loginTheme": "acom-offerdesk",
   "smtpServer": {
     "auth": "true",
     "host": "$SMTP_HOST",
@@ -86,7 +87,8 @@ EOF
 else
   cat >"$REALM_UPDATE_FILE" <<EOF
 {
-  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "loginTheme": "acom-offerdesk"
 }
 EOF
   echo "Keycloak SMTP configuration is incomplete; updating only realm verifyEmail=$KEYCLOAK_VERIFY_EMAIL"
