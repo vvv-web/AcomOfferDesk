@@ -1,28 +1,4 @@
 services:
-  keycloak_db_prepare:
-    image: postgres:16-alpine
-    container_name: keycloak_db_prepare
-    env_file:
-      - ./backend/.env
-    entrypoint:
-      - /bin/sh
-      - -ec
-    command:
-      - |
-        until pg_isready -h "$$KC_DB_URL_HOST" -p "$$KC_DB_URL_PORT" -U "$$KC_DB_USERNAME" -d "$$KC_DB_URL_DATABASE"; do
-          sleep 2
-        done
-        PGPASSWORD="$$KC_DB_PASSWORD" psql \
-          -h "$$KC_DB_URL_HOST" \
-          -p "$$KC_DB_URL_PORT" \
-          -U "$$KC_DB_USERNAME" \
-          -d "$$KC_DB_URL_DATABASE" \
-          -v ON_ERROR_STOP=1 \
-          -c "CREATE SCHEMA IF NOT EXISTS \"$$KC_DB_SCHEMA\" AUTHORIZATION \"$$KC_DB_USERNAME\";"
-    restart: "no"
-    networks:
-      - project_net
-
   keycloak:
     image: quay.io/keycloak/keycloak:26.5
     container_name: keycloak
@@ -34,31 +10,11 @@ services:
     volumes:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
       - keycloak_data:/opt/keycloak/data
-    depends_on:
-      keycloak_db_prepare:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'HEAD /iam/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep '200' <&3"]
       interval: 10s
       timeout: 5s
       retries: 20
-    networks:
-      - project_net
-
-  keycloak_bootstrap:
-    image: quay.io/keycloak/keycloak:26.5
-    container_name: keycloak_bootstrap
-    env_file:
-      - ./backend/.env
-    entrypoint:
-      - /bin/sh
-      - /opt/keycloak/bootstrap/bootstrap.sh
-    volumes:
-      - ./infra/keycloak/bootstrap.sh:/opt/keycloak/bootstrap/bootstrap.sh:ro
-    depends_on:
-      keycloak:
-        condition: service_healthy
-    restart: "no"
     networks:
       - project_net
 
@@ -72,8 +28,6 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
-      keycloak_bootstrap:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       minio:

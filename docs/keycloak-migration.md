@@ -61,7 +61,9 @@
 ## 6. Docker / env / compose changes
 
 - Added `keycloak` service to `docker-compose.yml`.
-- Added `keycloak_bootstrap` one-shot job to configure the public web client and bootstrap app superadmin.
+- Added `docker-compose.init.yml` for one-shot Keycloak init jobs.
+- Moved `keycloak_db_prepare` and `keycloak_bootstrap` out of runtime compose into `docker-compose.init.yml`.
+- `keycloak_bootstrap` configures the public web client and bootstraps the app superadmin.
 - Gateway now proxies Keycloak under `/iam/`.
 - Added Keycloak settings to `backend/env.example`.
 - Added `web/.env.example` and `VITE_ENABLE_LEGACY_LOGIN` build arg support.
@@ -144,4 +146,5 @@
 
 - Before disabling legacy login, perform controlled linking for existing staff users.
 - In production, change `KEYCLOAK_START_COMMAND` from `start-dev` to `start`.
+- On a clean environment, run `docker compose -f docker-compose.init.yml up keycloak_db_prepare` before the first runtime start, then `docker compose -f docker-compose.init.yml up keycloak_bootstrap` after Keycloak becomes healthy.
 - Tighten reverse-proxy hostname/TLS settings and store bootstrap secrets outside Git-backed env files.

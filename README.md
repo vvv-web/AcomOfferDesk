@@ -40,16 +40,21 @@
 docker network create project_net
 cd /path/to/order_database && docker compose up -d
 
-# 2. AcomOfferDesk + localtunnel
-cd /path/to/AcomOfferDesk && docker compose up -d --build
+# 2. Инициализация Keycloak
+cd /path/to/AcomOfferDesk
+docker compose -f docker-compose.init.yml up keycloak_db_prepare
+
+# 3. AcomOfferDesk + localtunnel
+docker compose up -d --build
+docker compose -f docker-compose.init.yml up keycloak_bootstrap
 docker compose --profile tunnel up -d localtunnel
 
-# 3. URL туннеля → обновить .env → пересоздать backend и tg_bot
+# 4. URL туннеля → обновить .env → пересоздать backend и tg_bot
 docker logs localtunnel 2>&1 | grep "your url"
 # Вписать URL в backend/.env и tg_bot/.env (PUBLIC_BACKEND_BASE_URL, WEB_BASE_URL)
 docker compose up -d --force-recreate backend tg_bot
 
-# 4. В веб-админке: Контрагенты → active, создать заявки
+# 5. В веб-админке: Контрагенты → active, создать заявки
 ```
 
 | Роль | Шаги |
@@ -311,6 +316,16 @@ REQUEST_TIMEOUT_SECONDS=5
 ## Запуск
 
 ### Базовый запуск
+
+При первом старте на чистой базе сначала выполните одноразовые init-шаги для Keycloak:
+
+```bash
+docker compose -f docker-compose.init.yml up keycloak_db_prepare
+docker compose up -d --build
+docker compose -f docker-compose.init.yml up keycloak_bootstrap
+```
+
+Для повторного обычного старта достаточно runtime-compose:
 
 ```bash
 docker compose up -d --build
