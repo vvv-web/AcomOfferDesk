@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import smtplib
 import time
-from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.email_token import EmailVerificationClaims, EmailVerificationTokenCodec
@@ -10,6 +9,7 @@ from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.infrastructure.email.email_templates.verification_email import build_verification_email_payload
 from app.infrastructure.email.smtp_email_service import SMTPEmailService
 from app.repositories.profiles import ProfileRepository
+from app.services.tg_registration_links import build_keycloak_registration_link
 
 
 class EmailVerificationService:
@@ -67,16 +67,7 @@ class EmailVerificationService:
         normalized_email = email.strip()
         if await self._profiles.exists_by_mail(email=normalized_email):
             raise Conflict("Эта электронная почта уже используется")
-        if await self._profiles.exists_by_mail(email=normalized_email):
-            raise Conflict("Эта электронная почта уже используется")
-        token = await self._token_codec.create_tg_registration_token(tg_id=tg_id, email=normalized_email)
-        if not settings.web_base_url:
-            raise Conflict("WEB_BASE_URL не настроен")
-        verification_link = (
-            f"{settings.web_base_url.rstrip('/')}/auth/tg/register"
-            f"?token={quote(tg_token, safe='')}"
-            f"&email_verification_token={quote(token, safe='')}"
-        )
+        verification_link = build_keycloak_registration_link(token=tg_token)
         await self._send_verification_email(
             email=normalized_email,
             verification_link=verification_link,

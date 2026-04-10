@@ -6,12 +6,6 @@
     <#if section = "header">
         Новый пароль
     <#elseif section = "form">
-        <div class="aod-page-copy aod-page-copy--quiet">
-          <p>
-            Задайте новый пароль для входа в AcomOfferDesk через Keycloak. После обновления вы вернётесь к обычному
-            рабочему сценарию приложения.
-          </p>
-        </div>
         <form id="kc-passwd-update-form" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post" novalidate="novalidate">
             <@field.password name="password-new" label="Новый пароль" fieldName="password" autocomplete="new-password" autofocus=true />
             <@field.password name="password-confirm" label="Повторите пароль" autocomplete="new-password" />

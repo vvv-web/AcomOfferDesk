@@ -29,6 +29,8 @@ from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser, build_current_user
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.policies import UserPolicy
+from app.models.auth_models import UserAuthAccount
+from app.repositories.telegram_compat import telegram_subject_value
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -43,6 +45,11 @@ from app.services.keycloak_oidc import (
     decode_keycloak_access_token,
     exchange_code_for_tokens,
     refresh_tokens,
+)
+from app.services.tg_registration_links import (
+    TgRegistrationLinkExpiredError,
+    TgRegistrationLinkInvalidError,
+    resolve_tg_registration_token,
 )
 from app.services.users import UserRegistrationService
 
@@ -63,10 +70,39 @@ def _build_auth_links(*, self_href: str) -> LinkSet:
     )
 
 
+def _normalize_host_with_port(*, host_value: str, fallback_host: str, forwarded_port: str) -> str:
+    candidate = (host_value or fallback_host or "").strip()
+    if not candidate:
+        return ""
+
+    parsed = urlsplit(f"//{candidate}")
+    fallback_parsed = urlsplit(f"//{fallback_host}") if fallback_host else None
+    hostname = (parsed.hostname or "").strip()
+    port = parsed.port or (fallback_parsed.port if fallback_parsed is not None else None)
+
+    forwarded_port_value = (forwarded_port or "").strip()
+    if port is None and forwarded_port_value.isdigit():
+        port = int(forwarded_port_value)
+
+    if not hostname:
+        return candidate
+
+    display_host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+    if port is not None:
+        return f"{display_host}:{port}"
+    return display_host
+
+
 def _resolve_request_base_url(request: Request) -> str:
     forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    forwarded_port = (request.headers.get("x-forwarded-port") or "").split(",")[0].strip()
     forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
-    host = forwarded_host or (request.headers.get("host") or "").strip() or request.url.netloc
+    raw_host = (request.headers.get("host") or "").strip() or request.url.netloc
+    host = _normalize_host_with_port(
+        host_value=forwarded_host,
+        fallback_host=raw_host,
+        forwarded_port=forwarded_port,
+    )
     scheme = forwarded_proto or request.url.scheme or "http"
     configured_public_base = (settings.public_backend_base_url or settings.web_base_url or "").strip().rstrip("/")
     if configured_public_base:
@@ -79,6 +115,13 @@ def _resolve_request_base_url(request: Request) -> str:
     return (settings.public_backend_base_url or settings.web_base_url or str(request.base_url)).rstrip("/")
 
 
+def _resolve_oidc_public_base_url(request: Request) -> str:
+    configured_public_base = (settings.public_backend_base_url or settings.web_base_url or "").strip().rstrip("/")
+    if configured_public_base:
+        return configured_public_base
+    return _resolve_request_base_url(request)
+
+
 def _extract_base_url_from_redirect_uri(redirect_uri: str) -> str:
     parsed = urlsplit(redirect_uri)
     if parsed.scheme and parsed.netloc:
@@ -86,8 +129,51 @@ def _extract_base_url_from_redirect_uri(redirect_uri: str) -> str:
     return (settings.web_base_url or settings.public_backend_base_url or "http://localhost:8080").rstrip("/")
 
 
+def _build_registration_link_status_url(base_url: str, *, reason: str) -> str:
+    return f"{base_url.rstrip('/')}/auth/registration-link-status?reason={quote(reason, safe='')}"
+
+
 def _onboarding_state(status_value: str) -> str | None:
     return None if status_value == "active" else status_value
+
+
+async def _link_telegram_registration_context(
+    *,
+    uow: UnitOfWork,
+    user_id: str,
+    tg_id: int,
+) -> None:
+    subject = telegram_subject_value(tg_id)
+    linked_user = await uow.users.get_by_tg_user_id(tg_id)
+    if linked_user is not None and linked_user.id != user_id:
+        raise Conflict("Telegram account is already linked to another user")
+
+    telegram_account = await uow.user_auth_accounts.get_by_user_provider(
+        user_id=user_id,
+        provider="telegram",
+    )
+    if telegram_account is None:
+        await uow.user_auth_accounts.add(
+            UserAuthAccount(
+                id_user=user_id,
+                provider="telegram",
+                external_subject_id=subject,
+                external_username=None,
+                external_email=None,
+                is_active=True,
+            )
+        )
+    else:
+        telegram_account.external_subject_id = subject
+        telegram_account.is_active = True
+
+    await uow.user_contact_channels.upsert_channel(
+        user_id=user_id,
+        channel_type="telegram",
+        channel_value=subject,
+        is_verified=False,
+        is_primary=True,
+    )
 
 
 def _build_auth_response(
@@ -171,10 +257,16 @@ async def request_email_verification(
         result = await service.request_profile_verification(user_id=current_user.user_id, email=payload.email)
 
     if result == "same_email":
-        return EmailVerificationActionResponse(detail="Указан текущий подтвержденный email")
+        return EmailVerificationActionResponse(
+            detail="\u0423\u043a\u0430\u0437\u0430\u043d \u0442\u0435\u043a\u0443\u0449\u0438\u0439 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d\u043d\u044b\u0439 email"
+        )
     if result == "already_sent":
-        return EmailVerificationActionResponse(detail="Письмо уже отправлено. Проверьте вашу почту")
-    return EmailVerificationActionResponse(detail="Письмо для подтверждения email отправлено")
+        return EmailVerificationActionResponse(
+            detail="\u041f\u0438\u0441\u044c\u043c\u043e \u0443\u0436\u0435 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0432\u0430\u0448\u0443 \u043f\u043e\u0447\u0442\u0443"
+        )
+    return EmailVerificationActionResponse(
+        detail="\u041f\u0438\u0441\u044c\u043c\u043e \u0434\u043b\u044f \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f email \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e"
+    )
 
 
 @router.get("/auth/verify-email", response_model=EmailVerificationActionResponse)
@@ -187,8 +279,8 @@ async def verify_email(
         updated = await service.confirm_profile_verification(token=token)
 
     if updated:
-        return EmailVerificationActionResponse(detail="Email подтвержден")
-    return EmailVerificationActionResponse(detail="Email уже подтвержден")
+        return EmailVerificationActionResponse(detail="Email \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d")
+    return EmailVerificationActionResponse(detail="Email \u0443\u0436\u0435 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d")
 
 
 @router.get("/auth/oidc/login", response_class=RedirectResponse)
@@ -199,7 +291,7 @@ async def begin_keycloak_login(
     if not settings.keycloak_enabled:
         raise Forbidden("Keycloak authentication is disabled")
 
-    redirect_uri = f"{_resolve_request_base_url(request)}/api/v1/auth/callback"
+    redirect_uri = f"{_resolve_oidc_public_base_url(request)}/api/v1/auth/callback"
     start = build_oidc_authorization_start(next_path=next_path, flow="login", redirect_uri=redirect_uri)
     response = RedirectResponse(
         url=build_keycloak_login_url(
@@ -222,12 +314,44 @@ async def begin_keycloak_login(
 async def begin_keycloak_registration(
     request: Request,
     next_path: str | None = Query(default="/account"),
+    tg_token: str | None = Query(default=None),
+    uow: UnitOfWork = Depends(get_uow),
 ) -> RedirectResponse:
     if not settings.keycloak_enabled:
         raise Forbidden("Keycloak authentication is disabled")
 
-    redirect_uri = f"{_resolve_request_base_url(request)}/api/v1/auth/callback"
-    start = build_oidc_authorization_start(next_path=next_path, flow="register", redirect_uri=redirect_uri)
+    redirect_uri = f"{_resolve_oidc_public_base_url(request)}/api/v1/auth/callback"
+    web_base = _extract_base_url_from_redirect_uri(redirect_uri)
+    tg_registration_id: int | None = None
+
+    if tg_token:
+        try:
+            tg_registration_id = await resolve_tg_registration_token(tg_token)
+        except TgRegistrationLinkExpiredError:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="expired"),
+                status_code=status.HTTP_302_FOUND,
+            )
+        except TgRegistrationLinkInvalidError:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="invalid"),
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        async with uow:
+            linked_user = await uow.users.get_by_tg_user_id(tg_registration_id)
+        if linked_user is not None:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="already_registered"),
+                status_code=status.HTTP_302_FOUND,
+            )
+
+    start = build_oidc_authorization_start(
+        next_path=next_path,
+        flow="register",
+        redirect_uri=redirect_uri,
+        tg_registration_id=tg_registration_id,
+    )
     response = RedirectResponse(
         url=build_keycloak_login_url(
             state=start.state,
@@ -283,12 +407,24 @@ async def keycloak_callback(
                 user_contact_channels=uow.user_contact_channels,
                 profiles=uow.profiles,
             )
-            await sync_service.sync_keycloak_identity(
+            synced = await sync_service.sync_keycloak_identity(
                 token_claims,
                 allow_user_creation=claims.flow == "register",
             )
+            if claims.tg_registration_id is not None:
+                await _link_telegram_registration_context(
+                    uow=uow,
+                    user_id=synced.user.id,
+                    tg_id=claims.tg_registration_id,
+                )
     except (Forbidden, Conflict):
-        response = RedirectResponse(url=f"{web_base}/auth/callback?error=not_linked", status_code=status.HTTP_302_FOUND)
+        if claims.tg_registration_id is not None:
+            response = RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="already_registered"),
+                status_code=status.HTTP_302_FOUND,
+            )
+        else:
+            response = RedirectResponse(url=f"{web_base}/auth/callback?error=not_linked", status_code=status.HTTP_302_FOUND)
         clear_keycloak_state_cookie(response)
         clear_keycloak_refresh_cookie(response)
         return response

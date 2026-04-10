@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from urllib.parse import quote
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict
-from app.core.tg_shortcodes import TgShortcodeCodec
 from app.models.orm_models import TgUser
 from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
-
-REGISTER_TTL_SECONDS = int(timedelta(hours=24).total_seconds())
+from app.services.tg_registration_links import build_keycloak_registration_link, create_tg_registration_token
 
 
 @dataclass(frozen=True)
@@ -94,13 +92,8 @@ class TgStartService:
     def _build_registration_link(self, *, tg_id: int) -> str:
         if not settings.tg_link_secret or not (settings.web_base_url or settings.public_backend_base_url):
             raise Conflict("TG links are not configured")
-        payload = TgShortcodeCodec.build(
-            tg_id=tg_id,
-            purpose="tg_register",
-            ttl_seconds=REGISTER_TTL_SECONDS,
-        )
-        code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-        return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/register?token={code}"
+        code = create_tg_registration_token(tg_id=tg_id)
+        return build_keycloak_registration_link(token=code)
 
     def _build_authorization_link(self, *, request_id: int) -> str:
         if not settings.public_backend_base_url:

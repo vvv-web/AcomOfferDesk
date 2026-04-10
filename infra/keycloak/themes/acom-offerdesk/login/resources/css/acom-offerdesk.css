@@ -12,6 +12,7 @@
   --aod-success: #2f8f5b;
   --aod-warning: #b57617;
   --aod-shadow: 0 12px 28px rgba(15, 35, 75, 0.08);
+  --aod-control-radius: 36px;
 }
 
 *,
@@ -250,7 +251,8 @@ body#keycloak-bg.aod-body {
   display: flex;
   align-items: center;
   min-height: 56px;
-  border-radius: 12px;
+  overflow: hidden;
+  border-radius: var(--aod-control-radius);
   border: 1px solid var(--aod-border);
   background: var(--aod-surface);
   box-shadow: none;
@@ -273,11 +275,13 @@ body#keycloak-bg.aod-body {
   min-height: 54px;
   padding: 14px 16px;
   border: none;
-  border-radius: 12px;
+  border-radius: 0;
   background: transparent;
   color: var(--aod-text);
   font: inherit;
+  box-shadow: none;
   outline: none;
+  appearance: none;
 }
 
 .aod-card .pf-v5-c-form-control textarea {
@@ -287,16 +291,22 @@ body#keycloak-bg.aod-body {
 
 .aod-card .pf-v5-c-button.pf-m-control {
   min-width: 56px;
-  border-radius: 12px;
-  border-color: var(--aod-border);
-  background: #fff;
+  border: none;
+  border-radius: var(--aod-control-radius);
+  background: #f5f8ff;
   color: var(--aod-text-muted);
+  box-shadow: none;
+  appearance: none;
 }
 
 .aod-card .pf-v5-c-button.pf-m-control:hover {
-  border-color: #bcc7da;
   color: var(--aod-secondary);
-  background: #fff;
+  background: #ebf2ff;
+}
+
+.aod-card .pf-v5-c-button.pf-m-control:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(47, 111, 214, 0.18);
 }
 
 .aod-card .pf-v5-c-form-control.pf-m-error {
@@ -342,12 +352,14 @@ body#keycloak-bg.aod-body {
   justify-content: center;
   min-height: 48px;
   padding: 0 20px;
-  border-radius: 999px;
-  border: 1px solid transparent;
+  border-radius: var(--aod-control-radius);
+  border: none;
   font-size: 15px;
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
+  box-shadow: none;
+  appearance: none;
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -361,7 +373,7 @@ body#keycloak-bg.aod-body {
 .aod-link-button--primary,
 .aod-card .pf-v5-c-button.pf-m-primary {
   background: var(--aod-primary);
-  border-color: var(--aod-primary);
+  border-radius: var(--aod-control-radius);
   color: #fff;
   box-shadow: none;
 }
@@ -370,16 +382,22 @@ body#keycloak-bg.aod-body {
 .aod-link-button--primary:hover,
 .aod-card .pf-v5-c-button.pf-m-primary:hover {
   background: var(--aod-primary-dark);
-  border-color: var(--aod-primary-dark);
+  border-radius: var(--aod-control-radius);
   color: #fff;
 }
 
 .aod-button--secondary,
 .aod-link-button,
 .aod-card .pf-v5-c-button.pf-m-secondary {
-  background: #fff;
-  border-color: var(--aod-primary);
+  background: var(--aod-primary-light);
   color: var(--aod-primary);
+}
+
+.aod-button--secondary:hover,
+.aod-link-button:hover,
+.aod-card .pf-v5-c-button.pf-m-secondary:hover {
+  background: #dce9ff;
+  color: var(--aod-primary-dark);
 }
 
 .aod-card .pf-v5-c-button.pf-m-block,
@@ -455,7 +473,7 @@ body#keycloak-bg.aod-body {
   max-width: 1200px;
   margin: 0 auto;
   padding: 10px 18px;
-  border-radius: 26px;
+  border-radius: 36px;
   border: 1px solid rgba(211, 219, 231, 0.95);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(231, 240, 255, 0.88) 100%);
   box-shadow: 0 10px 24px rgba(15, 35, 75, 0.1);
@@ -517,7 +535,7 @@ body#keycloak-bg.aod-body {
   width: 30px;
   height: 30px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: 36px;
 }
 
 @keyframes aod-spin {

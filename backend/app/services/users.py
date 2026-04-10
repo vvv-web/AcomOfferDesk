@@ -313,6 +313,7 @@ class ContractorRegistrationService:
             note=note,
         )
         await self._users.add(user)
+        await self._users.flush()
         await self._profiles.add(profile)
         await self._company_contacts.add(company_contact)
         await self._user_auth_accounts.add(

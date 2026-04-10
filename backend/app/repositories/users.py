@@ -111,6 +111,9 @@ class UserRepository:
     async def add(self, user: User) -> None:
         self._session.add(user)
 
+    async def flush(self) -> None:
+        await self._session.flush()
+
     async def delete_by_id(self, *, user_id: str) -> None:
         user = await self.get_by_id(user_id)
         if user is not None:

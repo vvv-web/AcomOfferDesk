@@ -5,9 +5,6 @@
     <#elseif section = "form">
         <div id="kc-error-message" class="aod-status-card aod-status-card--danger">
             <p class="aod-status-card__title">${kcSanitize(message.summary)?no_esc}</p>
-            <p class="aod-status-card__text">
-              Если ошибка повторяется, вернитесь в приложение и обратитесь к администратору или в поддержку проекта.
-            </p>
             <div class="aod-status-card__actions">
               <#if !skipLink?? && client?? && client.baseUrl?has_content>
                 <a id="backToApplication" class="aod-link-button aod-link-button--primary" href="${client.baseUrl}">

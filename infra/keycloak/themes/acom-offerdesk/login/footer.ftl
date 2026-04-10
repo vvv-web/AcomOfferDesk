@@ -10,7 +10,7 @@
           rel="noreferrer"
           aria-label="Перейти в Bitrix24"
         >
-          <img src="${url.resourcesPath}/img/bitrix24-logo.png?v=20260410-5" alt="Bitrix24" />
+          <img src="${url.resourcesPath}/img/bitrix24-logo.png?v=${properties.aodAssetVersion!'dev'}" alt="Bitrix24" />
         </a>
       </div>
 
@@ -25,7 +25,7 @@
           rel="noreferrer"
           aria-label="Открыть MAX"
         >
-          <img src="${url.resourcesPath}/img/max-logo-2025.png?v=20260410-5" alt="MAX" />
+          <img src="${url.resourcesPath}/img/max-logo-2025.png?v=${properties.aodAssetVersion!'dev'}" alt="MAX" />
         </a>
       </div>
     </div>

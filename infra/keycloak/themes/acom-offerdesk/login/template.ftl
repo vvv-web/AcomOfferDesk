@@ -34,7 +34,7 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${msg("loginTitle",(realm.displayName!''))}</title>
-    <link rel="icon" href="${url.resourcesPath}/img/brand-mark.svg?v=20260410-5" type="image/svg+xml" />
+    <link rel="icon" href="${url.resourcesPath}/img/brand-mark.svg?v=${properties.aodAssetVersion!'dev'}" type="image/svg+xml" />
     <#if properties.stylesCommon?has_content>
         <#list properties.stylesCommon?split(' ') as style>
             <link href="${url.resourcesCommonPath}/${style}" rel="stylesheet" />
@@ -45,7 +45,7 @@
             <link href="${url.resourcesPath}/${style}" rel="stylesheet" />
         </#list>
     </#if>
-    <link href="${url.resourcesPath}/css/acom-offerdesk.css?v=20260410-5" rel="stylesheet" />
+    <link href="${url.resourcesPath}/css/acom-offerdesk.css?v=${properties.aodAssetVersion!'dev'}" rel="stylesheet" />
     <script type="importmap">
         {
             "imports": {
@@ -153,11 +153,15 @@
         </#if>
 
         <#if displayMessage && message?has_content && (message.type != 'warning' || !isAppInitiatedAction??)>
+          <#assign alertSummary = message.summary>
+          <#if alertSummary == "You need to change your password to activate your account.">
+            <#assign alertSummary = "Чтобы активировать учётную запись, смените пароль.">
+          </#if>
           <div class="aod-alert aod-alert--${message.type}">
             <span class="aod-alert__icon" aria-hidden="true">
               <#if message.type = "success">✓<#elseif message.type = "warning">!<#elseif message.type = "error">×<#else>i</#if>
             </span>
-            <div class="aod-alert__content">${message.summary}</div>
+            <div class="aod-alert__content">${kcSanitize(alertSummary)?no_esc}</div>
           </div>
         </#if>
 

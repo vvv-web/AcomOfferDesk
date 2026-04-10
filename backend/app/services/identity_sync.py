@@ -190,6 +190,8 @@ class IdentitySyncService:
             status="review",
         )
         await self._users.add(user)
+        # Ensure parent row exists before we queue dependent auth/contact records.
+        await self._users.flush()
         return user
 
     async def _try_auto_link_existing_user(self, claims: KeycloakAccessTokenClaims) -> User | None:

@@ -12,6 +12,9 @@ const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth
 const AccountStatePage = lazy(async () => ({ default: (await import('@pages/auth/AccountStatePage')).AccountStatePage }));
 const TgAuthPage = lazy(async () => ({ default: (await import('@pages/auth/TgAuthPage')).TgAuthPage }));
 const TgRegisterPage = lazy(async () => ({ default: (await import('@pages/auth/TgRegisterPage')).TgRegisterPage }));
+const RegistrationLinkStatusPage = lazy(
+  async () => ({ default: (await import('@pages/auth/RegistrationLinkStatusPage')).RegistrationLinkStatusPage })
+);
 const VerifyEmailPage = lazy(async () => ({ default: (await import('@pages/auth/VerifyEmailPage')).VerifyEmailPage }));
 const RequestsPage = lazy(async () => ({ default: (await import('@pages/requests/RequestsPage')).RequestsPage }));
 const CreateRequestPage = lazy(async () => ({ default: (await import('@pages/requests/CreateRequestPage')).CreateRequestPage }));
@@ -58,6 +61,7 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/auth/tg/login" element={<TgAuthPage />} />
           <Route path="/auth/tg/register" element={<TgRegisterPage />} />
+          <Route path="/auth/registration-link-status" element={<RegistrationLinkStatusPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/account" element={<AccountStatePage />} />

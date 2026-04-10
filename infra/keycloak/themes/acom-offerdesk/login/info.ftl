@@ -10,10 +10,6 @@
                 Следующие шаги: <strong><#items as reqActionItem>${kcSanitize(msg("requiredAction.${reqActionItem}"))?no_esc}<#sep>, </#items></strong>
               </p>
             </#if>
-            <p class="aod-status-card__text">
-              Если вы завершили регистрацию контрагента, следующим шагом откроется профиль AcomOfferDesk для заполнения
-              карточки компании и ожидания активации.
-            </p>
 
             <div class="aod-status-card__actions">
               <#if !skipLink??>

@@ -39,6 +39,7 @@ class OidcAuthorizationStart:
     next_path: str
     flow: str
     redirect_uri: str
+    tg_registration_id: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +49,7 @@ class OidcStateClaims:
     next_path: str
     flow: str
     redirect_uri: str
+    tg_registration_id: int | None
     issued_at: int
     expires_at: int
 
@@ -57,6 +59,7 @@ def build_oidc_authorization_start(
     next_path: str | None = None,
     flow: str = "login",
     redirect_uri: str | None = None,
+    tg_registration_id: int | None = None,
 ) -> OidcAuthorizationStart:
     now = datetime.now(timezone.utc)
     state = _urlsafe_random(24)
@@ -73,6 +76,7 @@ def build_oidc_authorization_start(
         "next_path": normalized_next_path,
         "flow": flow,
         "redirect_uri": normalized_redirect_uri,
+        "tg_registration_id": tg_registration_id,
         "iat": int(now.timestamp()),
         "exp": expires_at,
         "type": "oidc_state",
@@ -87,6 +91,7 @@ def build_oidc_authorization_start(
         next_path=normalized_next_path,
         flow=flow,
         redirect_uri=normalized_redirect_uri,
+        tg_registration_id=tg_registration_id,
     )
 
 
@@ -104,6 +109,13 @@ def decode_oidc_state_token(token: str) -> OidcStateClaims:
     next_path = _sanitize_next_path(payload.get("next_path"))
     flow = str(payload.get("flow") or "login").strip() or "login"
     redirect_uri = str(payload.get("redirect_uri") or "").strip() or settings.keycloak_callback_url
+    raw_tg_registration_id = payload.get("tg_registration_id")
+    tg_registration_id: int | None = None
+    if raw_tg_registration_id not in {None, ""}:
+        try:
+            tg_registration_id = int(raw_tg_registration_id)
+        except (TypeError, ValueError) as exc:
+            raise Unauthorized("Invalid OIDC state") from exc
     issued_at = payload.get("iat")
     expires_at = payload.get("exp")
     if not state or not code_verifier or not isinstance(issued_at, int) or not isinstance(expires_at, int):
@@ -115,6 +127,7 @@ def decode_oidc_state_token(token: str) -> OidcStateClaims:
         next_path=next_path,
         flow=flow,
         redirect_uri=redirect_uri,
+        tg_registration_id=tg_registration_id,
         issued_at=issued_at,
         expires_at=expires_at,
     )
