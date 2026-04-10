@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import smtplib
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict, NotFound
@@ -74,7 +75,7 @@ class SendRequestNotificationEmailUseCase:
 
         token_codec = ReplyTokenCodec(secret=reply_secret) if reply_secret else None
         attachments, attachment_warning = await self._build_attachments(request_id=request_id)
-        request_url = f"{self._app_url}/requests/{request_id}"
+        request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
         tg_bot_url = settings.tg_bot_public_url
 
         for recipient in recipients:

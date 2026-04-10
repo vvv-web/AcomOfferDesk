@@ -38,6 +38,7 @@ class OidcAuthorizationStart:
     expires_at: int
     next_path: str
     flow: str
+    redirect_uri: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,11 +47,17 @@ class OidcStateClaims:
     code_verifier: str
     next_path: str
     flow: str
+    redirect_uri: str
     issued_at: int
     expires_at: int
 
 
-def build_oidc_authorization_start(*, next_path: str | None = None, flow: str = "login") -> OidcAuthorizationStart:
+def build_oidc_authorization_start(
+    *,
+    next_path: str | None = None,
+    flow: str = "login",
+    redirect_uri: str | None = None,
+) -> OidcAuthorizationStart:
     now = datetime.now(timezone.utc)
     state = _urlsafe_random(24)
     code_verifier = _urlsafe_random(48)
@@ -59,11 +66,13 @@ def build_oidc_authorization_start(*, next_path: str | None = None, flow: str = 
     ).decode("ascii").rstrip("=")
     expires_at = int((now + timedelta(seconds=OIDC_STATE_TTL_SECONDS)).timestamp())
     normalized_next_path = _sanitize_next_path(next_path)
+    normalized_redirect_uri = (redirect_uri or settings.keycloak_callback_url).strip() or settings.keycloak_callback_url
     payload = {
         "state": state,
         "code_verifier": code_verifier,
         "next_path": normalized_next_path,
         "flow": flow,
+        "redirect_uri": normalized_redirect_uri,
         "iat": int(now.timestamp()),
         "exp": expires_at,
         "type": "oidc_state",
@@ -77,6 +86,7 @@ def build_oidc_authorization_start(*, next_path: str | None = None, flow: str = 
         expires_at=expires_at,
         next_path=normalized_next_path,
         flow=flow,
+        redirect_uri=normalized_redirect_uri,
     )
 
 
@@ -93,6 +103,7 @@ def decode_oidc_state_token(token: str) -> OidcStateClaims:
     code_verifier = str(payload.get("code_verifier") or "").strip()
     next_path = _sanitize_next_path(payload.get("next_path"))
     flow = str(payload.get("flow") or "login").strip() or "login"
+    redirect_uri = str(payload.get("redirect_uri") or "").strip() or settings.keycloak_callback_url
     issued_at = payload.get("iat")
     expires_at = payload.get("exp")
     if not state or not code_verifier or not isinstance(issued_at, int) or not isinstance(expires_at, int):
@@ -103,6 +114,7 @@ def decode_oidc_state_token(token: str) -> OidcStateClaims:
         code_verifier=code_verifier,
         next_path=next_path,
         flow=flow,
+        redirect_uri=redirect_uri,
         issued_at=issued_at,
         expires_at=expires_at,
     )
@@ -112,12 +124,14 @@ def build_keycloak_login_url(
     *,
     state: str,
     code_challenge: str,
+    redirect_uri: str | None = None,
     prompt: str | None = None,
 ) -> str:
+    resolved_redirect_uri = (redirect_uri or settings.keycloak_callback_url).strip() or settings.keycloak_callback_url
     parts = [
         f"client_id={quote(settings.keycloak_client_id, safe='')}",
         "response_type=code",
-        f"redirect_uri={quote(settings.keycloak_callback_url, safe='')}",
+        f"redirect_uri={quote(resolved_redirect_uri, safe='')}",
         "scope=openid%20profile%20email",
         f"state={quote(state, safe='')}",
         f"code_challenge={quote(code_challenge, safe='')}",

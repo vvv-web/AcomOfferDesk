@@ -19,7 +19,7 @@ export const AuthCallbackPage = () => {
     if (callbackError) {
       setErrorMessage(
         callbackError === 'not_linked'
-          ? 'Keycloak-аккаунт ещё не связан с локальным бизнес-пользователем. Для существующих сотрудников выполните controlled linking в рамках миграции.'
+          ? 'Не удалось автоматически связать вход через Keycloak с локальным пользователем. Проверьте username в dev или подтвержденный e-mail в prod.'
           : 'Не удалось завершить вход через Keycloak.'
       );
       return;

@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 
 from app.core.config import settings
-from app.domain.exceptions import Forbidden
+from app.domain.exceptions import Conflict, Forbidden
 from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import User
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
@@ -30,6 +30,11 @@ def _normalize_local_user_id(username: str | None, *, subject: str) -> str:
     if not candidate:
         candidate = f"kc_{hashlib.sha256(subject.encode('utf-8')).hexdigest()[:12]}"
     return candidate[:128]
+
+
+def _normalize_email(email: str | None) -> str | None:
+    normalized = (email or "").strip().lower()
+    return normalized or None
 
 
 class IdentitySyncService:
@@ -114,6 +119,11 @@ class IdentitySyncService:
                     return bootstrap_user
 
         if not allow_user_creation:
+            auto_linked_user = await self._try_auto_link_existing_user(claims)
+            if auto_linked_user is not None:
+                return auto_linked_user
+
+        if not allow_user_creation:
             raise Forbidden("Local application account is not linked")
 
         user_id = _normalize_local_user_id(claims.preferred_username, subject=claims.subject)
@@ -127,3 +137,64 @@ class IdentitySyncService:
         )
         await self._users.add(user)
         return user
+
+    async def _try_auto_link_existing_user(self, claims: KeycloakAccessTokenClaims) -> User | None:
+        if settings.keycloak_dev_auto_link_by_username_enabled:
+            linked_user = await self._try_auto_link_by_username(claims)
+            if linked_user is not None:
+                return linked_user
+
+        if settings.keycloak_prod_auto_link_by_verified_email_enabled:
+            linked_user = await self._try_auto_link_by_verified_email(claims)
+            if linked_user is not None:
+                return linked_user
+
+        return None
+
+    async def _try_auto_link_by_username(self, claims: KeycloakAccessTokenClaims) -> User | None:
+        preferred_username = (claims.preferred_username or "").strip()
+        if not preferred_username:
+            return None
+
+        user = await self._users.get_by_id(preferred_username)
+        if user is None:
+            return None
+
+        await self._ensure_user_can_bind_keycloak(user=user, claims=claims)
+        return user
+
+    async def _try_auto_link_by_verified_email(self, claims: KeycloakAccessTokenClaims) -> User | None:
+        normalized_email = _normalize_email(claims.email)
+        if not claims.email_verified or normalized_email is None:
+            return None
+
+        candidates = await self._users.list_by_email(email=normalized_email)
+        if not candidates:
+            return None
+        if len(candidates) > 1:
+            raise Conflict("Verified Keycloak email matches multiple local users")
+
+        user = candidates[0]
+        await self._ensure_user_can_bind_keycloak(user=user, claims=claims)
+        return user
+
+    async def _ensure_user_can_bind_keycloak(
+        self,
+        *,
+        user: User,
+        claims: KeycloakAccessTokenClaims,
+    ) -> None:
+        conflicting_subject = await self._user_auth_accounts.get_conflicting_subject(
+            provider="keycloak",
+            subject=claims.subject,
+            exclude_user_id=user.id,
+        )
+        if conflicting_subject is not None:
+            raise Conflict("Keycloak account is already linked to another local user")
+
+        existing_binding = await self._user_auth_accounts.get_by_user_provider(
+            user_id=user.id,
+            provider="keycloak",
+        )
+        if existing_binding is not None and existing_binding.external_subject_id != claims.subject:
+            raise Conflict("Local user is already linked to another Keycloak account")

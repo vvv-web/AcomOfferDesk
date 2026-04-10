@@ -158,7 +158,6 @@ const skipAutoRefresh = (url: string) => (
   url.startsWith('/api/v1/auth/login')
   || url.startsWith('/api/v1/auth/refresh')
   || url.startsWith('/api/v1/auth/logout')
-  || url.startsWith('/api/v1/auth/tg/exchange')
 );
 
 const performFetch = async (url: string, init: RequestInit, headers: Headers): Promise<Response> => {

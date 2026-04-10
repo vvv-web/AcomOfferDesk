@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domain.contractor_validation import validate_optional_email
 from app.schemas.links import LinkSet
 
 
@@ -35,10 +36,6 @@ class AuthSessionResponse(BaseModel):
     links: LinkSet = Field(alias="_links")
 
 
-class TgExchangeRequest(BaseModel):
-    token: str = Field(..., min_length=1)
-
-
 LoginData = AuthSessionData
 LoginResponse = AuthSessionResponse
 
@@ -58,6 +55,16 @@ class RegisterUserRequest(BaseModel):
         if len(value.encode("utf-8")) > 72:
             raise ValueError("Password too long (max 72 bytes)")
         return value
+
+    @field_validator("mail")
+    @classmethod
+    def _validate_mail(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        return validate_optional_email(normalized, allow_placeholder=False)
 
 
 class RegisterUserData(BaseModel):

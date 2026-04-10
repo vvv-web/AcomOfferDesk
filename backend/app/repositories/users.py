@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, and_, cast, select, update
+from sqlalchemy import BigInteger, and_, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, with_expression
 
@@ -78,6 +78,35 @@ class UserRepository:
     async def exists(self, user_id: str) -> bool:
         result = await self._session.execute(select(User.id).where(User.id == user_id))
         return result.scalar_one_or_none() is not None
+
+    async def list_by_email(self, *, email: str) -> list[User]:
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            return []
+
+        stmt = (
+            select(User)
+            .options(with_expression(User.tg_user_id, _telegram_id_expr()))
+            .outerjoin(Profile, Profile.id == User.id)
+            .outerjoin(CompanyContact, CompanyContact.id == User.id)
+            .where(
+                or_(
+                    func.lower(Profile.mail) == normalized_email,
+                    func.lower(CompanyContact.mail) == normalized_email,
+                )
+            )
+            .order_by(User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+
+        users: list[User] = []
+        seen_user_ids: set[str] = set()
+        for user in result.scalars().all():
+            if user.id in seen_user_ids:
+                continue
+            seen_user_ids.add(user.id)
+            users.append(user)
+        return users
 
     async def add(self, user: User) -> None:
         self._session.add(user)

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { AuthSessionResponse, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
-import { exchangeTgSession, loginWebUser, logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
+import { loginWebUser, logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
 import { setAuthRuntime, setAuthToken } from '@shared/api/client';
 
 type AuthStatus = 'bootstrapping' | 'authenticated' | 'anonymous' | 'refreshing';
@@ -39,7 +39,6 @@ type AuthContextValue = {
   loginLegacy: (payload: LoginWebUserPayload) => Promise<AuthSession>;
   beginLogin: (nextPath?: string) => void;
   beginRegistration: () => void;
-  exchangeTelegramToken: (token: string) => Promise<AuthSession>;
   refresh: (reason: RefreshReason) => Promise<boolean>;
   logout: () => void;
 };
@@ -177,14 +176,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     window.location.assign(buildRegisterUrl());
   }, []);
 
-  const exchangeTelegramToken = useCallback(async (token: string) => {
-    trackActivity();
-    const response = await exchangeTgSession({ token });
-    const nextSession = mapSession(response);
-    applySession(nextSession, 'authenticated');
-    return nextSession;
-  }, [applySession, trackActivity]);
-
   const logout = useCallback(() => {
     void performLogout({ revokeRemote: true, redirectToLogin: true });
   }, [performLogout]);
@@ -235,11 +226,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loginLegacy,
       beginLogin,
       beginRegistration,
-      exchangeTelegramToken,
       refresh,
       logout
     }),
-    [beginLogin, beginRegistration, exchangeTelegramToken, loginLegacy, logout, refresh, session, status]
+    [beginLogin, beginRegistration, loginLegacy, logout, refresh, session, status]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

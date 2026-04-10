@@ -24,6 +24,7 @@ const schema = z
     login: z.string().optional(),
     password: z.string().optional(),
     confirmPassword: z.string().optional(),
+    mail: z.string().optional(),
     id_parent: z.string().optional(),
     company_name: z.string().optional(),
     inn: z.string().optional(),
@@ -115,6 +116,7 @@ const schema = z
     const login = data.login?.trim() ?? '';
     const password = data.password ?? '';
     const confirmPassword = data.confirmPassword ?? '';
+    const mail = data.mail?.trim() ?? '';
 
     if (login.length < 3) {
       ctx.addIssue({
@@ -145,6 +147,20 @@ const schema = z
         code: z.ZodIssueCode.custom,
         message: 'Пароли не совпадают',
         path: ['confirmPassword']
+      });
+    }
+
+    if (!mail) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'E-mail обязателен для входа через Keycloak',
+        path: ['mail']
+      });
+    } else if (!emailRegex.test(mail)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Некорректный формат e-mail',
+        path: ['mail']
       });
     }
 
@@ -221,6 +237,7 @@ export const useAdminPage = () => {
       login: '',
       password: '',
       confirmPassword: '',
+      mail: '',
       id_parent: '',
       company_name: '',
       inn: '',
@@ -323,6 +340,7 @@ export const useAdminPage = () => {
       login: '',
       password: '',
       confirmPassword: '',
+      mail: '',
       id_parent: '',
       company_name: '',
       inn: '',
@@ -365,6 +383,7 @@ export const useAdminPage = () => {
           login: values.login?.trim() ?? '',
           password: values.password ?? '',
           role_id: values.role_id,
+          mail: values.mail?.trim() || undefined,
           id_parent: values.id_parent?.trim() || undefined
         });
 

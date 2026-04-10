@@ -249,6 +249,13 @@ export const AdminPageView = () => {
                     {...register('confirmPassword')}
                     sx={inputFieldSx}
                   />
+                  <TextField
+                    label="E-mail"
+                    error={Boolean(getFieldError('mail'))}
+                    helperText={getFieldError('mail')}
+                    {...register('mail')}
+                    sx={inputFieldSx}
+                  />
 
                   {requiresParent ? (
                     <TextField

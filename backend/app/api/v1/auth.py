@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from urllib.parse import quote
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -9,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from app.api.action_flags import serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
-from app.api.v1.tg import resolve_tg_id_from_auth_token
 from app.core.auth_cookies import (
     clear_keycloak_refresh_cookie,
     clear_keycloak_state_cookie,
@@ -27,14 +27,13 @@ from app.core.oidc_state_tokens import (
 from app.core.session_tokens import build_refresh_fingerprint, decode_refresh_token
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser, build_current_user
-from app.domain.exceptions import Forbidden, Unauthorized
+from app.domain.exceptions import Conflict, Forbidden, Unauthorized
 from app.domain.policies import UserPolicy
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     RegisterUserRequest,
     RegisterUserResponse,
-    TgExchangeRequest,
 )
 from app.schemas.links import Link, LinkSet
 from app.services.auth_session import AuthSessionBundle, AuthSessionService
@@ -63,6 +62,29 @@ def _build_auth_links(*, self_href: str) -> LinkSet:
     return LinkSet(
         self=Link(href=self_href, method="POST"),
     )
+
+
+def _resolve_request_base_url(request: Request) -> str:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    host = forwarded_host or (request.headers.get("host") or "").strip() or request.url.netloc
+    scheme = forwarded_proto or request.url.scheme or "http"
+    configured_public_base = (settings.public_backend_base_url or settings.web_base_url or "").strip().rstrip("/")
+    if configured_public_base:
+        configured_public = urlsplit(configured_public_base)
+        configured_host = (configured_public.netloc or "").strip().lower()
+        if configured_host and host.strip().lower() == configured_host:
+            scheme = configured_public.scheme or scheme
+    if host:
+        return f"{scheme}://{host}".rstrip("/")
+    return (settings.public_backend_base_url or settings.web_base_url or str(request.base_url)).rstrip("/")
+
+
+def _extract_base_url_from_redirect_uri(redirect_uri: str) -> str:
+    parsed = urlsplit(redirect_uri)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return (settings.web_base_url or settings.public_backend_base_url or "http://localhost:8080").rstrip("/")
 
 
 def _onboarding_state(status_value: str) -> str | None:
@@ -171,14 +193,20 @@ async def verify_email(
 
 @router.get("/auth/oidc/login", response_class=RedirectResponse)
 async def begin_keycloak_login(
+    request: Request,
     next_path: str | None = Query(default="/"),
 ) -> RedirectResponse:
     if not settings.keycloak_enabled:
         raise Forbidden("Keycloak authentication is disabled")
 
-    start = build_oidc_authorization_start(next_path=next_path, flow="login")
+    redirect_uri = f"{_resolve_request_base_url(request)}/api/v1/auth/callback"
+    start = build_oidc_authorization_start(next_path=next_path, flow="login", redirect_uri=redirect_uri)
     response = RedirectResponse(
-        url=build_keycloak_login_url(state=start.state, code_challenge=start.code_challenge),
+        url=build_keycloak_login_url(
+            state=start.state,
+            code_challenge=start.code_challenge,
+            redirect_uri=start.redirect_uri,
+        ),
         status_code=status.HTTP_302_FOUND,
     )
     set_keycloak_state_cookie(
@@ -191,16 +219,19 @@ async def begin_keycloak_login(
 
 @router.get("/auth/oidc/register", response_class=RedirectResponse)
 async def begin_keycloak_registration(
+    request: Request,
     next_path: str | None = Query(default="/account"),
 ) -> RedirectResponse:
     if not settings.keycloak_enabled:
         raise Forbidden("Keycloak authentication is disabled")
 
-    start = build_oidc_authorization_start(next_path=next_path, flow="register")
+    redirect_uri = f"{_resolve_request_base_url(request)}/api/v1/auth/callback"
+    start = build_oidc_authorization_start(next_path=next_path, flow="register", redirect_uri=redirect_uri)
     response = RedirectResponse(
         url=build_keycloak_login_url(
             state=start.state,
             code_challenge=start.code_challenge,
+            redirect_uri=start.redirect_uri,
             prompt="create",
         ),
         status_code=status.HTTP_302_FOUND,
@@ -236,8 +267,12 @@ async def keycloak_callback(
     if claims.state != state:
         raise Unauthorized("Invalid OIDC state")
 
-    bundle = await exchange_code_for_tokens(code=code, code_verifier=claims.code_verifier)
-    web_base = (settings.web_base_url or settings.public_backend_base_url or "http://localhost:8080").rstrip("/")
+    bundle = await exchange_code_for_tokens(
+        code=code,
+        code_verifier=claims.code_verifier,
+        redirect_uri=claims.redirect_uri,
+    )
+    web_base = _extract_base_url_from_redirect_uri(claims.redirect_uri)
     try:
         async with uow:
             token_claims = await decode_keycloak_access_token(bundle.access_token)
@@ -250,7 +285,7 @@ async def keycloak_callback(
                 token_claims,
                 allow_user_creation=claims.flow == "register",
             )
-    except Forbidden:
+    except (Forbidden, Conflict):
         response = RedirectResponse(url=f"{web_base}/auth/callback?error=not_linked", status_code=status.HTTP_302_FOUND)
         clear_keycloak_state_cookie(response)
         clear_keycloak_refresh_cookie(response)
@@ -341,29 +376,9 @@ async def logout(request: Request, response: Response) -> Response:
     return response
 
 
-@router.post("/auth/tg/exchange", response_model=LoginResponse)
-async def tg_exchange(
-    payload: TgExchangeRequest,
-    response: Response,
-    uow: UnitOfWork = Depends(get_uow),
-) -> LoginResponse:
-    tg_id = await resolve_tg_id_from_auth_token(payload.token)
-    async with uow:
-        tg_user = await uow.tg_users.get_by_id(tg_id)
-        linked_user = await uow.users.get_by_tg_user_id(tg_id)
-        if tg_user is None or linked_user is None:
-            raise Forbidden("Invalid token")
-        if linked_user.id_role != settings.contractor_role_id:
-            raise Forbidden("Access denied")
-        if tg_user.status != "approved" or linked_user.status != "active":
-            raise Forbidden("Access denied")
-        service = AuthSessionService(uow.users)
-        session = await service.build_session_bundle(user=linked_user)
-
-    clear_keycloak_refresh_cookie(response)
-    clear_keycloak_state_cookie(response)
-    set_refresh_cookie(response, session.refresh_token, max_age=max(0, session.refresh_token_expires_at - int(time.time())))
-    return _build_legacy_auth_response(session=session, self_href="/api/v1/auth/tg/exchange")
+@router.post("/auth/tg/exchange")
+async def tg_exchange_disabled() -> dict[str, str]:
+    raise Forbidden("Прямой вход из Telegram отключен")
 
 
 @router.post("/users/register", response_model=RegisterUserResponse)
@@ -374,7 +389,7 @@ async def register_user(
 ) -> RegisterUserResponse:
     UserPolicy.ensure_can_register_user(current_user)
     async with uow:
-        service = UserRegistrationService(uow.users)
+        service = UserRegistrationService(uow.users, uow.profiles)
         user = await service.register_user(
             current_user,
             user_id=payload.login.strip(),

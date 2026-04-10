@@ -74,7 +74,7 @@ def _error_event(*, request_id: str | None, code: str, message: str) -> Outbound
 async def chat_websocket(websocket: WebSocket) -> None:
     try:
         current_user, claims = await _get_current_user_from_websocket(websocket)
-    except Unauthorized:
+    except (Conflict, Forbidden, Unauthorized):
         await websocket.close(code=4401)
         return
 

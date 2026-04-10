@@ -12,6 +12,27 @@ BOOTSTRAP_PASSWORD="${KEYCLOAK_BOOTSTRAP_APP_PASSWORD:-}"
 BOOTSTRAP_EMAIL="${KEYCLOAK_BOOTSTRAP_APP_EMAIL:-${BOOTSTRAP_USERNAME}@local.invalid}"
 BOOTSTRAP_FIRST_NAME="${KEYCLOAK_BOOTSTRAP_APP_FIRST_NAME:-Bootstrap}"
 BOOTSTRAP_LAST_NAME="${KEYCLOAK_BOOTSTRAP_APP_LAST_NAME:-Superadmin}"
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-}"
+SMTP_USERNAME="${KEYCLOAK_SMTP_USERNAME:-${EMAIL_ADDRESS:-}}"
+SMTP_PASSWORD="${KEYCLOAK_SMTP_PASSWORD:-${EMAIL_APP_PASSWORD:-}}"
+SMTP_FROM="${KEYCLOAK_SMTP_FROM:-${EMAIL_ADDRESS:-}}"
+SMTP_REPLY_TO="${KEYCLOAK_SMTP_REPLY_TO:-${EMAIL_ADDRESS:-}}"
+SMTP_FROM_DISPLAY_NAME="${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-${EMAIL_FROM_NAME:-AcomOfferDesk}}"
+SMTP_SSL="${KEYCLOAK_SMTP_SSL:-}"
+SMTP_STARTTLS="${KEYCLOAK_SMTP_STARTTLS:-}"
+KEYCLOAK_VERIFY_EMAIL="${KEYCLOAK_VERIFY_EMAIL:-}"
+
+BACKEND_BASE_URL="${BACKEND_BASE_URL%/}"
+WEB_BASE_URL="${WEB_BASE_URL%/}"
+
+if [ -z "$KEYCLOAK_VERIFY_EMAIL" ]; then
+  if [ "${APP_ENV:-development}" = "production" ]; then
+    KEYCLOAK_VERIFY_EMAIL="true"
+  else
+    KEYCLOAK_VERIFY_EMAIL="false"
+  fi
+fi
 
 if [ -z "${KC_BOOTSTRAP_ADMIN_USERNAME:-}" ] || [ -z "${KC_BOOTSTRAP_ADMIN_PASSWORD:-}" ]; then
   echo "Keycloak bootstrap admin credentials are required"
@@ -31,6 +52,48 @@ if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
   echo "Realm $APP_REALM is not available"
   exit 1
 fi
+
+REALM_UPDATE_FILE="$(mktemp)"
+
+if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ] && [ -n "$SMTP_FROM" ]; then
+  if [ -z "$SMTP_SSL" ] && [ -z "$SMTP_STARTTLS" ]; then
+    if [ "$SMTP_PORT" = "465" ]; then
+      SMTP_SSL="true"
+      SMTP_STARTTLS="false"
+    else
+      SMTP_SSL="false"
+      SMTP_STARTTLS="true"
+    fi
+  fi
+
+  cat >"$REALM_UPDATE_FILE" <<EOF
+{
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "smtpServer": {
+    "auth": "true",
+    "host": "$SMTP_HOST",
+    "port": "$SMTP_PORT",
+    "user": "$SMTP_USERNAME",
+    "password": "$SMTP_PASSWORD",
+    "from": "$SMTP_FROM",
+    "replyTo": "$SMTP_REPLY_TO",
+    "fromDisplayName": "$SMTP_FROM_DISPLAY_NAME",
+    "ssl": "$SMTP_SSL",
+    "starttls": "$SMTP_STARTTLS"
+  }
+}
+EOF
+else
+  cat >"$REALM_UPDATE_FILE" <<EOF
+{
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL
+}
+EOF
+  echo "Keycloak SMTP configuration is incomplete; updating only realm verifyEmail=$KEYCLOAK_VERIFY_EMAIL"
+fi
+
+/opt/keycloak/bin/kcadm.sh update "realms/$APP_REALM" -f "$REALM_UPDATE_FILE"
+rm -f "$REALM_UPDATE_FILE"
 
 CLIENT_SEARCH=$(/opt/keycloak/bin/kcadm.sh get "clients?clientId=$CLIENT_ID" -r "$APP_REALM")
 CLIENT_UUID=$(printf '%s' "$CLIENT_SEARCH" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)

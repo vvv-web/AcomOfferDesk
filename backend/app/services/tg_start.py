@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.domain.exceptions import Conflict
@@ -12,7 +13,6 @@ from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
 
 REGISTER_TTL_SECONDS = int(timedelta(hours=24).total_seconds())
-AUTH_LINK_TTL_SECONDS = int(timedelta(minutes=10).total_seconds())
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ class TgStartService:
                     request_id=request.id,
                     description=request.description,
                     deadline_at=request.deadline_at,
-                    link=self._build_authorization_link(tg_id=tg_id),
+                    link=self._build_authorization_link(request_id=request.id),
                 )
                 for request in open_requests
             ]
@@ -102,15 +102,8 @@ class TgStartService:
         code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
         return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/register?token={code}"
 
-    def _build_authorization_link(self, *, tg_id: int) -> str:
-        if not settings.tg_link_secret or not settings.public_backend_base_url:
+    def _build_authorization_link(self, *, request_id: int) -> str:
+        if not settings.public_backend_base_url:
             raise Conflict("TG links are not configured")
-        payload = TgShortcodeCodec.build(
-            tg_id=tg_id,
-            purpose="tg_auth",
-            ttl_seconds=AUTH_LINK_TTL_SECONDS,
-        )
-        code = TgShortcodeCodec.encode(payload, secret=settings.tg_link_secret)
-        if settings.web_base_url:
-            return f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={code}"
-        return f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/auth?token={code}"
+        next_path = quote(f"/requests/{request_id}/contractor", safe="/")
+        return f"{settings.public_backend_base_url.rstrip('/')}/login?next={next_path}"

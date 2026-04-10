@@ -23,6 +23,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.files import FileService
+from app.services.keycloak_admin import KeycloakAdminService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
@@ -76,6 +77,13 @@ _CYRILLIC_TO_LATIN = {
     "ю": "yu",
     "я": "ya",
 }
+
+
+def _normalize_keycloak_email_value(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized or normalized == PLACEHOLDER_TEXT:
+        return None
+    return normalized
 
 @dataclass(frozen=True)
 class AttachmentFileInput:
@@ -239,6 +247,7 @@ class OfferService:
         company_contacts: CompanyContactRepository,
         users: UserRepository,
         file_service: FileService | None = None,
+        keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._requests = requests
         self._offers = offers
@@ -249,6 +258,7 @@ class OfferService:
         self._company_contacts = company_contacts
         self._users = users
         self._file_service = file_service or FileService(files)
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
         return ChatState(
@@ -461,6 +471,11 @@ class OfferService:
                 address=contractor_data.address or PLACEHOLDER_TEXT,
                 note=contractor_data.note or PLACEHOLDER_TEXT,
             )
+        )
+        await self._keycloak_admin.ensure_user(
+            username=login,
+            email=_normalize_keycloak_email_value(contractor_data.company_mail),
+            email_verified=False,
         )
         return login
 

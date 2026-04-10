@@ -50,14 +50,15 @@ async def _post_form(data: dict[str, str]) -> dict[str, Any]:
     return payload
 
 
-async def exchange_code_for_tokens(*, code: str, code_verifier: str) -> KeycloakTokenBundle:
+async def exchange_code_for_tokens(*, code: str, code_verifier: str, redirect_uri: str | None = None) -> KeycloakTokenBundle:
+    resolved_redirect_uri = (redirect_uri or settings.keycloak_callback_url).strip() or settings.keycloak_callback_url
     payload = await _post_form(
         {
             "grant_type": "authorization_code",
             "client_id": settings.keycloak_client_id,
             "code": code,
             "code_verifier": code_verifier,
-            "redirect_uri": settings.keycloak_callback_url,
+            "redirect_uri": resolved_redirect_uri,
         }
     )
     return KeycloakTokenBundle(

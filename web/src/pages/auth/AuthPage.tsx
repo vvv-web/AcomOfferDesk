@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Box, Button, Divider, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
 import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
@@ -18,8 +18,13 @@ type LoginFormValues = z.infer<typeof schema>;
 
 export const AuthPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { beginLogin, beginRegistration, loginLegacy, isAuthenticated, session } = useAuth();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const nextPath = useMemo(() => {
+    const raw = searchParams.get('next')?.trim();
+    return raw && raw.startsWith('/') ? raw : '/';
+  }, [searchParams]);
   const {
     register,
     handleSubmit,
@@ -36,14 +41,22 @@ export const AuthPage = () => {
     if (!isAuthenticated || !session) {
       return;
     }
-    navigate(session.businessAccess ? getDefaultPathByRole(session.roleId) : '/account', { replace: true });
-  }, [isAuthenticated, navigate, session]);
+    if (!session.businessAccess) {
+      navigate('/account', { replace: true });
+      return;
+    }
+    navigate(nextPath === '/' ? getDefaultPathByRole(session.roleId) : nextPath, { replace: true });
+  }, [isAuthenticated, navigate, nextPath, session]);
 
   const onSubmit = async (values: LoginFormValues) => {
     setErrorMessage(null);
     try {
       const nextSession = await loginLegacy(values);
-      navigate(nextSession.businessAccess ? getDefaultPathByRole(nextSession.roleId) : '/account', { replace: true });
+      if (!nextSession.businessAccess) {
+        navigate('/account', { replace: true });
+        return;
+      }
+      navigate(nextPath === '/' ? getDefaultPathByRole(nextSession.roleId) : nextPath, { replace: true });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Ошибка авторизации');
     }
@@ -75,14 +88,15 @@ export const AuthPage = () => {
               Вход в AcomOfferDesk
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Основной вход и саморегистрация выполняются через Keycloak. Роль и доступ к данным всё равно определяются приложением.
+              Основной вход и саморегистрация выполняются через Keycloak. Роль и доступ к данным всё равно
+              определяются приложением.
             </Typography>
           </Stack>
 
           <Stack spacing={1.5}>
             <Button
               variant="contained"
-              onClick={() => beginLogin('/')}
+              onClick={() => beginLogin(nextPath)}
               sx={{ borderRadius: 999, textTransform: 'none', py: 1.3, boxShadow: 'none' }}
             >
               Войти через Keycloak

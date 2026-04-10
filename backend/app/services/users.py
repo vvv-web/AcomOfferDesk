@@ -18,14 +18,15 @@ from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
+from app.services.keycloak_admin import KeycloakAdminService
 from app.services.tg_notifications import notify_access_closed, notify_access_opened
 
-ROLE_NAME_SUPERADMIN = "РЎСѓРїРµСЂР°РґРјРёРЅ"
-ROLE_NAME_ADMIN = "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ"
-ROLE_NAME_PROJECT_MANAGER = "Р СѓРєРѕРІРѕРґРёС‚РµР»СЊ РџСЂРѕРµРєС‚Р°"
-ROLE_NAME_LEAD_ECONOMIST = "Р’РµРґСѓС‰РёР№ СЌРєРѕРЅРѕРјРёСЃС‚"
-ROLE_NAME_ECONOMIST = "Р­РєРѕРЅРѕРјРёСЃС‚"
-ROLE_NAME_OPERATOR = "РћРїРµСЂР°С‚РѕСЂ"
+ROLE_NAME_SUPERADMIN = "Суперадмин"
+ROLE_NAME_ADMIN = "Администратор"
+ROLE_NAME_PROJECT_MANAGER = "Руководитель проекта"
+ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
+ROLE_NAME_ECONOMIST = "Экономист"
+ROLE_NAME_OPERATOR = "Оператор"
 PLACEHOLDER_TEXT = "Не указано"
 _LOGIN_CLEANUP_PATTERN = re.compile(r"[^a-z0-9_]+")
 _LOGIN_COLLAPSE_PATTERN = re.compile(r"_+")
@@ -121,9 +122,24 @@ def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -
         return target_role_id == settings.economist_role_id
     return False
 
+
+def _normalize_keycloak_email_value(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized or normalized == PLACEHOLDER_TEXT:
+        return None
+    return normalized
+
 class UserRegistrationService:
-    def __init__(self, users: UserRepository):
+    def __init__(
+        self,
+        users: UserRepository,
+        profiles: ProfileRepository,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
+    ):
         self._users = users
+        self._profiles = profiles
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     async def register_user(
         self,
@@ -204,6 +220,16 @@ class UserRegistrationService:
             id_parent = None
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
+
+        normalized_full_name = (full_name or "").strip() or PLACEHOLDER_TEXT
+        normalized_phone = (phone or "").strip() or PLACEHOLDER_TEXT
+        normalized_mail = (mail or "").strip()
+        if not normalized_mail:
+            raise Conflict("Email is required for user creation")
+        try:
+            normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) or normalized_mail
+        except ValueError as exc:
+            raise Conflict(str(exc)) from exc
         
         user = User(
             id=user_id,
@@ -213,6 +239,20 @@ class UserRegistrationService:
         )
 
         await self._users.add(user)
+        await self._profiles.add(
+            Profile(
+                id=user_id,
+                full_name=normalized_full_name,
+                phone=normalized_phone,
+                mail=normalized_mail,
+            )
+        )
+        await self._keycloak_admin.ensure_user(
+            username=user_id,
+            email=normalized_mail,
+            password=password.strip(),
+            email_verified=False,
+        )
         return user
     
 
@@ -261,7 +301,7 @@ class ContractorRegistrationService:
             id=login,
             full_name=full_name,
             phone=phone,
-            mail="РќРµ СѓРєР°Р·Р°РЅРѕ",
+            mail="Не указано",
         )
         company_contact = CompanyContact(
             id=login,
@@ -827,10 +867,13 @@ class ManualContractorService:
         users: UserRepository,
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
         normalized = (value or "").strip()
@@ -963,6 +1006,11 @@ class ManualContractorService:
                 note=data.note or PLACEHOLDER_TEXT,
             )
         )
+        await self._keycloak_admin.ensure_user(
+            username=login,
+            email=_normalize_keycloak_email_value(data.company_mail),
+            email_verified=False,
+        )
         return login
 
     async def create_manual_contractor(
@@ -994,6 +1042,7 @@ class ManualContractorService:
         data: ManualContractorUpdateInput,
     ) -> str:
         UserPolicy.ensure_can_manage_manual_contractors(current_user)
+        original_user_id = user_id
 
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -1063,6 +1112,13 @@ class ManualContractorService:
             company_contact.address = address
         if note is not None:
             company_contact.note = note
+
+        await self._keycloak_admin.ensure_user(
+            username=user.id,
+            previous_username=original_user_id,
+            email=_normalize_keycloak_email_value(company_contact.mail),
+            email_verified=False,
+        )
 
         return user.id
 
@@ -1346,9 +1402,9 @@ class UserSelfService:
             await self._profiles.add(
                 Profile(
                     id=current_user.user_id,
-                    full_name=full_name or "РќРµ СѓРєР°Р·Р°РЅРѕ",
-                    phone=phone or "РќРµ СѓРєР°Р·Р°РЅРѕ",
-                    mail=mail or "РќРµ СѓРєР°Р·Р°РЅРѕ",
+                    full_name=full_name or "Не указано",
+                    phone=phone or "Не указано",
+                    mail=mail or "Не указано",
                 )
             )
             return

@@ -236,22 +236,11 @@ async def redirect_tg_register(
 @router.get("/auth")
 @router.get("/auth/", include_in_schema=False)
 async def redirect_tg_auth(
-    token: str = Query(...),
-    uow: UnitOfWork = Depends(get_uow),
+    _token: str = Query(..., alias="token"),
 ) -> RedirectResponse:
-    tg_id = await resolve_tg_id_from_auth_token(token)
-    async with uow:
-        tg_user = await uow.tg_users.get_by_id(tg_id)
-        linked_user = await uow.users.get_by_tg_user_id(tg_id)
-    if tg_user is None or linked_user is None:
-        raise Forbidden("Invalid token")
-    if linked_user.id_role != settings.contractor_role_id:
-        raise Forbidden("Access denied")
-    if tg_user.status != "approved" or linked_user.status != "active":
-        raise Forbidden("Access denied")
     if not settings.web_base_url:
         raise Forbidden("Invalid token")
-    url = f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={token}"
+    url = f"{settings.web_base_url.rstrip('/')}/login?next=/"
     return RedirectResponse(url=url, status_code=302)
 
 

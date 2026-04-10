@@ -27,6 +27,7 @@ def _parse_str_list(value: str | list[str] | None) -> list[str]:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
+    app_env: str = Field(default="development", validation_alias=AliasChoices("APP_ENV", "ENVIRONMENT"))
     database_url: str = Field(..., validation_alias="DATABASE_URL")
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
@@ -76,6 +77,30 @@ class Settings(BaseSettings):
     keycloak_bootstrap_app_username: str = Field(
         default="superadmin",
         validation_alias="KEYCLOAK_BOOTSTRAP_APP_USERNAME",
+    )
+    keycloak_admin_realm: str = Field(
+        default="master",
+        validation_alias=AliasChoices("KEYCLOAK_ADMIN_REALM", "KC_BOOTSTRAP_ADMIN_REALM"),
+    )
+    keycloak_admin_client_id: str = Field(
+        default="admin-cli",
+        validation_alias="KEYCLOAK_ADMIN_CLIENT_ID",
+    )
+    keycloak_admin_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KEYCLOAK_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_USERNAME"),
+    )
+    keycloak_admin_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KEYCLOAK_ADMIN_PASSWORD", "KC_BOOTSTRAP_ADMIN_PASSWORD"),
+    )
+    keycloak_dev_auto_link_by_username_enabled: bool = Field(
+        default=False,
+        validation_alias="KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED",
+    )
+    keycloak_prod_auto_link_by_verified_email_enabled: bool = Field(
+        default=False,
+        validation_alias="KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED",
     )
 
     superadmin_role_id: int = 1
@@ -156,6 +181,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _normalize(self) -> "Settings":
+        self.app_env = self.app_env.strip().lower() or "development"
         self.superadmin_role_id = 1
         self.admin_role_id = 2
         self.contractor_role_id = 3
@@ -189,11 +215,24 @@ class Settings(BaseSettings):
             self.keycloak_public_base_url = self.keycloak_public_base_url.rstrip("/") or None
         if self.keycloak_issuer_url is not None:
             self.keycloak_issuer_url = self.keycloak_issuer_url.rstrip("/") or None
+        self.keycloak_admin_realm = self.keycloak_admin_realm.strip() or "master"
+        self.keycloak_admin_client_id = self.keycloak_admin_client_id.strip() or "admin-cli"
+        if self.keycloak_admin_username is not None:
+            self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
+        if self.keycloak_admin_password is not None:
+            self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
         self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
         if self.keycloak_jwks_cache_ttl_seconds <= 0:
             self.keycloak_jwks_cache_ttl_seconds = 300
         if self.keycloak_http_timeout_seconds <= 0:
             self.keycloak_http_timeout_seconds = 10.0
+        if self.keycloak_dev_auto_link_by_username_enabled and self.keycloak_prod_auto_link_by_verified_email_enabled:
+            raise ValueError(
+                "KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED and "
+                "KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED cannot be enabled together"
+            )
+        if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
+            raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
         return self
 
     @property
