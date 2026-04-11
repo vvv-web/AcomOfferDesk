@@ -543,7 +543,7 @@ async def update_user_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserStatusUpdateResponse:
     async with uow:
-        service = UserStatusService(uow.users, uow.tg_users)
+        service = UserStatusService(uow.users, uow.tg_users, uow.profiles)
         result = await service.update_statuses(
             current_user=current_user,
             user_id=user_id,

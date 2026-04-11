@@ -19,15 +19,15 @@ export const AuthCallbackPage = () => {
     if (callbackError) {
       setErrorMessage(
         callbackError === 'not_linked'
-          ? 'Не удалось автоматически связать вход через Keycloak с локальным пользователем. Проверьте username в dev или подтвержденный e-mail в prod.'
-          : 'Не удалось завершить вход через Keycloak.'
+          ? 'Не удалось завершить вход. Обратитесь к администратору, чтобы проверить доступ.'
+          : 'Не удалось завершить вход.'
       );
       return;
     }
     let cancelled = false;
     void refresh('bootstrap').then((restored) => {
       if (!restored && !cancelled) {
-        setErrorMessage('Не удалось завершить вход через Keycloak.');
+        setErrorMessage('Не удалось завершить вход.');
       }
     });
     return () => {
@@ -59,7 +59,7 @@ export const AuthCallbackPage = () => {
             <>
               <CircularProgress size={28} />
               <Typography variant="body2" color="text.secondary" textAlign="center">
-                Получаем сессию приложения и синхронизируем локального пользователя.
+                Проверяем доступ и открываем рабочий кабинет.
               </Typography>
             </>
           )}

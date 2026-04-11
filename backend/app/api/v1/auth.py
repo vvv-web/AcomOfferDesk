@@ -49,6 +49,7 @@ from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import (
     decode_keycloak_access_token,
     exchange_code_for_tokens,
+    logout_refresh_token,
     refresh_tokens,
 )
 from app.services.tg_registration_links import (
@@ -136,6 +137,20 @@ def _extract_base_url_from_redirect_uri(redirect_uri: str) -> str:
 
 def _build_registration_link_status_url(base_url: str, *, reason: str) -> str:
     return f"{base_url.rstrip('/')}/auth/registration-link-status?reason={quote(reason, safe='')}"
+
+
+def _build_login_error_url(base_url: str, *, reason: str) -> str:
+    return f"{base_url.rstrip('/')}/login?auth_error={quote(reason, safe='')}"
+
+
+def _build_login_error_redirect(base_url: str, *, reason: str) -> RedirectResponse:
+    response = RedirectResponse(
+        url=_build_login_error_url(base_url, reason=reason),
+        status_code=status.HTTP_302_FOUND,
+    )
+    clear_keycloak_state_cookie(response)
+    clear_keycloak_refresh_cookie(response)
+    return response
 
 
 def _onboarding_state(status_value: str) -> str | None:
@@ -303,7 +318,6 @@ async def begin_keycloak_login(
             state=start.state,
             code_challenge=start.code_challenge,
             redirect_uri=start.redirect_uri,
-            prompt="login",
         ),
         status_code=status.HTTP_302_FOUND,
     )
@@ -424,24 +438,31 @@ async def keycloak_callback(
 ) -> RedirectResponse:
     if not settings.keycloak_enabled:
         raise Forbidden("Keycloak authentication is disabled")
+    request_base = _resolve_oidc_public_base_url(request)
     if error:
-        raise Unauthorized("Keycloak token exchange failed")
+        return _build_login_error_redirect(request_base, reason="access_denied")
     if not code or not state:
-        raise Unauthorized("Missing credentials")
+        return _build_login_error_redirect(request_base, reason="session_expired")
 
     state_cookie = (request.cookies.get(settings.keycloak_state_cookie_name) or "").strip()
     if not state_cookie:
-        raise Unauthorized("Missing OIDC state")
+        return _build_login_error_redirect(request_base, reason="session_expired")
 
-    claims = decode_oidc_state_token(state_cookie)
+    try:
+        claims = decode_oidc_state_token(state_cookie)
+    except Unauthorized:
+        return _build_login_error_redirect(request_base, reason="session_expired")
     if claims.state != state:
-        raise Unauthorized("Invalid OIDC state")
+        return _build_login_error_redirect(request_base, reason="session_expired")
 
-    bundle = await exchange_code_for_tokens(
-        code=code,
-        code_verifier=claims.code_verifier,
-        redirect_uri=claims.redirect_uri,
-    )
+    try:
+        bundle = await exchange_code_for_tokens(
+            code=code,
+            code_verifier=claims.code_verifier,
+            redirect_uri=claims.redirect_uri,
+        )
+    except Unauthorized:
+        return _build_login_error_redirect(request_base, reason="login_failed")
     web_base = _extract_base_url_from_redirect_uri(claims.redirect_uri)
     try:
         async with uow:
@@ -556,6 +577,15 @@ async def refresh_session(
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request, response: Response) -> Response:
+    keycloak_refresh_token = (request.cookies.get(settings.keycloak_refresh_cookie_name) or "").strip()
+    if settings.keycloak_enabled and keycloak_refresh_token:
+        try:
+            await logout_refresh_token(refresh_token=keycloak_refresh_token)
+        except Forbidden:
+            # Локальный logout должен завершиться даже при временной ошибке провайдера.
+            pass
+
+    clear_keycloak_state_cookie(response)
     clear_keycloak_refresh_cookie(response)
     clear_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT

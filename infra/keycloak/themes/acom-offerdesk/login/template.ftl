@@ -115,7 +115,6 @@
       <section class="aod-card" aria-label="${realm.displayName!msg("loginTitle",(realm.displayName!''))}">
         <div class="aod-card__header">
           <h1 class="aod-card__title" id="kc-page-title"><#nested "header"></h1>
-          <p class="aod-card__subtitle">Используйте рабочую учётную запись AcomOfferDesk для входа в систему.</p>
           <#if realm.internationalizationEnabled && locale.supported?size gt 1>
             <label class="aod-locale-switch" for="login-select-toggle">
               <span>Язык</span>
@@ -154,15 +153,21 @@
 
         <#if displayMessage && message?has_content && (message.type != 'warning' || !isAppInitiatedAction??)>
           <#assign alertSummary = message.summary>
+          <#assign hideAlert = false>
+          <#if alertSummary == "Please re-authenticate to continue">
+            <#assign hideAlert = true>
+          </#if>
           <#if alertSummary == "You need to change your password to activate your account.">
             <#assign alertSummary = "Чтобы активировать учётную запись, смените пароль.">
           </#if>
-          <div class="aod-alert aod-alert--${message.type}">
-            <span class="aod-alert__icon" aria-hidden="true">
-              <#if message.type = "success">✓<#elseif message.type = "warning">!<#elseif message.type = "error">×<#else>i</#if>
-            </span>
-            <div class="aod-alert__content">${kcSanitize(alertSummary)?no_esc}</div>
-          </div>
+          <#if !hideAlert>
+            <div class="aod-alert aod-alert--${message.type}">
+              <span class="aod-alert__icon" aria-hidden="true">
+                <#if message.type = "success">✓<#elseif message.type = "warning">!<#elseif message.type = "error">×<#else>i</#if>
+              </span>
+              <div class="aod-alert__content">${kcSanitize(alertSummary)?no_esc}</div>
+            </div>
+          </#if>
         </#if>
 
         <div class="aod-card__body">

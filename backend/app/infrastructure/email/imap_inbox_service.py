@@ -3,6 +3,7 @@ from __future__ import annotations
 import imaplib
 import logging
 import re
+import socket
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import EmailMessage
@@ -76,8 +77,9 @@ class IMAPInboxService:
         return emails
 
     def _read_unseen_sync(self) -> list[dict[str, str | EmailMessage]]:
-        conn = imaplib.IMAP4_SSL(self._host, self._port)
+        conn: imaplib.IMAP4_SSL | None = None
         try:
+            conn = imaplib.IMAP4_SSL(self._host, self._port)
             conn.login(self._username, self._password)
             conn.select(self._mailbox)
             logger.info("IMAP mailbox selected: mailbox=%s", self._mailbox)
@@ -107,12 +109,25 @@ class IMAPInboxService:
                 except ValueError:
                     continue
             return emails
+        except (socket.gaierror, TimeoutError, OSError, imaplib.IMAP4.error) as exc:
+            logger.warning(
+                "IMAP polling skipped due to connection error: host=%s port=%s mailbox=%s error=%s",
+                self._host,
+                self._port,
+                self._mailbox,
+                exc,
+            )
+            return []
         finally:
-            try:
-                conn.close()
-            except imaplib.IMAP4.error:
-                pass
-            conn.logout()
+            if conn is not None:
+                try:
+                    conn.close()
+                except imaplib.IMAP4.error:
+                    pass
+                try:
+                    conn.logout()
+                except imaplib.IMAP4.error:
+                    pass
 
     def _select_uids_to_poll(self, all_uids: list[str]) -> list[str]:
         if not all_uids:

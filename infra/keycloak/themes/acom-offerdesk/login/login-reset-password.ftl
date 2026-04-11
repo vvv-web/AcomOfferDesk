@@ -6,8 +6,7 @@
     <#elseif section = "form">
         <div class="aod-page-copy aod-page-copy--quiet">
           <p>
-            Укажите логин или email от рабочей учётной записи. Если профиль существует, вы получите инструкцию для
-            восстановления пароля.
+            Введите логин или email. Мы отправим письмо для восстановления, если аккаунт найден.
           </p>
         </div>
         <form id="kc-reset-password-form" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post">
@@ -26,7 +25,7 @@
                 >
                   Отправить инструкцию
                 </button>
-                <a class="${properties.kcButtonSecondaryClass!} ${properties.kcButtonBlockClass!} aod-button aod-button--secondary" href="${url.loginUrl}">
+                <a class="aod-plain-link" href="${url.loginUrl}">
                   Вернуться ко входу
                 </a>
               </div>

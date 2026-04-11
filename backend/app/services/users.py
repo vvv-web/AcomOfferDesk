@@ -18,8 +18,14 @@ from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
+from app.services.contractor_email_notifications import (
+    notify_contractor_access_opened_email,
+)
 from app.services.keycloak_admin import KeycloakAdminService
-from app.services.tg_notifications import notify_access_closed, notify_access_opened
+from app.services.tg_notifications import (
+    notify_access_closed as notify_tg_access_closed,
+    notify_access_opened as notify_tg_access_opened,
+)
 
 ROLE_NAME_SUPERADMIN = "Суперадмин"
 ROLE_NAME_ADMIN = "Администратор"
@@ -126,6 +132,15 @@ def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -
 def _normalize_keycloak_email_value(value: str | None) -> str | None:
     normalized = (value or "").strip()
     if not normalized or normalized == PLACEHOLDER_TEXT:
+        return None
+    return normalized
+
+
+def _normalize_notification_email(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    if normalized.lower() in {PLACEHOLDER_TEXT.lower(), "none", "null"}:
         return None
     return normalized
 
@@ -1234,9 +1249,15 @@ class UserStatusService:
     VALID_USER_STATUSES = {"active", "inactive", "review", "blacklist"}
     VALID_TG_STATUSES = {"approved", "disapproved", "review"}
 
-    def __init__(self, users: UserRepository, tg_users: TgUserRepository):
+    def __init__(
+        self,
+        users: UserRepository,
+        tg_users: TgUserRepository,
+        profiles: ProfileRepository,
+    ):
         self._users = users
         self._tg_users = tg_users
+        self._profiles = profiles
 
     async def update_statuses(
         self,
@@ -1303,11 +1324,20 @@ class UserStatusService:
             tg_status=tg_user.status if tg_user else None,
         )
 
+        notify_email: str | None = None
+        if user.id_role == settings.contractor_role_id:
+            profile = await self._profiles.get_by_id(user.id)
+            notify_email = _normalize_notification_email(profile.mail if profile is not None else None)
+
         if notify_tg_id is not None and tg_user is not None:
             if user.status == "active" and tg_user.status == "approved":
-                await notify_access_opened(notify_tg_id)
+                await notify_tg_access_opened(notify_tg_id)
             else:
-                await notify_access_closed(notify_tg_id)
+                await notify_tg_access_closed(notify_tg_id)
+
+        if notify_email is not None and notify_tg_id is None:
+            if user.status == "active":
+                await notify_contractor_access_opened_email(to_email=notify_email)
 
         return result
     

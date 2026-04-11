@@ -268,12 +268,18 @@ export const ProfileButton = () => {
     setInfo(null);
     try {
       const normalizedMail = normalizeOptional(values.mail);
+      const currentMail = normalizeOptional(profile?.mail ?? '');
+      const normalizedMailLower = normalizedMail?.toLowerCase();
+      const currentMailLower = currentMail?.toLowerCase() ?? '';
+      const shouldRequestVerification =
+        Boolean(normalizedMailLower) &&
+        normalizedMailLower !== currentMailLower;
       const nextProfile = await updateMyProfile({
         full_name: values.full_name.trim(),
         phone: values.phone.trim()
       });
       let verificationDetail: string | null = null;
-      if (normalizedMail) {
+      if (shouldRequestVerification && normalizedMail) {
         const verificationResult = await requestEmailVerification(normalizedMail);
         verificationDetail = verificationResult.detail;
       }

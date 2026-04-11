@@ -323,7 +323,7 @@ export const TgRegisterPage = () => {
                         </Typography>
                     ) : isCompleted ? (
                         <Alert severity="success" sx={{ width: '100%', fontSize: 18, lineHeight: 1.4, py: 3, px: 2 }}>
-                            Регистрация завершена. Данные отправлены на проверку, повторно заполнять форму не нужно.
+                            Регистрация завершена. Данные отправлены на проверку. Уведомление о выдаче доступа придёт на вашу почту.
                         </Alert>
                     ) : (
                         <Stack spacing={2.5} width="100%" alignItems="center">

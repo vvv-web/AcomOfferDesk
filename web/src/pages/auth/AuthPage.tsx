@@ -1,4 +1,4 @@
-import { Box, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -11,6 +11,22 @@ export const AuthPage = () => {
   const nextPath = useMemo(() => {
     const raw = searchParams.get('next')?.trim();
     return raw && raw.startsWith('/') ? raw : '/';
+  }, [searchParams]);
+  const authErrorMessage = useMemo(() => {
+    const reason = (searchParams.get('auth_error') ?? '').trim();
+    if (!reason) {
+      return null;
+    }
+    if (reason === 'session_expired') {
+      return 'Сессия входа истекла. Нажмите «Войти снова».';
+    }
+    if (reason === 'access_denied') {
+      return 'Вход отменён. Нажмите «Войти снова».';
+    }
+    if (reason === 'login_failed') {
+      return 'Не удалось завершить вход. Нажмите «Войти снова».';
+    }
+    return 'Не удалось завершить вход. Попробуйте ещё раз.';
   }, [searchParams]);
 
   useEffect(() => {
@@ -28,8 +44,11 @@ export const AuthPage = () => {
     if (status !== 'anonymous') {
       return;
     }
+    if (authErrorMessage) {
+      return;
+    }
     beginLogin(nextPath);
-  }, [beginLogin, nextPath, status]);
+  }, [authErrorMessage, beginLogin, nextPath, status]);
 
   return (
     <Box
@@ -55,10 +74,27 @@ export const AuthPage = () => {
           <Typography variant="h5" fontWeight={700} color="text.primary">
             Вход в AcomOfferDesk
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Перенаправляем на защищённую страницу входа.
-          </Typography>
-          <CircularProgress size={28} />
+          {authErrorMessage ? (
+            <>
+              <Alert severity="warning" sx={{ width: '100%' }}>
+                {authErrorMessage}
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => beginLogin(nextPath)}
+                sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
+              >
+                Войти снова
+              </Button>
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                Перенаправляем на страницу входа.
+              </Typography>
+              <CircularProgress size={28} />
+            </>
+          )}
         </Stack>
       </Paper>
     </Box>

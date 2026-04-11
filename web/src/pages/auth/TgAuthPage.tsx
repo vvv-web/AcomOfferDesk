@@ -19,14 +19,14 @@ export const TgAuthPage = () => {
             Вход через Telegram отключен
           </Typography>
           <Typography variant="body2" color="text.secondary" textAlign="center">
-            Для входа в AcomOfferDesk нужно явно пройти через форму Keycloak.
+            Используйте обычный вход в систему.
           </Typography>
           <Button
             variant="contained"
             onClick={() => beginLogin(nextPath)}
             sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
           >
-            Перейти к входу через Keycloak
+            Перейти ко входу
           </Button>
         </Stack>
       </Paper>

@@ -9,11 +9,11 @@
     <#elseif section = "form">
         <div class="aod-page-copy aod-page-copy--quiet">
           <p>
-            Эта форма создаёт учётную запись для входа в систему. После подтверждения почты вы попадёте в профиль приложения, где нужно заполнить данные компании для проверки.
+            Заполните форму и подтвердите почту.
           </p>
         </div>
 
-        <form id="kc-register-form" class="${properties.kcFormClass!}" action="${url.registrationAction}" method="post" novalidate="novalidate">
+        <form id="kc-register-form" class="${properties.kcFormClass!}" action="${url.registrationAction}" method="post">
             <@userProfileCommons.userProfileFormFields; callback, attribute>
                 <#if callback = "afterField">
                     <#if passwordRequired?? && (attribute.name == 'username' || (attribute.name == 'email' && realm.registrationEmailAsUsername))>
@@ -47,9 +47,9 @@
                       data-action="${recaptchaAction}"
                       type="submit"
                       id="kc-submit"
-                      data-loading-text="Создаём профиль..."
+                      data-loading-text="Регистрируем..."
                     >
-                        Создать профиль
+                        Зарегистрироваться
                     </button>
                 </div>
             <#else>
@@ -57,16 +57,16 @@
                     <button
                       class="${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} aod-button aod-button--primary"
                       type="submit"
-                      data-loading-text="Создаём профиль..."
+                      data-loading-text="Регистрируем..."
                     >
-                      Создать профиль
+                      Зарегистрироваться
                     </button>
                 </div>
             </#if>
 
             <div class="${properties.kcFormGroupClass!}">
               <div id="kc-form-options" class="aod-form-links">
-                <a class="aod-link-button" href="${url.loginUrl}">Вернуться ко входу</a>
+                <a class="aod-plain-link" href="${url.loginUrl}">Вернуться ко входу</a>
               </div>
             </div>
         </form>
