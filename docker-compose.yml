@@ -17,7 +17,13 @@ services:
       - ./infra/keycloak/prepare-theme.sh:/opt/keycloak/bootstrap/prepare-theme.sh:ro
       - keycloak_data:/opt/keycloak/data
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'HEAD /iam/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep '200' <&3"]
+      test:
+        [
+          "CMD",
+          "bash",
+          "-ec",
+          "management_port=\"$${KC_HTTP_MANAGEMENT_PORT:-9000}\"; management_prefix=\"$${KC_HTTP_MANAGEMENT_RELATIVE_PATH:-}\"; if [ -z \"$$management_prefix\" ]; then management_prefix=\"$${KC_HTTP_RELATIVE_PATH:-}\"; fi; if [ -z \"$$management_prefix\" ] || [ \"$$management_prefix\" = \"/\" ]; then health_path=\"/health/ready\"; else health_path=\"$${management_prefix%/}/health/ready\"; fi; exec 3<>/dev/tcp/127.0.0.1/$$management_port; printf 'HEAD %s HTTP/1.0\\r\\n\\r\\n' \"$$health_path\" >&3; grep '200' <&3",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
