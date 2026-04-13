@@ -19,6 +19,17 @@
 4. Если связки нет, backend пытается auto-link по правилам окружения.
 5. Если auto-link невозможен, вход отклоняется (`not_linked` на callback-странице).
 
+## APP_ENV и KEYCLOAK_VERIFY_EMAIL (частые путаницы)
+
+- В **`backend/.env` должна быть одна строка `APP_ENV=...`**. Упоминание `development` в комментариях к шаблону — это напоминание для копии на локальную машину, а не «второе значение» в том же файле на сервере.
+- Если **`APP_ENV` не задан** в `.env`, бэкенд (`app/core/config.py`, `Settings`) использует **дефолт `development`**. На production VPS это давало рассинхрон: сервер вёл себя как development в части проверок окружения.
+- **`KEYCLOAK_VERIFY_EMAIL` не является полем `Settings` в Python** — её читает **`infra/keycloak/bootstrap.sh`** при настройке realm (и окружение контейнера bootstrap). Поведение:
+  - **явно `false`** → в realm передаётся **`verifyEmail: false`** — регистрация без обязательного подтверждения email в Keycloak (формально «легче» саморегистрация);
+  - **пусто** → скрипт сам выставляет: при **`APP_ENV=production`** — `true`, иначе — `false`.
+- Прод-автолинк по email (`KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED`) в коде требует в токене **`email_verified=true`** (`identity_sync.py`). Пока почта в Keycloak не подтверждена, этот путь не сработает — это отдельно от флага `verifyEmail` realm, но согласовано по смыслу.
+
+Подробнее про рекомендуемые комбинации переменных — в разделе **«Правила auto-link по окружениям»** ниже.
+
 ## Практические сценарии
 
 ### 1) Bootstrap superadmin

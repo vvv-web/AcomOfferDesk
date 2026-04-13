@@ -37,6 +37,19 @@ ssh root@VPS "export GITHUB_TOKEN='$TOKEN'; bash /root/install-order-database-vp
 
 После пересоздания **`backend`** вручную всегда пересоздавайте **`gateway`**, иначе возможен **502** на API (см. **[vps-troubleshooting.md](./vps-troubleshooting.md)**).
 
+## Связь с GitHub Actions deploy
+
+Workflow **`.github/workflows/deploy.yml`** в этом репозитории **не выполняет Flyway migrate автоматически** для `order_database`.
+
+Он считает `order_database` отдельным prerequisite на VPS и перед app deploy проверяет:
+
+- каталог **`/opt/order_database`** и его **`.env`**;
+- healthy-статус контейнера **`order-database-postgres`**;
+- наличие **`flyway_schema_history`**;
+- что **`backend/.env`** уже смотрит на **`order-database-postgres:5432`**.
+
+Если одна из этих проверок не проходит, workflow падает с меткой **`ORDER_DB_PREREQUISITE`** и просит сначала привести VPS к состоянию из этого документа, обычно через **`scripts/install-order-database-vps.sh`** до **`INSTALL_SUCCESS`**.
+
 ## Ожидания по данным (как в задаче)
 
 | Проверка | Ожидание |
@@ -53,3 +66,30 @@ ssh root@VPS "export GITHUB_TOKEN='$TOKEN'; bash /root/install-order-database-vp
 ## Ручной путь (без скрипта)
 
 Клонировать или скопировать каталог **`order_database`**, заполнить его **`.env`**, поднять Postgres, затем по **flyway.md** выполнить **`validate`** / **`migrate`** (или **`baseline`**, если так согласовано для пустой истории миграций).
+
+## Рассинхрон: пустой `flyway/sql` на VPS (апрель 2026)
+
+**Симптомы:** после входа через Keycloak бэкенд отвечает **500** на **`/api/v1/auth/callback`**; в логах **`backend`** — `relation "user_auth_accounts" does not exist`. При этом в **`flyway_schema_history`** может быть только строка **baseline** (**`1.0.0`**), а каталог **`/opt/order_database/flyway/sql`** на диске **пустой** или без актуальных **`V*.sql`**.
+
+**Причина:** дерево **`order_database`** на сервере неполное (ручное копирование, обрезанный архив, старый снимок). Flyway видит только baseline из **`flyway.conf`** и считает схему «догнанной», хотя версионные миграции из репозитория не подставлялись.
+
+**Исправление без пересоздания тома Postgres** (данные сохраняются):
+
+1. Синхронизировать **`flyway/sql`** (и при необходимости **`flyway/conf/flyway.conf`**) с актуальным **`main`** репозитория **`alexonderia/order_database`**. Для приватного репо — **`GITHUB_TOKEN`** / **`GH_TOKEN`** и tarball через GitHub API, как в **`install-order-database-vps.sh`**.
+2. В **`/opt/order_database`:**  
+   `docker compose --profile tools run --rm flyway migrate`
+3. Проверка: в БД есть таблица **`user_auth_accounts`**; в **`flyway_schema_history`** появляются версии после baseline (например **`1.0.1`**).
+
+Пример одной сессии на VPS (подставить токен; **`rsync`** на сервере может отсутствовать — используйте **`cp -a`**):
+
+```bash
+cd /opt/order_database
+# распаковать свежий tarball main во временный каталог, затем:
+# rm -f flyway/sql/*.sql && cp -a <extracted>/flyway/sql/*.sql flyway/sql/
+docker compose --profile tools run --rm flyway migrate
+docker compose exec -T postgres psql -U order_admin -d order_database -c '\dt user_auth_accounts'
+```
+
+**Не использовать** полный **`install-order-database-vps.sh`**, если нужно **сохранить** существующий volume: скрипт по дизайну делает **`docker compose down -v`** и пересоздаёт данные.
+
+**После успешной миграции:** повторный вход через Keycloak должен проходить без **500** на callback (подтверждено на production, апрель 2026).

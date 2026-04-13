@@ -1,5 +1,6 @@
 #!/bin/sh
-set -eu
+set -e
+set -u
 
 SERVER_URL="${KEYCLOAK_INTERNAL_BASE_URL:-${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080/iam}}"
 MASTER_REALM="${KEYCLOAK_MASTER_REALM:-master}"

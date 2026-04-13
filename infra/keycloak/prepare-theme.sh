@@ -1,5 +1,6 @@
 #!/bin/sh
-set -eu
+set -e
+set -u
 
 THEME_NAME="${KEYCLOAK_LOGIN_THEME:-acom-offerdesk}"
 THEME_SRC_DIR="/opt/keycloak/themes-src/${THEME_NAME}"
