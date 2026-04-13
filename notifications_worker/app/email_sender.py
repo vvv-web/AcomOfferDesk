@@ -1,15 +1,70 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import mimetypes
 import os
 import smtplib
 import ssl
+import time
 from email.message import EmailMessage
 from email.utils import formataddr
 
 logger = logging.getLogger(__name__)
+
+_DEDUP_TTL_SECONDS = max(10, int(os.getenv("EMAIL_DEDUP_TTL_SECONDS", "120")))
+_SPAM_COOLDOWN_SECONDS = max(60, int(os.getenv("EMAIL_SPAM_COOLDOWN_SECONDS", "600")))
+_recent_payloads_until: dict[str, float] = {}
+_recipient_spam_block_until: dict[str, float] = {}
+
+
+def _cleanup_runtime_state(now_mono: float) -> None:
+    expired_payload_keys = [key for key, until in _recent_payloads_until.items() if until <= now_mono]
+    for key in expired_payload_keys:
+        _recent_payloads_until.pop(key, None)
+
+    expired_recipient_keys = [key for key, until in _recipient_spam_block_until.items() if until <= now_mono]
+    for key in expired_recipient_keys:
+        _recipient_spam_block_until.pop(key, None)
+
+
+def _build_payload_fingerprint(payload: dict) -> str:
+    to_email = str(payload.get("to_email") or "").strip().lower()
+    subject = str(payload.get("subject") or "").strip()
+    text_content = str(payload.get("text_content") or "")
+    html_content = str(payload.get("html_content") or "")
+    reply_token = str(payload.get("reply_token") or "")
+
+    attachments = payload.get("attachments") or []
+    attachment_parts: list[str] = []
+    for item in attachments:
+        filename = str(item.get("filename") or "")
+        mime_type = str(item.get("mime_type") or "")
+        content_base64 = str(item.get("content_base64") or "")
+        attachment_parts.append(f"{filename}:{mime_type}:{len(content_base64)}")
+
+    raw = "\n".join(
+        [
+            to_email,
+            subject,
+            text_content,
+            html_content,
+            reply_token,
+            "|".join(attachment_parts),
+        ]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _is_spam_rejection(exc: smtplib.SMTPDataError) -> bool:
+    smtp_error = exc.smtp_error
+    if isinstance(smtp_error, bytes):
+        error_text = smtp_error.decode("utf-8", errors="ignore").lower()
+    else:
+        error_text = str(smtp_error).lower()
+
+    return exc.smtp_code == 554 and ("spam" in error_text or "suspicion" in error_text or "5.7.1" in error_text)
 
 
 def _build_reply_to_address(from_address: str, from_name: str, reply_token: str | None) -> str:
@@ -50,6 +105,27 @@ async def send_email(payload: dict) -> None:
         logger.warning("Email payload has no recipient")
         return
 
+    normalized_to_email = to_email.lower()
+    now_mono = time.monotonic()
+    _cleanup_runtime_state(now_mono)
+
+    blocked_until = _recipient_spam_block_until.get(normalized_to_email)
+    if blocked_until is not None and blocked_until > now_mono:
+        remaining_seconds = int(blocked_until - now_mono)
+        logger.warning(
+            "Skip email delivery due to spam cooldown: recipient=%s remaining_seconds=%s",
+            normalized_to_email,
+            remaining_seconds,
+        )
+        return
+
+    payload_fingerprint = _build_payload_fingerprint(payload)
+    duplicate_until = _recent_payloads_until.get(payload_fingerprint)
+    if duplicate_until is not None and duplicate_until > now_mono:
+        logger.info("Duplicate email payload skipped for %s", _format_recipient_log(payload))
+        return
+    _recent_payloads_until[payload_fingerprint] = now_mono + _DEDUP_TTL_SECONDS
+
     from_address = str(payload.get("from_address") or username)
     from_name = str(payload.get("from_name") or os.getenv("EMAIL_FROM_NAME", "AcomOfferDesk"))
 
@@ -82,5 +158,17 @@ async def send_email(payload: dict) -> None:
             smtp.login(username, password)
             smtp.send_message(message, from_addr=from_address, to_addrs=[to_email])
         logger.info("Email sent to %s", _format_recipient_log(payload))
+    except smtplib.SMTPDataError as exc:
+        if _is_spam_rejection(exc):
+            _recipient_spam_block_until[normalized_to_email] = time.monotonic() + _SPAM_COOLDOWN_SECONDS
+            logger.error(
+                "Email rejected as suspected spam for %s; cooldown_seconds=%s",
+                _format_recipient_log(payload),
+                _SPAM_COOLDOWN_SECONDS,
+            )
+            return
+        _recent_payloads_until.pop(payload_fingerprint, None)
+        logger.exception("Failed to send email to %s", _format_recipient_log(payload))
     except smtplib.SMTPException:
+        _recent_payloads_until.pop(payload_fingerprint, None)
         logger.exception("Failed to send email to %s", _format_recipient_log(payload))

@@ -34,6 +34,17 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Only lead economist can manage normative files': 'Только ведущий экономист может загружать нормативные документы',
   'Normative file can be uploaded only once': 'Нормативный документ можно загрузить только один раз',
   'Partner card file is not configured': 'Не загружен нормативный документ для карты партнера',
+  'Insufficient permissions to create manual offers': 'Недостаточно прав для ручного создания КП',
+  'Economist can create manual offers only for own requests': 'Экономист может создавать КП вручную только для своих заявок',
+  'Manual offer can be created only for open request': 'Ручное КП можно создать только для открытой заявки',
+  'Unsupported contractor mode': 'Некорректный режим выбора контрагента',
+  'Existing contractor is required': 'Выберите контрагента из списка',
+  'Contractor is required': 'Укажите контрагента',
+  'Selected user is not contractor': 'Выбранный пользователь не является контрагентом',
+  'Selected contractor must be active': 'Выбранный контрагент должен быть активен',
+  'Selected contractor is hidden for this request': 'Выбранный контрагент скрыт для этой заявки',
+  'Only admin and superadmin can manage manually created contractors': 'Только администратор и суперадмин могут редактировать ручных контрагентов',
+  'Only manually created contractor can be updated by this endpoint': 'Редактирование доступно только для вручную созданных контрагентов',
   Forbidden: 'Доступ запрещен'
 };
 
@@ -147,7 +158,6 @@ const skipAutoRefresh = (url: string) => (
   url.startsWith('/api/v1/auth/login')
   || url.startsWith('/api/v1/auth/refresh')
   || url.startsWith('/api/v1/auth/logout')
-  || url.startsWith('/api/v1/auth/tg/exchange')
 );
 
 const performFetch = async (url: string, init: RequestInit, headers: Headers): Promise<Response> => {

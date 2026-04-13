@@ -43,3 +43,4 @@ class UserActionsSchema(BaseModel):
     can_manage_company_contacts: bool = False
     can_manage_own_unavailability: bool = False
     can_manage_subordinate_unavailability: bool = False
+    can_manage_manual_contractor: bool = False

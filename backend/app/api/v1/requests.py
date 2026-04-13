@@ -15,7 +15,7 @@ from app.core.uow import UnitOfWork
 from app.domain.authorization import has_permission
 from app.domain.exceptions import Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
-from app.domain.policies import CurrentUser
+from app.domain.policies import CurrentUser, RequestPolicy
 from app.schemas.links import Link, LinkSet
 from app.schemas.requests import (
     DeletedAlertViewed,
@@ -216,6 +216,13 @@ async def get_request_details(
         current_user,
         owner_user_id=item.owner_user_id,
         status=item.status,
+        can_create_offer=(
+            item.status == "open"
+            and RequestPolicy.can_create_manual_offer(
+                current_user,
+                request_owner_user_id=item.owner_user_id,
+            )
+        ),
         deleted_alert_count=item.count_deleted_alert,
     )
 

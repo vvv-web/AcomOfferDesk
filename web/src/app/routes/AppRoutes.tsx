@@ -8,8 +8,13 @@ import { RoleRoute } from '@app/routes/RoleRoute';
 import { ROLE } from '@shared/constants/roles';
 
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
+const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth/AuthCallbackPage')).AuthCallbackPage }));
+const AccountStatePage = lazy(async () => ({ default: (await import('@pages/auth/AccountStatePage')).AccountStatePage }));
 const TgAuthPage = lazy(async () => ({ default: (await import('@pages/auth/TgAuthPage')).TgAuthPage }));
 const TgRegisterPage = lazy(async () => ({ default: (await import('@pages/auth/TgRegisterPage')).TgRegisterPage }));
+const RegistrationLinkStatusPage = lazy(
+  async () => ({ default: (await import('@pages/auth/RegistrationLinkStatusPage')).RegistrationLinkStatusPage })
+);
 const VerifyEmailPage = lazy(async () => ({ default: (await import('@pages/auth/VerifyEmailPage')).VerifyEmailPage }));
 const RequestsPage = lazy(async () => ({ default: (await import('@pages/requests/RequestsPage')).RequestsPage }));
 const CreateRequestPage = lazy(async () => ({ default: (await import('@pages/requests/CreateRequestPage')).CreateRequestPage }));
@@ -53,10 +58,13 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
         <Routes location={backgroundLocation ?? location}>
           <Route path="/login" element={<AuthPage />} />
           <Route path="/auth/login" element={<AuthPage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/auth/tg/login" element={<TgAuthPage />} />
           <Route path="/auth/tg/register" element={<TgRegisterPage />} />
+          <Route path="/auth/registration-link-status" element={<RegistrationLinkStatusPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route element={<ProtectedRoute />}>
+            <Route path="/account" element={<AccountStatePage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to={defaultPath} replace />} />
               <Route path="/requests" element={<RequestsPage />} />

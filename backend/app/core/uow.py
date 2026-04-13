@@ -16,6 +16,8 @@ from app.repositories.requests import RequestRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.users import UserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
+from app.repositories.user_auth_accounts import UserAuthAccountRepository
+from app.repositories.user_contact_channels import UserContactChannelRepository
 
 
 class UnitOfWork:
@@ -33,6 +35,8 @@ class UnitOfWork:
         self.messages: MessageRepository | None = None
         self.feedback: FeedBackRepository | None = None
         self.user_status_periods: UserStatusPeriodRepository | None = None
+        self.user_auth_accounts: UserAuthAccountRepository | None = None
+        self.user_contact_channels: UserContactChannelRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         self.session = self._session_factory()
@@ -48,6 +52,8 @@ class UnitOfWork:
         self.messages = MessageRepository(self.session)
         self.feedback = FeedBackRepository(self.session)
         self.user_status_periods = UserStatusPeriodRepository(self.session)
+        self.user_auth_accounts = UserAuthAccountRepository(self.session)
+        self.user_contact_channels = UserContactChannelRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

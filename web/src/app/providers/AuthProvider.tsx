@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { AuthSessionResponse, LoginWebUserPayload } from '@shared/api/auth/loginWebUser';
-import { exchangeTgSession, loginWebUser, logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
+import type { AuthSessionResponse } from '@shared/api/auth/loginWebUser';
+import { logoutWebSession, refreshWebSession } from '@shared/api/auth/loginWebUser';
 import { setAuthRuntime, setAuthToken } from '@shared/api/client';
 
 type AuthStatus = 'bootstrapping' | 'authenticated' | 'anonymous' | 'refreshing';
@@ -26,6 +26,9 @@ export type AuthSession = {
   roleId: number;
   role: string;
   status: string;
+  authProvider: string;
+  businessAccess: boolean;
+  onboardingState: string | null;
   permissions: string[];
 };
 
@@ -33,8 +36,7 @@ type AuthContextValue = {
   status: AuthStatus;
   session: AuthSession | null;
   isAuthenticated: boolean;
-  login: (payload: LoginWebUserPayload) => Promise<AuthSession>;
-  exchangeTelegramToken: (token: string) => Promise<AuthSession>;
+  beginLogin: (nextPath?: string) => void;
   refresh: (reason: RefreshReason) => Promise<boolean>;
   logout: () => void;
 };
@@ -52,8 +54,13 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   roleId: response.data.role_id,
   role: roleById[response.data.role_id] ?? `role_${response.data.role_id}`,
   status: response.data.status,
+  authProvider: response.data.auth_provider ?? 'legacy',
+  businessAccess: Boolean(response.data.business_access),
+  onboardingState: response.data.onboarding_state ?? null,
   permissions: response.data.permissions ?? []
 });
+
+const buildLoginUrl = (nextPath: string) => `/api/v1/auth/oidc/login?next_path=${encodeURIComponent(nextPath)}`;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -101,7 +108,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         await logoutWebSession();
       } catch {
-        // Logout still succeeds locally if backend cookie cleanup fails.
+        // Local logout already happened.
       }
     }
 
@@ -149,21 +156,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return refreshPromiseRef.current;
   }, [applySession, canAttemptSilentRefresh, trackActivity]);
 
-  const login = useCallback(async (payload: LoginWebUserPayload) => {
-    trackActivity();
-    const response = await loginWebUser(payload);
-    const nextSession = mapSession(response);
-    applySession(nextSession, 'authenticated');
-    return nextSession;
-  }, [applySession, trackActivity]);
-
-  const exchangeTelegramToken = useCallback(async (token: string) => {
-    trackActivity();
-    const response = await exchangeTgSession({ token });
-    const nextSession = mapSession(response);
-    applySession(nextSession, 'authenticated');
-    return nextSession;
-  }, [applySession, trackActivity]);
+  const beginLogin = useCallback((nextPath?: string) => {
+    const target = nextPath ?? location.pathname ?? '/';
+    window.location.assign(buildLoginUrl(target));
+  }, [location.pathname]);
 
   const logout = useCallback(() => {
     void performLogout({ revokeRemote: true, redirectToLogin: true });
@@ -212,12 +208,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       status,
       session,
       isAuthenticated: (status === 'authenticated' || status === 'refreshing') && Boolean(session?.token),
-      login,
-      exchangeTelegramToken,
+      beginLogin,
       refresh,
       logout
     }),
-    [exchangeTelegramToken, login, logout, refresh, session, status]
+    [beginLogin, logout, refresh, session, status]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -27,6 +27,7 @@ import { ToggleSection } from '@shared/components/ToggleSection';
 import { getFileKey } from '@shared/lib/files';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { useRequestDetails } from '../model/useRequestDetails';
+import { CreateManualOfferDialog } from './CreateManualOfferDialog';
 
 type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
 
@@ -159,6 +160,7 @@ export const RequestDetailsView = () => {
     const [offersStatusMap, setOffersStatusMap] = useState<Record<number, OfferDecisionStatus>>({});
     const [offersLoading, setOffersLoading] = useState(false);
     const [offersError, setOffersError] = useState<string | null>(null);
+    const [isManualOfferDialogOpen, setIsManualOfferDialogOpen] = useState(false);
     const pollIntervalMs = 10000;
 
     const statusConfig = useMemo(
@@ -203,6 +205,10 @@ export const RequestDetailsView = () => {
     const canMarkDeletedAlertViewed = useMemo(
         () => Boolean(requestDetails?.actions.mark_deleted_alert_viewed),
         [requestDetails?.actions.mark_deleted_alert_viewed]
+    );
+    const canCreateManualOffer = useMemo(
+        () => status === 'open' && Boolean(requestDetails?.actions.create_offer),
+        [requestDetails?.actions.create_offer, status]
     );
     const canSaveRequestChanges =
         (hasRequestFieldChanges && canEditRequest)
@@ -779,6 +785,15 @@ export const RequestDetailsView = () => {
                 >
                     {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
                 </Button>
+                {canCreateManualOffer ? (
+                    <Button
+                        variant="outlined"
+                        onClick={() => setIsManualOfferDialogOpen(true)}
+                        sx={{ whiteSpace: 'nowrap' }}
+                    >
+                        Внести КП вручную
+                    </Button>
+                ) : null}
             </Stack>
             {hasPendingChanges && (
                 <Typography color="warning.main" sx={{ mb: 2 }}>
@@ -958,6 +973,15 @@ export const RequestDetailsView = () => {
                     canChangeStatus={canChangeOfferStatus}
                 />
             </Box>
+            <CreateManualOfferDialog
+                open={isManualOfferDialogOpen}
+                requestId={requestDetails.id}
+                onClose={() => setIsManualOfferDialogOpen(false)}
+                onCreated={(workspacePath) => {
+                    setIsManualOfferDialogOpen(false);
+                    navigate(workspacePath);
+                }}
+            />
         </Box>
     );
 };

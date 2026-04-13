@@ -4,7 +4,7 @@ import time
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 from app.api.dependencies import get_uow
 from app.core.config import settings
@@ -31,12 +31,24 @@ from app.schemas.tg_users import (
     TgUserStartData,
 )
 from app.services.tg_notifications import notify_expired_link, notify_registration_completed
+from app.services.tg_registration_links import (
+    TgRegistrationLinkExpiredError,
+    TgRegistrationLinkInvalidError,
+    build_keycloak_registration_link,
+    create_tg_registration_token,
+    resolve_tg_registration_token,
+)
 from app.services.tg_start import TgStartService
 from app.services.tg_users import TgUserRegistrationService
 from app.services.users import ContractorRegistrationService
 from app.services.email_verification import EmailVerificationService
 
 router = APIRouter(prefix="/tg")
+
+
+def _build_registration_link_status_url(reason: str) -> str:
+    base_url = (settings.web_base_url or settings.public_backend_base_url or "http://localhost:8080").rstrip("/")
+    return f"{base_url}/auth/registration-link-status?reason={reason}"
 
 
 @router.post("/links/register", response_model=TgLinkResponse)
@@ -52,15 +64,8 @@ async def create_register_link(
         if tg_user is None:
             await uow.tg_users.add(TgUser(id=payload.tg_id, status="review"))
 
-    shortcode_payload = TgShortcodeCodec.build(
-        tg_id=payload.tg_id,
-        purpose="tg_register",
-        ttl_seconds=settings.tg_register_ttl_seconds,
-    )
-    code = TgShortcodeCodec.encode(shortcode_payload, secret=settings.tg_link_secret)
-    if not settings.public_backend_base_url:
-        raise Forbidden("Public backend URL is not configured")
-    url = f"{settings.public_backend_base_url.rstrip('/')}/api/v1/tg/register?token={code}"
+    code = create_tg_registration_token(tg_id=payload.tg_id)
+    url = build_keycloak_registration_link(token=code)
 
     return TgLinkResponse(
         data=TgLinkData(url=url),
@@ -125,7 +130,7 @@ async def request_tg_registration_email_verification(
     payload: ContractorEmailVerificationRequest,
     uow: UnitOfWork = Depends(get_uow),
 ) -> dict[str, str]:
-    tg_id = await _resolve_tg_id_from_registration_token(payload.token)
+    tg_id = await resolve_tg_registration_token(payload.token)
     async with uow:
         service = EmailVerificationService(uow.profiles)
         await service.request_tg_registration_verification(
@@ -147,7 +152,7 @@ async def check_tg_registration_login_availability(
     login: str = Query(..., min_length=3, max_length=128),
     uow: UnitOfWork = Depends(get_uow),
 ) -> TgLoginAvailabilityResponse:
-    await _resolve_tg_id_from_registration_token(token)
+    await resolve_tg_registration_token(token)
     normalized_login = login.strip()
     if not normalized_login:
         return TgLoginAvailabilityResponse(available=False, detail="Введите логин")
@@ -166,7 +171,7 @@ async def complete_tg_registration(
     payload: ContractorRegistrationRequest,
     uow: UnitOfWork = Depends(get_uow),
 ) -> ContractorRegistrationResponse:
-    tg_id = await _resolve_tg_id_from_registration_token(payload.token)
+    tg_id = await resolve_tg_registration_token(payload.token)
     normalized_mail_raw = payload.mail.strip()
     normalized_mail = "" if normalized_mail_raw in {"", "Не указано"} else normalized_mail_raw
 
@@ -175,7 +180,8 @@ async def complete_tg_registration(
             uow.users,
             uow.profiles,
             uow.company_contacts,
-            uow.tg_users,
+            uow.user_auth_accounts,
+            uow.user_contact_channels,
         )
         user = await service.register_contractor(
             tg_user_id=tg_id,
@@ -219,63 +225,29 @@ async def redirect_tg_register(
     token: str = Query(...),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RedirectResponse:
-    tg_id = await _resolve_tg_id_from_registration_token(token)
+    try:
+        tg_id = await resolve_tg_registration_token(token)
+    except TgRegistrationLinkExpiredError:
+        return RedirectResponse(url=_build_registration_link_status_url("expired"), status_code=302)
+    except TgRegistrationLinkInvalidError:
+        return RedirectResponse(url=_build_registration_link_status_url("invalid"), status_code=302)
+
     async with uow:
-        tg_user = await uow.tg_users.get_by_id(tg_id)
         linked_user = await uow.users.get_by_tg_user_id(tg_id)
-    if tg_user is None:
-        raise Forbidden("Invalid token")
     if linked_user is not None:
-        return HTMLResponse(
-            content="<html><body><h3>Регистрация уже пройдена. Данные находятся на проверке.</h3></body></html>",
-            status_code=200,
-        )
-    if not settings.web_base_url:
-        raise Forbidden("Invalid token")
-    url = f"{settings.web_base_url.rstrip('/')}/auth/tg/register?token={token}"
+        return RedirectResponse(url=_build_registration_link_status_url("already_registered"), status_code=302)
+    url = build_keycloak_registration_link(token=token)
     return RedirectResponse(url=url, status_code=302)
 
 @router.get("/auth")
 @router.get("/auth/", include_in_schema=False)
 async def redirect_tg_auth(
-    token: str = Query(...),
-    uow: UnitOfWork = Depends(get_uow),
+    _token: str = Query(..., alias="token"),
 ) -> RedirectResponse:
-    tg_id = await resolve_tg_id_from_auth_token(token)
-    async with uow:
-        tg_user = await uow.tg_users.get_by_id(tg_id)
-        linked_user = await uow.users.get_by_tg_user_id(tg_id)
-    if tg_user is None or linked_user is None:
-        raise Forbidden("Invalid token")
-    if linked_user.id_role != settings.contractor_role_id:
-        raise Forbidden("Access denied")
-    if tg_user.status != "approved" or linked_user.status != "active":
-        raise Forbidden("Access denied")
     if not settings.web_base_url:
         raise Forbidden("Invalid token")
-    url = f"{settings.web_base_url.rstrip('/')}/auth/tg/login?token={token}"
+    url = f"{settings.web_base_url.rstrip('/')}/login?next=/"
     return RedirectResponse(url=url, status_code=302)
-
-
-async def _resolve_tg_id_from_registration_token(token: str) -> int:
-    try:
-        token_payload = await _validate_tg_token(token, purpose="tg_register")
-        return token_payload.tg_id
-    except Forbidden:
-        if not settings.tg_link_secret:
-            raise
-
-    try:
-        shortcode_payload = TgShortcodeCodec.decode(token, secret=settings.tg_link_secret)
-        TgShortcodeCodec.ensure_valid(shortcode_payload)
-    except ValueError as exc:
-        raise Forbidden("Invalid token") from exc
-
-    if shortcode_payload.purpose != "tg_register":
-        raise Forbidden("Invalid token")
-
-    return shortcode_payload.tg_id
-
 
 async def resolve_tg_id_from_auth_token(token: str) -> int:
     try:

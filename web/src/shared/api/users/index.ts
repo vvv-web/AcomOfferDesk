@@ -1,4 +1,5 @@
 export * from './getCurrentUserProfile';
+export * from './createManualContractor';
 export * from './getEconomists';
 export * from './getManagerCandidates';
 export * from './getRequestContractors';
@@ -7,3 +8,4 @@ export * from './getUsers';
 export * from './updateUserRole';
 export * from './updateUserManager';
 export * from './updateUserStatus';
+export * from './updateManualContractor';

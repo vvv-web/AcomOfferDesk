@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
 from app.core.config import settings
-from app.domain.authorization import require_permission
+from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
+from app.domain.authorization import has_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, OfferPolicy, RequestPolicy, UserPolicy
+from app.models.orm_models import CompanyContact, Profile, User
 from app.repositories.chats import ChatRepository, ChatState
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.files import FileRepository
@@ -19,6 +23,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 from app.services.files import FileService
+from app.services.keycloak_admin import KeycloakAdminService
 from app.services.requests import RequestFileItem, format_offer_status, format_request_status
 from app.services.tg_notifications import notify_new_message, notify_offer_status_finalized
 
@@ -34,6 +39,51 @@ DEFAULT_PARTNER_CARD_NAME = (
     "АКТУАЛЬНАЯ_1_4_2.pdf"
 )
 EDITABLE_OFFER_STATUSES = {"submitted", "accepted", "rejected", "deleted"}
+PLACEHOLDER_TEXT = "Не указано"
+_LOGIN_CLEANUP_PATTERN = re.compile(r"[^a-z0-9_]+")
+_LOGIN_COLLAPSE_PATTERN = re.compile(r"_+")
+_CYRILLIC_TO_LATIN = {
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "e",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "y",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "h",
+    "ц": "ts",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "sch",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "yu",
+    "я": "ya",
+}
+
+
+def _normalize_keycloak_email_value(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized or normalized == PLACEHOLDER_TEXT:
+        return None
+    return normalized
 
 @dataclass(frozen=True)
 class AttachmentFileInput:
@@ -167,6 +217,24 @@ class OfferMessageAckResult:
         return len(self.updated_message_ids)
 
 
+@dataclass(frozen=True)
+class ManualContractorCreateInput:
+    company_name: str
+    inn: str
+    company_phone: str
+    company_mail: str | None
+    address: str | None
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class ManualOfferCreateResult:
+    offer_id: int
+    request_id: int
+    contractor_user_id: str
+    contractor_created: bool
+
+
 class OfferService:
     def __init__(
         self,
@@ -179,6 +247,7 @@ class OfferService:
         company_contacts: CompanyContactRepository,
         users: UserRepository,
         file_service: FileService | None = None,
+        keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._requests = requests
         self._offers = offers
@@ -189,6 +258,7 @@ class OfferService:
         self._company_contacts = company_contacts
         self._users = users
         self._file_service = file_service or FileService(files)
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _build_read_only_chat_state(self, *, chat_id: int, last_message_id: int | None, last_message_at) -> ChatState:
         return ChatState(
@@ -224,6 +294,15 @@ class OfferService:
             await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=request.id)
         return offer, request
 
+    async def _is_manual_offer(self, *, offer_owner_user_id: str) -> bool:
+        offer_owner = await self._users.get_by_id(user_id=offer_owner_user_id)
+        if offer_owner is None:
+            raise NotFound("Offer owner not found")
+        return (
+            offer_owner.id_role == settings.contractor_role_id
+            and offer_owner.tg_user_id is None
+        )
+
     async def _require_chat_context(
         self,
         *,
@@ -257,6 +336,148 @@ class OfferService:
                 raise Forbidden("Insufficient permissions to view chat")
 
         return offer, request, chat, chat_state
+
+    def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            raise Conflict(f"{field_name} is required")
+        if max_length is not None and len(normalized) > max_length:
+            raise Conflict(f"{field_name} is too long")
+        return normalized
+
+    def _normalize_optional_text(self, value: str | None, *, max_length: int | None = None) -> str | None:
+        normalized = (value or "").strip()
+        if not normalized:
+            return None
+        if max_length is not None and len(normalized) > max_length:
+            raise Conflict("Value is too long")
+        return normalized
+
+    def _validate_manual_contractor_create_data(
+        self,
+        *,
+        contractor_data: ManualContractorCreateInput,
+    ) -> ManualContractorCreateInput:
+        try:
+            company_name = self._normalize_required_text(
+                contractor_data.company_name,
+                field_name="Company name",
+                max_length=256,
+            )
+            inn = validate_inn(
+                self._normalize_required_text(
+                    contractor_data.inn,
+                    field_name="INN",
+                    max_length=32,
+                )
+            )
+            company_phone = validate_ru_phone(
+                self._normalize_required_text(
+                    contractor_data.company_phone,
+                    field_name="Company phone",
+                    max_length=64,
+                )
+            )
+            company_mail = validate_optional_email(
+                self._normalize_optional_text(contractor_data.company_mail, max_length=256),
+                allow_placeholder=True,
+            )
+            address = self._normalize_optional_text(contractor_data.address, max_length=256)
+            note = self._normalize_optional_text(contractor_data.note, max_length=1024)
+        except ValueError as exc:
+            raise Conflict(str(exc)) from exc
+
+        return ManualContractorCreateInput(
+            company_name=company_name,
+            inn=inn,
+            company_phone=company_phone,
+            company_mail=company_mail,
+            address=address,
+            note=note,
+        )
+
+    def _build_login_slug(self, company_name: str) -> str:
+        normalized_name = unicodedata.normalize("NFKC", company_name.strip().lower())
+        transliterated: list[str] = []
+        for char in normalized_name:
+            if char in _CYRILLIC_TO_LATIN:
+                transliterated.append(_CYRILLIC_TO_LATIN[char])
+                continue
+            if char.isascii() and char.isalnum():
+                transliterated.append(char)
+                continue
+            transliterated.append("_")
+
+        candidate = "".join(transliterated)
+        candidate = _LOGIN_CLEANUP_PATTERN.sub("_", candidate)
+        candidate = _LOGIN_COLLAPSE_PATTERN.sub("_", candidate).strip("_")
+        if candidate:
+            return candidate
+        return "contractor"
+
+    async def _build_manual_login(self, *, company_name: str) -> str:
+        date_suffix = datetime.now().strftime("%d_%m")
+        base_slug = self._build_login_slug(company_name)
+        base_candidate = f"{base_slug}_{date_suffix}"
+        if len(base_candidate) > 120:
+            base_candidate = base_candidate[:120].rstrip("_")
+        if len(base_candidate) < 3:
+            base_candidate = f"{base_candidate}xxx"[:3]
+
+        if not await self._users.exists(base_candidate):
+            return base_candidate
+
+        index = 1
+        while True:
+            suffix = f"_{index}"
+            login_candidate = f"{base_candidate[: max(0, 128 - len(suffix))]}{suffix}"
+            if not await self._users.exists(login_candidate):
+                return login_candidate
+            index += 1
+            if index > 1000:
+                raise Conflict("Unable to generate unique login for manual contractor")
+
+    def _build_manual_password(self) -> str:
+        return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
+
+    async def _create_manual_contractor(
+        self,
+        *,
+        contractor_data: ManualContractorCreateInput,
+    ) -> str:
+        login = await self._build_manual_login(company_name=contractor_data.company_name)
+        await self._users.add(
+            User(
+                id=login,
+                id_role=settings.contractor_role_id,
+                status="active",
+            )
+        )
+        await self._profiles.add(
+            Profile(
+                id=login,
+                full_name=PLACEHOLDER_TEXT,
+                phone=PLACEHOLDER_TEXT,
+                mail=PLACEHOLDER_TEXT,
+            )
+        )
+        await self._company_contacts.add(
+            CompanyContact(
+                id=login,
+                company_name=contractor_data.company_name,
+                inn=contractor_data.inn,
+                phone=contractor_data.company_phone,
+                mail=contractor_data.company_mail or PLACEHOLDER_TEXT,
+                address=contractor_data.address or PLACEHOLDER_TEXT,
+                note=contractor_data.note or PLACEHOLDER_TEXT,
+            )
+        )
+        await self._keycloak_admin.ensure_user(
+            username=login,
+            email=_normalize_keycloak_email_value(contractor_data.company_mail),
+            email_verified=False,
+        )
+        return login
 
     async def get_request_view(self, *, current_user: CurrentUser, request_id: int) -> ContractorRequestView:
         UserPolicy.ensure_can_create_offer(current_user)
@@ -328,6 +549,95 @@ class OfferService:
             offer_amount=offer_amount,
         )
         return offer.id
+
+    async def create_manual_offer(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_id: int,
+        contractor_user_id: str | None,
+        contractor_data: ManualContractorCreateInput | None,
+        offer_amount: float | None = None,
+        files: list[AttachmentFileInput] | None = None,
+    ) -> ManualOfferCreateResult:
+        request = await self._requests.get_by_id(request_id=request_id)
+        if request is None:
+            raise NotFound("Request not found")
+
+        RequestPolicy.ensure_can_create_manual_offer(
+            current_user,
+            request_owner_user_id=request.id_user,
+        )
+
+        if request.status != "open":
+            raise Conflict("Manual offer can be created only for open request")
+
+        self._validate_offer_amount(offer_amount)
+
+        normalized_contractor_user_id = self._normalize_optional_text(contractor_user_id)
+        if normalized_contractor_user_id and contractor_data is not None:
+            raise Conflict("Select existing contractor or provide new contractor data")
+        if not normalized_contractor_user_id and contractor_data is None:
+            raise Conflict("Contractor is required")
+
+        resolved_contractor_user_id: str
+        contractor_created = False
+        if contractor_data is not None:
+            normalized_contractor_data = self._validate_manual_contractor_create_data(
+                contractor_data=contractor_data,
+            )
+            resolved_contractor_user_id = await self._create_manual_contractor(
+                contractor_data=normalized_contractor_data
+            )
+            contractor_created = True
+        else:
+            assert normalized_contractor_user_id is not None
+            contractor_user = await self._users.get_by_id(normalized_contractor_user_id)
+            if contractor_user is None:
+                raise NotFound("Contractor not found")
+            if contractor_user.id_role != settings.contractor_role_id:
+                raise Conflict("Selected user is not contractor")
+            if contractor_user.status != "active":
+                raise Conflict("Selected contractor must be active")
+            is_hidden = await self._requests.is_hidden_for_contractor(
+                request_id=request.id,
+                contractor_user_id=normalized_contractor_user_id,
+            )
+            if is_hidden:
+                raise Conflict("Selected contractor is hidden for this request")
+            resolved_contractor_user_id = normalized_contractor_user_id
+
+        existing_offer = await self._offers.get_contractor_offer_for_request(
+            request_id=request.id,
+            contractor_user_id=resolved_contractor_user_id,
+        )
+        if existing_offer is not None and existing_offer.status != "deleted":
+            raise Conflict("Offer for this contractor already exists")
+
+        offer = await self._offers.create(
+            request_id=request.id,
+            contractor_user_id=resolved_contractor_user_id,
+            offer_amount=offer_amount,
+        )
+
+        for upload in files or []:
+            prepared = await self._file_service.prepare_bytes(
+                original_name=upload.original_name,
+                content_bytes=upload.content_bytes,
+                mime_type=upload.mime_type,
+            )
+            db_file = await self._file_service.create_offer_file(
+                offer_id=offer.id,
+                upload=prepared,
+            )
+            await self._offers.attach_file(offer_id=offer.id, file_id=db_file.id)
+
+        return ManualOfferCreateResult(
+            offer_id=offer.id,
+            request_id=request.id,
+            contractor_user_id=resolved_contractor_user_id,
+            contractor_created=contractor_created,
+        )
 
     async def get_workspace(self, *, current_user: CurrentUser, offer_id: int) -> OfferWorkspace:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
@@ -427,18 +737,44 @@ class OfferService:
         offer_id: int,
         upload: AttachmentFileInput,
     ) -> int:
-        require_permission(
-            current_user,
-            PermissionCodes.OFFERS_FILES_UPLOAD,
-            message="Insufficient permissions to upload offer files",
-        )
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
         await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
-        OfferPolicy.ensure_can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
+        request = await self._requests.get_by_id(request_id=offer.id_request)
+        if request is None:
+            raise NotFound("Request not found")
+        offer_is_manual = await self._is_manual_offer(offer_owner_user_id=offer.id_user)
 
-        if offer.status in {"accepted", "rejected"}:
+        if current_user.role_id == settings.contractor_role_id:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_FILES_UPLOAD,
+                message="Insufficient permissions to upload offer files",
+            )
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        elif has_permission(current_user, PermissionCodes.OFFERS_FILES_UPLOAD):
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        else:
+            OfferPolicy.ensure_can_manage_manual_offer_files(
+                current_user,
+                request_owner_user_id=request.id_user,
+                offer_is_manual=offer_is_manual,
+            )
+
+        if (
+            current_user.role_id == settings.contractor_role_id
+            and current_user.user_id == offer.id_user
+            and offer.status in {"accepted", "rejected"}
+        ):
             raise Conflict("Cannot edit files for finalized offer")
 
         prepared = await self._file_service.prepare_bytes(
@@ -454,16 +790,38 @@ class OfferService:
         return db_file.id
 
     async def remove_file(self, *, current_user: CurrentUser, offer_id: int, file_id: int) -> None:
-        require_permission(
-            current_user,
-            PermissionCodes.OFFERS_FILES_DELETE,
-            message="Insufficient permissions to delete offer files",
-        )
         offer = await self._offers.get_by_id(offer_id=offer_id)
         if offer is None:
             raise NotFound("Offer not found")
         await self._ensure_request_visible_for_contractor(current_user=current_user, request_id=offer.id_request)
-        OfferPolicy.ensure_can_access_contractor_offer(current_user, offer_owner_user_id=offer.id_user)
+        request = await self._requests.get_by_id(request_id=offer.id_request)
+        if request is None:
+            raise NotFound("Request not found")
+        offer_is_manual = await self._is_manual_offer(offer_owner_user_id=offer.id_user)
+
+        if current_user.role_id == settings.contractor_role_id:
+            require_permission(
+                current_user,
+                PermissionCodes.OFFERS_FILES_DELETE,
+                message="Insufficient permissions to delete offer files",
+            )
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        elif has_permission(current_user, PermissionCodes.OFFERS_FILES_DELETE):
+            OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer.id_user,
+                request_owner_user_id=request.id_user,
+            )
+        else:
+            OfferPolicy.ensure_can_manage_manual_offer_files(
+                current_user,
+                request_owner_user_id=request.id_user,
+                offer_is_manual=offer_is_manual,
+            )
 
         detached = await self._offers.detach_file(offer_id=offer.id, file_id=file_id)
         if not detached:
@@ -513,16 +871,17 @@ class OfferService:
         offer, request = await self._load_offer_and_request(offer_id=offer_id, current_user=current_user)
         self._validate_offer_amount(offer_amount)
 
-        is_contractor_editing_own_offer = (
+        OfferPolicy.ensure_can_manage_offer(
+            current_user,
+            offer_owner_user_id=offer.id_user,
+            request_owner_user_id=request.id_user,
+        )
+        if (
             current_user.role_id == settings.contractor_role_id
             and current_user.user_id == offer.id_user
-        )
-
-        if is_contractor_editing_own_offer:
-            if offer.status in {"accepted", "rejected"}:
-                raise Conflict("Cannot edit amount for finalized offer")
-        else:
-            RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
+            and offer.status in {"accepted", "rejected"}
+        ):
+            raise Conflict("Cannot edit amount for finalized offer")
 
         await self._offers.update_amount(offer=offer, offer_amount=offer_amount)
         return float(Decimal(str(offer.offer_amount)))

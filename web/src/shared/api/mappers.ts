@@ -43,6 +43,7 @@ type BackendUserActionFlags = {
   can_manage_company_contacts?: boolean;
   can_manage_own_unavailability?: boolean;
   can_manage_subordinate_unavailability?: boolean;
+  can_manage_manual_contractor?: boolean;
 };
 
 export type RequestActions = {
@@ -87,6 +88,7 @@ export type UserActions = {
   manage_company_contacts: boolean;
   manage_own_unavailability: boolean;
   manage_subordinate_unavailability: boolean;
+  manage_manual_contractor: boolean;
 };
 
 export const normalizeRequestActions = (actions?: BackendRequestActionFlags): RequestActions => ({
@@ -130,7 +132,8 @@ export const normalizeUserActions = (actions?: BackendUserActionFlags): UserActi
   manage_credentials: Boolean(actions?.can_manage_credentials),
   manage_company_contacts: Boolean(actions?.can_manage_company_contacts),
   manage_own_unavailability: Boolean(actions?.can_manage_own_unavailability),
-  manage_subordinate_unavailability: Boolean(actions?.can_manage_subordinate_unavailability)
+  manage_subordinate_unavailability: Boolean(actions?.can_manage_subordinate_unavailability),
+  manage_manual_contractor: Boolean(actions?.can_manage_manual_contractor)
 });
 
 export const mapRequestEntityToSummary = (

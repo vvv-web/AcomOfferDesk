@@ -1,130 +1,69 @@
 # Backend (`/backend`)
 
-## Что поднимается
+Основной API и бизнес-логика AcomOfferDesk.
 
-В backend-части есть два compose-файла:
+## Стек
 
-- `docker-compose.yml` — поднимает:
-  - `backend` (FastAPI приложение),
-  - `gateway` (Nginx reverse-proxy).
-- `docker-compose.ngrok.yml` — поднимает отдельный контейнер `ngrok`, который публикует наружу `gateway:80`.
+- FastAPI
+- SQLAlchemy 2
+- Pydantic / pydantic-settings
+- aio-pika (RabbitMQ)
+- MinIO SDK
+- Интеграция с Keycloak (OIDC + Admin API)
 
-Оба compose используют внешнюю docker-сеть `project_net`.
-
----
-
-## Маршрутизация запросов
-
-### 1) Входной слой: Nginx (`gateway`)
-
-`gateway` слушает `80` внутри контейнера и пробрасывается локально как `8080:80`.
-
-Правила из `nginx.conf`:
-
-- `location /api/` → проксируется в `http://backend:8000/api/`.
-  - Это весь backend API (`/api/v1/...`).
-- `location /` → проксируется в `http://web:80/`.
-  - Это фронтенд (SPA), если в сети `project_net` есть контейнер `web`.
-
-Итого:
-- API идёт через Nginx на backend;
-- всё остальное (корень `/`, статика/роуты фронта) идёт на web.
-
-### 2) Внутренний слой: FastAPI (`backend`)
-
-В приложении API подключен с префиксом `/api/v1`.
-
-Примеры конечных URL через gateway:
-- `http://localhost:8080/api/v1/auth/login`
-- `http://localhost:8080/api/v1/users`
-
----
-
-## Для чего нужен ngrok
-
-`ngrok` нужен, чтобы дать **публичный URL** во внешний интернет для локального docker-стека.
-
-В текущей конфигурации:
-- `ngrok` поднимает туннель `public`;
-- туннель направлен на `gateway:80`;
-- значит снаружи доступны и фронт, и API через один публичный домен ngrok (точно так же, как локально через gateway).
-
-Это удобно для:
-- Telegram-бота и внешних клиентов,
-- демонстраций,
-- тестов, где нужен публичный доступ к локальному окружению.
-
----
-
-## Как это работает вместе (схема)
+## Основные директории
 
 ```text
-Интернет / браузер / tg_bot
-          |
-          v
-   ngrok public URL  (опционально)
-          |
-          v
-      gateway:80 (nginx)
-       |                 \
-       | /api/*           \ /
-       v                   v
- backend:8000           web:80
- (FastAPI)             (frontend)
+app/
+  api/v1/            REST и WS endpoints
+  services/          бизнес-слой (users, auth, requests, offers, ...)
+  repositories/      доступ к БД
+  domain/            permissions/policies/exceptions
+  schemas/           pydantic-схемы API
+  infrastructure/    DB, email, S3, publisher
+  realtime/          runtime WebSocket-чата
+  core/              конфиг, токены, UoW, security
 ```
 
-Если ngrok не запущен, тот же маршрут работает локально:
+## Внешние зависимости
 
-`клиент -> localhost:8080 -> gateway -> backend/web`
+- PostgreSQL (из репозитория `order_database`)
+- RabbitMQ
+- MinIO
+- Keycloak
 
----
+Все зависимости подключаются в `docker-compose.yml` из корня проекта.
 
-## Файлы и их роль
+## Маршрутизация через gateway
 
-- `docker-compose.yml`
-  - backend + gateway, локальная точка входа `localhost:8080`.
-- `docker-compose.ngrok.yml`
-  - отдельный сервис ngrok, который публикует gateway наружу.
-- `nginx.conf`
-  - правила reverse proxy между `/api/` и фронтом.
-- `ngrok.yml`
-  - описание туннеля `public` на `gateway:80`.
+`backend/nginx.conf` определяет единый вход:
 
----
+- `/api/*` -> `backend:8000`
+- `/iam/*` -> `keycloak:8080/iam`
+- `/` -> `web:80`
 
 ## Запуск
 
-### 1) Подготовить внешнюю сеть (один раз)
+Рекомендуется запускать backend в составе корневого compose:
 
 ```bash
-docker network create project_net
+docker compose up -d --build
 ```
 
-### 2) Поднять backend + gateway
+API после запуска:
 
-```bash
-docker compose -f backend/docker-compose.yml up -d --build
-```
+- `http://localhost:8080/api/v1/...`
 
-После запуска:
-- локальный вход: `http://localhost:8080`
-- API: `http://localhost:8080/api/v1/...`
+## Auth
 
-### 3) Поднять ngrok (если нужен публичный доступ)
+- Основной вход: Keycloak (`/api/v1/auth/oidc/login`, `/api/v1/auth/callback`)
+- Локальный password login через backend API не используется; вход выполняется через Keycloak.
+- Прямой вход из Telegram отключен (`/api/v1/auth/tg/exchange` -> `Forbidden`)
 
-```bash
-docker compose -f backend/docker-compose.ngrok.yml up -d
-```
+## Полезно при разработке
 
-Проверить туннель можно:
-- в логах контейнера `ngrok`,
-- через UI ngrok: `http://localhost:4040`.
-
----
-
-## Замечания по окружению
-
-- `backend` читает переменные из `backend/.env`.
-- `ngrok` также читает `.env`, а конфиг туннеля берёт из `backend/ngrok.yml`.
-- В `ngrok.yml` должен быть корректный `authtoken`.
-- В `docker-compose.yml` gateway ожидает наличие сервиса `web` в сети `project_net`; если фронтенд не запущен, роуты не из `/api/` будут недоступны.
+- Конфиг читается из `backend/.env` (`app/core/config.py`).
+- При изменении auth/ролей/регистрации синхронизируйте:
+  - `README.md`
+  - `docs/keycloak-autolink.md`
+  - `docs/login-links.md`

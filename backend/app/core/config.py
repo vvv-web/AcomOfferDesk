@@ -27,6 +27,7 @@ def _parse_str_list(value: str | list[str] | None) -> list[str]:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
+    app_env: str = Field(default="development", validation_alias=AliasChoices("APP_ENV", "ENVIRONMENT"))
     database_url: str = Field(..., validation_alias="DATABASE_URL")
     jwt_secret: str = Field(..., validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
@@ -39,6 +40,69 @@ class Settings(BaseSettings):
     refresh_cookie_samesite: str = Field(default="lax", validation_alias="REFRESH_COOKIE_SAMESITE")
     refresh_cookie_domain: str | None = Field(default=None, validation_alias="REFRESH_COOKIE_DOMAIN")
     refresh_token_secret: str | None = Field(default=None, validation_alias="REFRESH_TOKEN_SECRET")
+
+    keycloak_enabled: bool = Field(default=False, validation_alias="KEYCLOAK_ENABLED")
+    auth_enable_legacy_password_login: bool = Field(
+        default=True,
+        validation_alias="AUTH_ENABLE_LEGACY_PASSWORD_LOGIN",
+    )
+    keycloak_realm: str = Field(default="acom-offerdesk", validation_alias="KEYCLOAK_REALM")
+    keycloak_client_id: str = Field(default="acom-offerdesk-web", validation_alias="KEYCLOAK_CLIENT_ID")
+    keycloak_internal_base_url: str = Field(
+        default="http://keycloak:8080/iam",
+        validation_alias="KEYCLOAK_INTERNAL_BASE_URL",
+    )
+    keycloak_public_base_url: str | None = Field(default=None, validation_alias="KEYCLOAK_PUBLIC_BASE_URL")
+    keycloak_issuer_url: str | None = Field(default=None, validation_alias="KEYCLOAK_ISSUER_URL")
+    keycloak_jwks_cache_ttl_seconds: int = Field(
+        default=300,
+        validation_alias="KEYCLOAK_JWKS_CACHE_TTL_SECONDS",
+    )
+    keycloak_http_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="KEYCLOAK_HTTP_TIMEOUT_SECONDS",
+    )
+    keycloak_refresh_cookie_name: str = Field(
+        default="acom_oidc_refresh",
+        validation_alias="KEYCLOAK_REFRESH_COOKIE_NAME",
+    )
+    keycloak_state_cookie_name: str = Field(
+        default="acom_oidc_state",
+        validation_alias="KEYCLOAK_STATE_COOKIE_NAME",
+    )
+    keycloak_bootstrap_binding_enabled: bool = Field(
+        default=True,
+        validation_alias="KEYCLOAK_BOOTSTRAP_BINDING_ENABLED",
+    )
+    keycloak_bootstrap_app_username: str = Field(
+        default="superadmin",
+        validation_alias="KEYCLOAK_BOOTSTRAP_APP_USERNAME",
+    )
+    keycloak_admin_realm: str = Field(
+        default="master",
+        validation_alias=AliasChoices("KEYCLOAK_ADMIN_REALM", "KC_BOOTSTRAP_ADMIN_REALM"),
+    )
+    keycloak_admin_client_id: str = Field(
+        default="admin-cli",
+        validation_alias="KEYCLOAK_ADMIN_CLIENT_ID",
+    )
+    keycloak_admin_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KEYCLOAK_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_USERNAME"),
+    )
+    keycloak_admin_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KEYCLOAK_ADMIN_PASSWORD", "KC_BOOTSTRAP_ADMIN_PASSWORD"),
+    )
+    keycloak_dev_auto_link_by_username_enabled: bool = Field(
+        default=False,
+        validation_alias="KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED",
+    )
+    keycloak_prod_auto_link_by_verified_email_enabled: bool = Field(
+        default=False,
+        validation_alias="KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED",
+    )
+
     superadmin_role_id: int = 1
     admin_role_id: int = 2
     contractor_role_id: int = 3
@@ -109,15 +173,15 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_allowed_creation_role_ids(cls, value: str | list[int] | None) -> list[int]:
         return _parse_int_list(value)
-    
+
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def _validate_cors_allow_origins(cls, value: str | list[str] | None) -> list[str]:
         return _parse_str_list(value)
-    
+
     @model_validator(mode="after")
-    def _enforce_fixed_role_ids(self) -> "Settings":
-        # Роли зафиксированы бизнес-схемой БД и не должны переопределяться окружением.
+    def _normalize(self) -> "Settings":
+        self.app_env = self.app_env.strip().lower() or "development"
         self.superadmin_role_id = 1
         self.admin_role_id = 2
         self.contractor_role_id = 3
@@ -125,11 +189,18 @@ class Settings(BaseSettings):
         self.lead_economist_role_id = 5
         self.economist_role_id = 6
         self.operator_role_id = 7
+
         self.refresh_cookie_samesite = self.refresh_cookie_samesite.lower().strip() or "lax"
         if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
             self.refresh_cookie_samesite = "lax"
+
+        public_bases = [self.public_backend_base_url, self.web_base_url, self.keycloak_public_base_url, self.keycloak_issuer_url]
+        if any((base or "").strip().lower().startswith("https://") for base in public_bases):
+            self.refresh_cookie_secure = True
+
         if not self.refresh_token_secret:
             self.refresh_token_secret = self.jwt_secret
+
         self.s3_endpoint = self.s3_endpoint.strip()
         if self.s3_public_endpoint is not None:
             self.s3_public_endpoint = self.s3_public_endpoint.strip() or None
@@ -142,6 +213,30 @@ class Settings(BaseSettings):
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
             self.max_upload_size_bytes = 10 * 1024 * 1024
+
+        self.keycloak_internal_base_url = self.keycloak_internal_base_url.rstrip("/")
+        if self.keycloak_public_base_url is not None:
+            self.keycloak_public_base_url = self.keycloak_public_base_url.rstrip("/") or None
+        if self.keycloak_issuer_url is not None:
+            self.keycloak_issuer_url = self.keycloak_issuer_url.rstrip("/") or None
+        self.keycloak_admin_realm = self.keycloak_admin_realm.strip() or "master"
+        self.keycloak_admin_client_id = self.keycloak_admin_client_id.strip() or "admin-cli"
+        if self.keycloak_admin_username is not None:
+            self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
+        if self.keycloak_admin_password is not None:
+            self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
+        self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
+        if self.keycloak_jwks_cache_ttl_seconds <= 0:
+            self.keycloak_jwks_cache_ttl_seconds = 300
+        if self.keycloak_http_timeout_seconds <= 0:
+            self.keycloak_http_timeout_seconds = 10.0
+        if self.keycloak_dev_auto_link_by_username_enabled and self.keycloak_prod_auto_link_by_verified_email_enabled:
+            raise ValueError(
+                "KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED and "
+                "KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED cannot be enabled together"
+            )
+        if self.app_env == "production" and self.keycloak_dev_auto_link_by_username_enabled:
+            raise ValueError("KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED cannot be enabled in production")
         return self
 
     @property
@@ -154,6 +249,49 @@ class Settings(BaseSettings):
     @property
     def resolved_refresh_token_secret(self) -> str:
         return self.refresh_token_secret or self.jwt_secret
+
+    @property
+    def resolved_keycloak_public_base_url(self) -> str:
+        if self.keycloak_public_base_url:
+            return self.keycloak_public_base_url
+        if self.web_base_url:
+            return f"{self.web_base_url.rstrip('/')}/iam"
+        return "http://localhost:8080/iam"
+
+    @property
+    def resolved_keycloak_issuer_url(self) -> str:
+        if self.keycloak_issuer_url:
+            return self.keycloak_issuer_url
+        return f"{self.resolved_keycloak_public_base_url}/realms/{self.keycloak_realm}"
+
+    @property
+    def keycloak_internal_realm_base_url(self) -> str:
+        return f"{self.keycloak_internal_base_url}/realms/{self.keycloak_realm}"
+
+    @property
+    def keycloak_token_endpoint(self) -> str:
+        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/token"
+
+    @property
+    def keycloak_authorization_endpoint(self) -> str:
+        return f"{self.resolved_keycloak_issuer_url}/protocol/openid-connect/auth"
+
+    @property
+    def keycloak_logout_endpoint(self) -> str:
+        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/logout"
+
+    @property
+    def keycloak_jwks_uri(self) -> str:
+        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/certs"
+
+    @property
+    def keycloak_userinfo_endpoint(self) -> str:
+        return f"{self.keycloak_internal_realm_base_url}/protocol/openid-connect/userinfo"
+
+    @property
+    def keycloak_callback_url(self) -> str:
+        base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
+        return f"{base}/api/v1/auth/callback"
 
 
 settings = Settings()

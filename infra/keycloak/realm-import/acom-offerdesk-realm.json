@@ -1,0 +1,19 @@
+{
+  "realm": "acom-offerdesk",
+  "enabled": true,
+  "displayName": "AcomOfferDesk",
+  "loginTheme": "acom-offerdesk",
+  "internationalizationEnabled": true,
+  "defaultLocale": "ru",
+  "supportedLocales": ["ru"],
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "rememberMe": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "sslRequired": "external",
+  "bruteForceProtected": true
+}

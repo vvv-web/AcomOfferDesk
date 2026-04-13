@@ -25,6 +25,10 @@ export const RoleRoute = ({ allowedRoles, children }: RoleRouteProps) => {
     return <Navigate to="/login" replace />;
   }
 
+  if (!session.businessAccess) {
+    return <Navigate to="/account" replace />;
+  }
+
   if (!allowedRoles.includes(session.roleId)) {
     return <Navigate to={getDefaultPath(session.roleId)} replace />;
   }
