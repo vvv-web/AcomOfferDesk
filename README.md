@@ -1,439 +1,278 @@
-# AcomOfferDesk — развёртывание через Docker Compose
+# AcomOfferDesk
 
-Этот репозиторий можно поднять одной командой через корневой `docker-compose.yml`.
+AcomOfferDesk - веб-платформа для работы с заявками и офферами между сотрудниками и контрагентами, с интеграцией Telegram, Keycloak и уведомлений.
 
----
+## Быстрые ссылки
 
-## ⚡ Обновлённая версия (дополнения для внешнего доступа)
+- Инструкция по автопривязке пользователей к Keycloak: [docs/keycloak-autolink.md](docs/keycloak-autolink.md)
+- Правила входа по внешним ссылкам (Telegram/email): [docs/login-links.md](docs/login-links.md)
+- Развертывание БД `order_database` на VPS: [docs/order-database-vps.md](docs/order-database-vps.md)
+- Типовые проблемы на VPS: [docs/vps-troubleshooting.md](docs/vps-troubleshooting.md)
 
-Данная секция дополняет основной README с учётом проверенного развёртывания (февраль 2026).
+## Архитектура
 
-**Что добавлено:**
+```text
+Браузер / Telegram
+        |
+        v
+   gateway (Nginx, :8080)
+     |        |        |
+     |        |        +--> /iam/* --> keycloak
+     |        |
+     |        +--> / --> web (React SPA)
+     |
+     +--> /api/* --> backend (FastAPI)
+                      |            |
+                      |            +--> RabbitMQ --> notifications_worker
+                      |
+                      +--> PostgreSQL (external: order_database)
+                      +--> MinIO (S3-совместимое хранилище)
 
-- **Localtunnel** вместо ngrok (ngrok даёт ERR_NGROK_9040 при блокировке IP; localtunnel — рабочий вариант).
-- **order_database** — отдельный compose с PostgreSQL; его нужно поднимать первым, создать сеть `project_net`. Для **VPS** и приватного репозитория БД: **[docs/order-database-vps.md](docs/order-database-vps.md)** и скрипт **[scripts/install-order-database-vps.sh](scripts/install-order-database-vps.sh)** (нужен `GITHUB_TOKEN` / см. документ).
-- **Критично:** при перезапуске localtunnel URL меняется → обновить `PUBLIC_BACKEND_BASE_URL` и `WEB_BASE_URL` в `backend/.env` и `tg_bot/.env`, затем `docker compose up -d --force-recreate backend tg_bot` (restart не перечитывает .env).
-- **Доступ с другого ПК:** после ввода Tunnel Password (публичный IP машины с туннелем) доступ по тому же URL.
-
-**Шаблоны переменных окружения (этап перед `docker compose up`):**
-
-| Файл | Назначение |
-|------|------------|
-| `compose.env.example` | Скопировать в **корневой** `.env` — подстановка для MinIO в `docker-compose.yml`. |
-| `backend/env.example` | Скопировать в **`backend/.env`** — все переменные бэкенда (см. `backend/app/core/config.py`). |
-| `tg_bot/env.example` | Скопировать в **`tg_bot/.env`** — токен бота и URL шлюза/API. |
-
-Команды: `cp compose.env.example .env`, `cp backend/env.example backend/.env`, `cp tg_bot/env.example tg_bot/.env`, затем отредактировать значения (секреты не коммитить).
-
-**Два бота в Telegram:** продуктовый **AcomOfferDesk** (тест/прод) и отдельный **DevOfferDesk** для разработки. На стенде **`test`** используйте токен и ссылки **AcomOfferDesk**, публичные URL своего хоста или туннеля — не подставляйте слепо dev-бота и чужой ngrok из чужих `.env`.
-
-Шпаргалка по пересозданию БД на сервере — **[docs/order-database-vps.md](docs/order-database-vps.md)**. Типовые сбои VPS (502 после recreate `backend`, SMTP, superadmin, `.env`) — **[docs/vps-troubleshooting.md](docs/vps-troubleshooting.md)**; развёрнутый журнал — в **`devops_manual`** (`docs/acom-offer-desk-archive/vps-troubleshooting-2026-03.md`).
-
-**Кратко: шаги по ролям**
-
-**Разворачивающий** — команды для поднятия:
-
-```bash
-# заменить /path/to/ на свои каталоги (например /home/user/acom-project/)
-
-# 1. Сеть + order_database (PostgreSQL)
-docker network create project_net
-cd /path/to/order_database && docker compose up -d
-
-# 2. Инициализация Keycloak
-cd /path/to/AcomOfferDesk
-docker compose -f docker-compose.init.yml up keycloak_db_prepare
-
-# 3. AcomOfferDesk + localtunnel
-docker compose up -d --build
-docker compose -f docker-compose.init.yml up keycloak_bootstrap
-docker compose --profile tunnel up -d localtunnel
-
-# 4. URL туннеля → обновить .env → пересоздать backend и tg_bot
-docker logs localtunnel 2>&1 | grep "your url"
-# Вписать URL в backend/.env и tg_bot/.env (PUBLIC_BACKEND_BASE_URL, WEB_BASE_URL)
-docker compose up -d --force-recreate backend tg_bot
-
-# 5. В веб-админке: Контрагенты → active, создать заявки
+tg_bot <--> backend (/api/v1/tg/*)
 ```
 
-| Роль | Шаги |
-|------|------|
-| **Контрагент** | 1. Зарегистрироваться в @AcomOfferDeskBot. 2. Дождаться активации (сообщение «Доступ открыт»). 3. `/start` — увидеть заявки и ссылки. 4. Войти в веб по ссылке (логин/пароль с регистрации). |
-| **Экономист** | 1. Получить логин/пароль от суперадмина. 2. Войти в веб (URL от разворачивающего). 3. Создавать и вести заявки, просматривать контрагентов. |
+## Технологии
 
----
+- Backend: FastAPI, SQLAlchemy, Pydantic, aio-pika
+- Frontend: React 18, TypeScript, Vite, MUI, React Hook Form, Zod
+- IAM: Keycloak (OIDC Authorization Code + PKCE)
+- Инфраструктура: Docker Compose, Nginx, RabbitMQ, MinIO, PostgreSQL
+- Telegram: aiogram
 
-## Сводка: как проходит запрос пользователя
+## Структура репозитория
 
-### Если пользователь работает через веб (`http://localhost:8080`)
-1. Пользователь открывает сайт.
-2. `gateway` принимает запрос и отдаёт SPA из `web`.
-3. Когда пользователь логинится, создаёт заявки, загружает файлы или работает в чате, фронтенд вызывает `/api/...`.
-4. `gateway` маршрутизирует API-запросы в `backend`.
-5. `backend` выполняет бизнес-логику, работает с БД, сохраняет файлы в `backend/uploads` и возвращает результат.
-6. Фронтенд обновляет интерфейс без ручной перезагрузки страницы.
+```text
+backend/               FastAPI API, бизнес-логика, IAM-интеграция, WebSocket
+web/                   React SPA (страницы, фичи, API-клиент)
+tg_bot/                Telegram-бот
+notifications_worker/  Воркер отправки email/TG уведомлений
+infra/keycloak/        bootstrap и тема Keycloak
+docs/                  Техническая документация
+scripts/               Вспомогательные скрипты для серверов/БД
+docker-compose.yml     Основной runtime compose
+docker-compose.init.yml
+                       Одноразовые init-задачи Keycloak
+```
 
-### Если пользователь работает через Telegram-бота
-1. Пользователь отправляет боту команду (`/start`, `/info` и т.д.).
-2. `tg_bot` обращается к `backend` через внутренний адрес `http://gateway`.
-3. `backend` возвращает действие, ссылки и данные.
-4. Бот отправляет итоговое сообщение пользователю.
+Важно: рабочая PostgreSQL схема находится в отдельном репозитории `order_database`. Этот проект подключается к уже поднятой БД через `DATABASE_URL`.
 
-## Схема токенов и сессии
+## Роли и статусы
 
-В проекте используются четыре независимых типа токенов:
+ID ролей (`users.id_role`):
 
-### 1. `access_token`
-- Используется только для REST API и WebSocket.
-- Это short-lived JWT.
-- Хранится только в памяти фронтенда.
-- В `localStorage` и `sessionStorage` не сохраняется.
-- Содержит минимальные claims:
-  - `sub`
-  - `type=access`
-  - `scope=session_access`
-  - `iat`
-  - `exp`
+- `1` - superadmin
+- `2` - admin
+- `3` - contractor
+- `4` - project_manager
+- `5` - lead_economist
+- `6` - economist
+- `7` - operator
 
-Как работает:
-- После `POST /api/v1/auth/login` backend возвращает `access_token` в JSON-ответе.
-- Frontend кладёт его только в in-memory auth state.
-- Все обычные API-запросы отправляют `Authorization: Bearer <access_token>`.
-- WebSocket чат подключается с этим же токеном через query param `?token=...`.
+Статусы пользователя (`users.status`):
 
-Как проверяется:
-- Backend валидирует подпись JWT.
-- Проверяет `type=access`, `scope=session_access`, `sub`, `exp`.
-- После decode всегда дочитывает пользователя из БД.
-- Роль, статус и доступы определяются по БД, а не только по claims токена.
+- `review`
+- `active`
+- `inactive`
+- `blacklist`
 
-TTL:
-- `access_token`: 5 минут.
+Доступ к бизнес-функциям есть только при статусе `active`.
 
-### 2. `refresh_token`
-- Используется только для bootstrap сессии и silent refresh.
-- Это stateless JWT.
-- Хранится только в `HttpOnly` cookie.
-- Не используется как Bearer token.
-- Не хранится в БД.
+## Локальный запуск
 
-Claims:
-- `sub`
-- `type=refresh`
-- `scope=session_refresh`
-- `iat`
-- `exp`
-- `max_exp`
-- `fp`
-
-Что такое `fp`:
-- `fp` — fingerprint, построенный на основе текущего `password_hash` пользователя.
-- Если пароль пользователя изменится, старые refresh token перестанут проходить проверку.
-
-Как работает:
-- После логина backend ставит refresh token в `HttpOnly` cookie.
-- При старте приложения frontend сначала делает `POST /api/v1/auth/refresh`.
-- Если cookie валидна, backend выдаёт новый `access_token` и перевыпускает refresh cookie.
-- Если cookie невалидна или истекла, фронтенд переходит в `anonymous`.
-
-Как проверяется:
-- Backend читает refresh token только из cookie.
-- Проверяет подпись JWT.
-- Проверяет `type=refresh`, `scope=session_refresh`, `sub`, `exp`, `max_exp`, `fp`.
-- Затем дочитывает пользователя из БД и сверяет `fp` с текущим `password_hash`.
-
-TTL:
-- idle TTL: 30 минут.
-- absolute max TTL: 12 часов.
-
-### 3. `upload_token`
-- Используется только для вложений чата.
-- Не является session token.
-- Не подходит для REST или WebSocket аутентификации.
-
-Как работает:
-1. Пользователь сначала загружает файл обычным авторизованным запросом.
-2. Backend возвращает `file_id` и `upload_token`.
-3. При отправке сообщения фронтенд передаёт `file_id + upload_token` в `message.send`.
-4. Backend отдельно проверяет токен и привязывает загруженный файл к сообщению.
-
-Что проверяется:
-- `scope=chat_upload`
-- `file_id`
-- `offer_id`
-- `sub=user_id`
-- `exp`
-- наличие файла в БД
-- принадлежность файла и пользователя текущей сессии
-
-TTL:
-- 15 минут.
-
-### 4. TG / email токены
-- Это отдельные одноразовые verify/exchange токены.
-- Они не являются обычной session auth.
-
-#### Telegram auth token
-- Используется только для deep-link входа через Telegram.
-- Ссылка из Telegram ведёт сразу на web-страницу `/auth/tg/login?token=...`.
-- На этой странице токен обменивается на обычную session auth пару через `POST /api/v1/auth/tg/exchange`.
-
-#### Email verification token
-- Используется только для `/api/v1/auth/verify-email`.
-- Не логинит пользователя и не создаёт сессию.
-
-TTL:
-- TG auth deep-link token: 10 минут.
-- Email verification token: 1 час.
-
-## Lifecycle сессии
-
-### Login
-1. Frontend вызывает `POST /api/v1/auth/login`.
-2. Backend проверяет логин/пароль и статус пользователя.
-3. Backend возвращает `access_token` и ставит refresh cookie.
-4. Frontend переводит auth state в `authenticated`.
-5. После этого открывается WebSocket.
-
-### Bootstrap после reload / F5
-1. Приложение стартует в состоянии `bootstrapping`.
-2. Frontend вызывает `POST /api/v1/auth/refresh`.
-3. Если refresh cookie ещё валидна:
-   - backend возвращает новый `access_token`;
-   - frontend восстанавливает сессию.
-4. Если refresh не удался:
-   - frontend становится `anonymous`;
-   - пользователя можно отправлять на login.
-
-### Когда `access_token` истёк
-1. API-запрос получает `401`.
-2. Frontend не разлогинивает пользователя сразу.
-3. Выполняется один refresh attempt.
-4. Если refresh успешен, исходный запрос повторяется один раз.
-5. Если refresh неуспешен, выполняется logout.
-
-### Idle timeout
-- Сессия должна умирать после 30 минут бездействия.
-- Поэтому silent refresh разрешён только если на фронте была недавняя активность пользователя:
-  - mouse
-  - keyboard
-  - pointer
-  - touch
-  - focus
-  - navigation
-- Фоновые retry/reconnect не должны бесконечно продлевать сессию.
-
-### Logout
-1. Frontend очищает in-memory auth state.
-2. Вызывает `POST /api/v1/auth/logout`.
-3. Backend всегда очищает refresh cookie.
-4. WebSocket закрывается контролируемо.
-
-### WebSocket
-- Использует только `access_token`.
-- При auth failure backend закрывает сокет с кодом `4401`.
-- Frontend не уходит в бесконечный reconnect-loop.
-- Вместо этого:
-  1. делает один refresh;
-  2. при успехе переподключает сокет;
-  3. при провале завершает сессию.
-
-## Что поднимается
-
-- `backend` — FastAPI (`backend`)
-- `web` — frontend SPA (`web`)
-- `gateway` — Nginx reverse proxy, входная точка
-- `tg_bot` — Telegram bot (`tg_bot`)
-- `rabbitmq` — брокер событий + UI (`http://localhost:15672`)
-- `notifications_worker` — воркер отправки email/TG уведомлений
-- `ngrok` — опционально, через профиль `ngrok`
-
-Все контейнеры работают в одной сети `project_net`.
-
----
-
-## Предварительные требования
+### 1) Требования
 
 - Docker Engine
-- Docker Compose plugin (`docker compose`)
+- Docker Compose v2 (`docker compose`)
+- Внешняя Docker-сеть `project_net`
 
-Проверьте:
+Проверка:
 
 ```bash
 docker --version
 docker compose version
+docker network create project_net
 ```
 
----
+### 2) Подготовка переменных окружения
 
-## Подготовка `.env`
+Создайте файлы из шаблонов:
 
-### 1. Backend
+- `compose.env.example` -> `.env`
+- `backend/env.example` -> `backend/.env`
+- `tg_bot/env.example` -> `tg_bot/.env`
 
-Создайте файл `backend/.env`:
+Linux/macOS:
 
-```env
-DATABASE_URL=sqlite+aiosqlite:///./app.db
-JWT_SECRET=change_me
-REFRESH_TOKEN_SECRET=change_me_refresh
-BOT_TOKEN=123456:ABCDEF...
-PUBLIC_BACKEND_BASE_URL=http://localhost:8080
-WEB_BASE_URL=http://localhost:8080
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-ACCESS_TOKEN_TTL_SECONDS=300
-REFRESH_TOKEN_IDLE_TTL_SECONDS=1800
-REFRESH_TOKEN_MAX_TTL_SECONDS=43200
-REFRESH_COOKIE_NAME=acom_refresh_token
-REFRESH_COOKIE_SAMESITE=lax
-REFRESH_COOKIE_SECURE=false
-TG_AUTH_TTL_SECONDS=600
-EMAIL_VERIFICATION_TTL_SECONDS=3600
+```bash
+cp compose.env.example .env
+cp backend/env.example backend/.env
+cp tg_bot/env.example tg_bot/.env
 ```
 
-Для PostgreSQL укажите ваш `DATABASE_URL`, например:
-`postgresql+asyncpg://user:password@host:5432/dbname`
+PowerShell:
 
-`notifications_worker` использует `backend/.env` для SMTP и Telegram-уведомлений.
-
-### 2. Telegram bot
-
-Создайте файл `tg_bot/.env`:
-
-```env
-BOT_TOKEN=123456:ABCDEF...
-BACKEND_BASE_URL=http://gateway
-PUBLIC_BACKEND_BASE_URL=http://localhost:8080
-REQUEST_TIMEOUT_SECONDS=5
+```powershell
+Copy-Item compose.env.example .env
+Copy-Item backend/env.example backend/.env
+Copy-Item tg_bot/env.example tg_bot/.env
 ```
 
-### 3. Ngrok
+Обязательные блоки в `backend/.env`:
 
-Если используете ngrok, проверьте `backend/ngrok.yml`: там должны быть корректные `authtoken` и туннель `public` на `gateway:80`.
+- `DATABASE_URL` (на `order_database`)
+- `KEYCLOAK_*` (realm, client, admin bootstrap)
+- `PUBLIC_BACKEND_BASE_URL`, `WEB_BASE_URL`
+- SMTP (`EMAIL_*`, `SMTP_*`) для email-верификации/сброса пароля
+- S3/MinIO (`S3_*`)
 
----
+### 3) Первый запуск на чистом окружении
 
-## Запуск
-
-### Базовый запуск
-
-При первом старте на чистой базе сначала выполните одноразовые init-шаги для Keycloak:
+1. Поднимите PostgreSQL в репозитории `order_database`.
+2. Подготовьте схему Keycloak:
 
 ```bash
 docker compose -f docker-compose.init.yml up keycloak_db_prepare
+```
+
+3. Поднимите runtime:
+
+```bash
 docker compose up -d --build
+```
+
+4. Выполните bootstrap Keycloak:
+
+```bash
 docker compose -f docker-compose.init.yml up keycloak_bootstrap
 ```
 
-Для повторного обычного старта достаточно runtime-compose:
+### 4) Повторный запуск
 
 ```bash
 docker compose up -d --build
 ```
 
-После запуска:
+Точки доступа:
 
 - Приложение: `http://localhost:8080`
 - API: `http://localhost:8080/api/v1/...`
+- Keycloak (через gateway): `http://localhost:8080/iam`
 - RabbitMQ UI: `http://localhost:15672`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
 
-Если после обновления контейнеров фронтенд отвечает `502`, перезапустите `gateway`:
+## Внешний доступ (туннели)
 
-```bash
-docker compose restart gateway
-```
-
-### Запуск с ngrok
+Для внешних проверок можно использовать профиль `tunnel`:
 
 ```bash
-docker compose --profile ngrok up -d --build
+docker compose --profile tunnel up -d localtunnel
 ```
 
-- UI ngrok: `http://localhost:4040`
+После перезапуска туннеля URL меняется. Нужно обновить URL в:
 
-`gateway` в compose запускается после healthcheck `backend` и `web`, чтобы снизить риск старта с неготовыми upstream-сервисами.
+- `backend/.env` (`PUBLIC_BACKEND_BASE_URL`, `WEB_BASE_URL`)
+- `tg_bot/.env` (`PUBLIC_BACKEND_BASE_URL`)
 
----
+И пересоздать контейнеры:
+
+```bash
+docker compose up -d --force-recreate backend tg_bot
+```
+
+## Регистрация и вход: актуальные сценарии
+
+### 1) Контрагент регистрируется самостоятельно (через Telegram/email invite)
+
+1. Пользователь получает регистрацию по ссылке `/api/v1/auth/oidc/register?...`.
+2. Проходит регистрацию в Keycloak и подтверждает email (если включено `KEYCLOAK_VERIFY_EMAIL=true`).
+3. После callback backend создает локального пользователя с ролью `contractor`, статусом `review` и привязкой в `user_auth_accounts`.
+4. Контрагент заполняет профиль/контакты в `/account`.
+5. Superadmin (или ответственный админ) переводит `users.status` в `active`.
+6. После этого контрагент получает полноценный бизнес-доступ.
+
+### 2) Создание сотрудника (админка/API)
+
+Создание идет через:
+
+- UI: раздел "Пользователи" -> "Добавить пользователя"
+- API: `POST /api/v1/users/register`
+
+Что происходит:
+
+1. Создается локальный пользователь в `users/profiles`.
+2. Backend сразу создает/обновляет одноименный аккаунт в Keycloak (`KeycloakAdminService.ensure_user`).
+3. Для сотрудника задается пароль из формы создания.
+4. На первом входе через `/login` выполняется auto-link:
+   - dev: по `username == users.id`
+   - prod: по подтвержденному `email_verified=true` и уникальному email
+
+### 3) Если это контрагент, созданный вручную
+
+Это отдельный сценарий, который часто путают.
+
+1. Контрагента создает сотрудник с правами создания пользователей (например, администратор или экономист) через `POST /api/v1/users/manual-contractor` (или UI).
+2. Пользователь создается сразу со статусом `active` и ролью `contractor`.
+3. В Keycloak создается аккаунт с этим `username`, но пароль не задается через AcomOfferDesk.
+4. Для первого входа контрагент должен:
+   - открыть `/login`,
+   - нажать `Forgot Password` на форме Keycloak,
+   - задать пароль через письмо на email.
+
+Важно:
+
+- У контрагента, созданного вручную, обязательно должен быть валидный email (обычно `company_mail`), иначе восстановление пароля не сработает.
+- Прямая смена пароля через API AcomOfferDesk отключена: `PATCH /api/v1/users/{id}/manual-contractor` с полем `password` вернет ошибку.
+- Прямой вход из Telegram отключен (`/auth/tg/login` только перенаправляет на обычный вход, `/api/v1/auth/tg/exchange` запрещен).
+
+## Как устроена аутентификация
+
+- Web UI использует только OIDC-вход через Keycloak.
+- `access_token` хранится в памяти SPA.
+- refresh-токен хранится в `HttpOnly` cookie.
+- При загрузке SPA идет `POST /api/v1/auth/refresh` для восстановления сессии.
+- При неактивном статусе пользователь направляется в `/account`, а не в рабочие разделы.
 
 ## Полезные команды
 
-Логи всех сервисов:
+Логи:
 
 ```bash
 docker compose logs -f
+docker compose logs -f backend web gateway keycloak tg_bot notifications_worker
 ```
 
-Логи конкретного сервиса:
+Пересоздать конкретные сервисы:
 
 ```bash
-docker compose logs -f backend
-docker compose logs -f web
-docker compose logs -f gateway
-docker compose logs -f tg_bot
-docker compose logs -f rabbitmq
-docker compose logs -f notifications_worker
-docker compose logs -f ngrok
+docker compose up -d --force-recreate backend tg_bot gateway
 ```
 
-Остановить и удалить контейнеры:
+Остановка:
 
 ```bash
 docker compose down
-```
-
-Остановить с удалением томов:
-
-```bash
 docker compose down -v
 ```
 
----
+## Как дополнять проект
 
-## Запуск только части сервисов
+Типовой путь для новой backend-фичи:
 
-Например, только `backend + gateway + web`:
+1. Добавить/обновить схемы (`backend/app/schemas`).
+2. Добавить логику в `backend/app/services`.
+3. Добавить доступ к данным в `backend/app/repositories`.
+4. Подключить endpoint в `backend/app/api/v1`.
+5. Проверить права в `backend/app/domain/permissions.py` и `policies.py`.
 
-```bash
-docker compose up -d --build backend gateway web
-```
+Типовой путь для фронтенда:
 
-Только `backend + gateway`:
+1. Добавить API-метод в `web/src/shared/api`.
+2. Добавить/обновить фичу в `web/src/features`.
+3. Подключить страницу/роут в `web/src/pages` и `web/src/app/routes/AppRoutes.tsx`.
 
-```bash
-docker compose up -d --build backend gateway
-```
+При изменении auth/ролей/регистрации обязательно обновляйте:
 
----
-
-## Отдельные compose-файлы модулей
-
-При необходимости можно запускать модульные compose-файлы:
-
-- `backend/docker-compose.yml`
-- `backend/docker-compose.ngrok.yml`
-- `web/docker-compose.yml`
-- `tg_bot/docker-compose.yml`
-
-Они используют ту же сеть `project_net`, поэтому сервисы видят друг друга по именам контейнеров и сервисов.
-
----
-
-## Управление пользователями
-
-### Добавление экономиста или администратора
-
-- Через веб: войти как superadmin → «Пользователи» → «Экономисты» или «Администраторы» → «Добавить пользователя».
-- Через API: `POST /api/v1/users/register` с токеном superadmin и телом `{login, password, role_id}` (role_id: 2 — админ, 3 — ведущий экономист, 4 — экономист).
-
-### Регистрация контрагента через бота
-
-1. Бот отправляет ссылку на регистрацию.
-2. Контрагент проходит её — профиль появляется во вкладке «Контрагенты» (статус `review`).
-3. Суперадмин переводит статус в `active` — в Telegram приходит подтверждение о выдаче прав.
-4. Контрагент вызывает `/start` — получает открытые заявки и ссылки на авторизацию.
-
-### Создание заявки
-
-Нужна минимум одна открытая заявка. Создать можно через суперадмина или под экономистом.
-
-> Подробный план и последние изменения — в `DEPLOYMENT_PLAN.md` (корень acom-project).
+- `README.md`
+- `docs/keycloak-autolink.md`
+- `docs/login-links.md`

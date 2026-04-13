@@ -13,7 +13,7 @@ services:
         exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start-dev}" --import-realm
     volumes:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
-      - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro
+      - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro0
       - ./infra/keycloak/prepare-theme.sh:/opt/keycloak/bootstrap/prepare-theme.sh:ro
       - keycloak_data:/opt/keycloak/data
     healthcheck:
