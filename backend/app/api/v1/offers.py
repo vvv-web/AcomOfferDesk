@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, Path as PathParam, Query, UploadFile
+from pydantic import ValidationError
 
 from app.api.action_flags import OfferActionBuilder, OfferActionResolver, RequestActionBuilder
 from app.api.dependencies import get_current_user, get_uow
@@ -13,6 +14,8 @@ from app.schemas.links import Link, LinkSet
 from app.schemas.offers import (
     ContractorInfoResponse,
     ContractorRequestViewResponse,
+    ManualOfferCreateResponse,
+    ManualContractorCreatePayload,
     OfferCreatePayload,
     OfferCreateResponse,
     OfferEditPayload,
@@ -34,7 +37,7 @@ from app.schemas.offers import (
 from app.schemas.requests import RequestFileSchema
 from app.services.chat_realtime import ChatRealtimeService, build_offer_service
 from app.services.files import FileService
-from app.services.offers import AttachmentFileInput
+from app.services.offers import AttachmentFileInput, ManualContractorCreateInput
 
 router = APIRouter()
 
@@ -56,6 +59,7 @@ def _offer_action_resolver(uow: UnitOfWork) -> OfferActionResolver:
         offers=uow.offers,
         requests=uow.requests,
         chats=uow.chats,
+        users=uow.users,
     )
 
 
@@ -162,6 +166,99 @@ async def create_empty_offer(
     )
 
 
+@router.post("/requests/{request_id}/offers/manual", response_model=ManualOfferCreateResponse)
+async def create_manual_offer(
+    request_id: int = PathParam(..., ge=1),
+    contractor_mode: str = Form(...),
+    contractor_user_id: str | None = Form(default=None),
+    company_name: str | None = Form(default=None),
+    inn: str | None = Form(default=None),
+    company_phone: str | None = Form(default=None),
+    company_mail: str | None = Form(default=None),
+    address: str | None = Form(default=None),
+    note: str | None = Form(default=None),
+    offer_amount: float | None = Form(default=None),
+    files: list[UploadFile] = File(default_factory=list),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualOfferCreateResponse:
+    normalized_mode = contractor_mode.strip().lower()
+    if normalized_mode not in {"existing", "new"}:
+        raise Conflict("Unsupported contractor mode")
+
+    if normalized_mode == "existing":
+        normalized_contractor_user_id = (contractor_user_id or "").strip()
+        if not normalized_contractor_user_id:
+            raise Conflict("Existing contractor is required")
+        manual_contractor_data = None
+    else:
+        normalized_contractor_user_id = None
+        try:
+            validated_payload = ManualContractorCreatePayload(
+                company_name=(company_name or ""),
+                inn=(inn or ""),
+                company_phone=(company_phone or ""),
+                company_mail=company_mail,
+                address=address,
+                note=note,
+            )
+        except ValidationError as exc:
+            error = exc.errors()[0] if exc.errors() else None
+            message = error.get("msg") if isinstance(error, dict) else None
+            raise Conflict(message or "Invalid manual contractor payload") from exc
+
+        manual_contractor_data = ManualContractorCreateInput(
+            company_name=validated_payload.company_name,
+            inn=validated_payload.inn,
+            company_phone=validated_payload.company_phone,
+            company_mail=validated_payload.company_mail,
+            address=validated_payload.address,
+            note=validated_payload.note,
+        )
+
+    validator = FileService()
+    prepared_uploads: list[AttachmentFileInput] = []
+    for file in files:
+        prepared = await validator.prepare_upload(file)
+        prepared_uploads.append(
+            AttachmentFileInput(
+                original_name=prepared.original_name,
+                content_bytes=prepared.content_bytes,
+                mime_type=prepared.mime_type,
+            )
+        )
+
+    offer_file_service: FileService | None = None
+    try:
+        async with uow:
+            offer_file_service = FileService(uow.files)
+            service = build_offer_service(uow, file_service=offer_file_service)
+            result = await service.create_manual_offer(
+                current_user=current_user,
+                request_id=request_id,
+                contractor_user_id=normalized_contractor_user_id,
+                contractor_data=manual_contractor_data,
+                offer_amount=offer_amount,
+                files=prepared_uploads,
+            )
+    except Exception:
+        if offer_file_service is not None:
+            await offer_file_service.cleanup_tracked_objects()
+        raise
+
+    return ManualOfferCreateResponse(
+        data={
+            "offer_id": result.offer_id,
+            "request_id": result.request_id,
+            "contractor_user_id": result.contractor_user_id,
+            "contractor_created": result.contractor_created,
+        },
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/offers/{result.offer_id}/workspace", method="GET"),
+        ),
+    )
+
+
 @router.get("/offers/{offer_id}/workspace", response_model=OfferWorkspaceResponse)
 async def get_offer_workspace(
     offer_id: int = PathParam(..., ge=1),
@@ -225,6 +322,7 @@ async def get_offer_workspace(
                         request_owner_user_id=item.request.owner_user_id,
                         contractor_user_id=item.contractor.user_id,
                         offer_status=request_offer.status,
+                        offer_is_manual=resolved.offer_is_manual,
                     ),
                 }
                 for request_offer in item.offers

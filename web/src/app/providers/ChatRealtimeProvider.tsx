@@ -45,7 +45,7 @@ export const ChatRealtimeProvider = ({ children }: { children: React.ReactNode }
   }, [logout, refresh]);
 
   useEffect(() => {
-    if (status === 'anonymous' || !session?.token) {
+    if (status === 'anonymous' || !session?.token || !session.businessAccess) {
       chatSocketClient.disconnect();
       return;
     }

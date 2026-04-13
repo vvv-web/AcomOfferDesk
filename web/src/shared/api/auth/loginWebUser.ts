@@ -5,10 +5,6 @@ export type LoginWebUserPayload = {
   password: string;
 };
 
-export type TgExchangePayload = {
-  token: string;
-};
-
 export type AuthLink = {
   href: string;
   method: string;
@@ -23,6 +19,9 @@ export type AuthSessionResponse = {
     login: string;
     role_id: number;
     status: string;
+    auth_provider?: string;
+    business_access?: boolean;
+    onboarding_state?: string | null;
     permissions?: string[];
   };
   _links?: {
@@ -58,16 +57,5 @@ export const logoutWebSession = async (): Promise<void> =>
       method: 'POST'
     },
     'Не удалось завершить сессию',
-    false
-  );
-
-export const exchangeTgSession = async (payload: TgExchangePayload): Promise<AuthSessionResponse> =>
-  fetchJson<AuthSessionResponse>(
-    '/api/v1/auth/tg/exchange',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    },
-    'Ошибка авторизации через Telegram',
     false
   );

@@ -1,27 +1,60 @@
-# Order Web
+# Web (`/web`)
 
-Современный React + TypeScript SPA-клиент для работы с backend API через относительный префикс `/api`.
+Frontend-клиент AcomOfferDesk на React + TypeScript.
 
-## Структура проекта
+## Стек
 
-```
+- React 18
+- TypeScript
+- Vite
+- MUI
+- React Router
+- React Hook Form + Zod
+
+## Структура
+
+```text
 src/
-  app/                # корневые провайдеры и общий каркас приложения
-  pages/              # страницы
-  features/           # функциональные модули (фичи)
-  shared/             # переиспользуемые части (api, theme, ui)
+  app/        провайдеры, маршрутизация, layout
+  pages/      страницы
+  features/   прикладные фичи
+  entities/   доменные сущности
+  shared/     API-клиент, UI-компоненты, утилиты, константы
 ```
 
-## API и деплой
+## Как frontend ходит в API
 
-- Фронтенд работает только с относительными URL (`/api/...`).
-- В production API проксируется Nginx-конфигурацией (`/api/* -> backend:8000/api/*`).
-- Роутинг SPA обслуживается через fallback на `index.html`.
+- Все запросы идут по относительным путям `/api/...`.
+- В Docker runtime трафик проксирует `gateway`:
+  - `/` -> `web`
+  - `/api/*` -> `backend`
+  - `/iam/*` -> `keycloak`
 
-## Запуск в Docker
+## Запуск
+
+### В составе основного проекта (рекомендуется)
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
-Приложение будет доступно на `http://localhost:3000`.
+Приложение доступно через `http://localhost:8080`.
+
+### Только frontend (без gateway/backend)
+
+Локальный dev-server:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+По умолчанию Vite слушает `http://localhost:4173`.
+
+## Важные замечания по auth
+
+- Текущий Web UI использует вход через Keycloak redirect flow.
+- Прямой Telegram login не используется.
+- Сессия восстанавливается через `POST /api/v1/auth/refresh`.
+

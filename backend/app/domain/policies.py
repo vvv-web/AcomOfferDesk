@@ -134,6 +134,18 @@ class UserPolicy:
         )
 
     @staticmethod
+    def can_manage_manual_contractors(current_user: CurrentUser) -> bool:
+        return has_permission(current_user, PermissionCodes.CONTRACTORS_MANUAL_MANAGE)
+
+    @staticmethod
+    def ensure_can_manage_manual_contractors(current_user: CurrentUser) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.CONTRACTORS_MANUAL_MANAGE,
+            message="Only admin and superadmin can manage manually created contractors",
+        )
+
+    @staticmethod
     def can_manage_own_profile(current_user: CurrentUser) -> bool:
         return has_permission(current_user, PermissionCodes.PROFILE_MANAGE_OWN)
 
@@ -347,6 +359,25 @@ class RequestPolicy:
             message="Insufficient permissions to change request owner",
         )
 
+    @staticmethod
+    def can_create_manual_offer(current_user: CurrentUser, *, request_owner_user_id: str) -> bool:
+        return _is_allowed(
+            lambda: RequestPolicy.ensure_can_create_manual_offer(
+                current_user,
+                request_owner_user_id=request_owner_user_id,
+            )
+        )
+
+    @staticmethod
+    def ensure_can_create_manual_offer(current_user: CurrentUser, *, request_owner_user_id: str) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_MANUAL_CREATE,
+            message="Insufficient permissions to create manual offers",
+        )
+        if current_user.role_id == settings.economist_role_id and current_user.user_id != request_owner_user_id:
+            raise Forbidden("Economist can create manual offers only for own requests")
+
 
 class OfferPolicy:
     @staticmethod
@@ -383,6 +414,65 @@ class OfferPolicy:
             raise Forbidden("Only contractor can access own offers")
         if current_user.user_id != offer_owner_user_id:
             raise Forbidden("Contractor can access only own offers")
+
+    @staticmethod
+    def can_manage_offer(
+        current_user: CurrentUser,
+        *,
+        offer_owner_user_id: str,
+        request_owner_user_id: str,
+    ) -> bool:
+        return _is_allowed(
+            lambda: OfferPolicy.ensure_can_manage_offer(
+                current_user,
+                offer_owner_user_id=offer_owner_user_id,
+                request_owner_user_id=request_owner_user_id,
+            )
+        )
+
+    @staticmethod
+    def ensure_can_manage_offer(
+        current_user: CurrentUser,
+        *,
+        offer_owner_user_id: str,
+        request_owner_user_id: str,
+    ) -> None:
+        if current_user.role_id == settings.contractor_role_id:
+            OfferPolicy.ensure_can_access_contractor_offer(current_user, offer_owner_user_id=offer_owner_user_id)
+            return
+
+        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
+
+    @staticmethod
+    def can_manage_manual_offer_files(
+        current_user: CurrentUser,
+        *,
+        request_owner_user_id: str,
+        offer_is_manual: bool,
+    ) -> bool:
+        return _is_allowed(
+            lambda: OfferPolicy.ensure_can_manage_manual_offer_files(
+                current_user,
+                request_owner_user_id=request_owner_user_id,
+                offer_is_manual=offer_is_manual,
+            )
+        )
+
+    @staticmethod
+    def ensure_can_manage_manual_offer_files(
+        current_user: CurrentUser,
+        *,
+        request_owner_user_id: str,
+        offer_is_manual: bool,
+    ) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.OFFERS_MANUAL_CREATE,
+            message="Insufficient permissions to edit manual offer files",
+        )
+        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
+        if not offer_is_manual:
+            raise Forbidden("Manual offer files can be edited only for manually created offers")
 
     @staticmethod
     def can_access_offer_workspace(

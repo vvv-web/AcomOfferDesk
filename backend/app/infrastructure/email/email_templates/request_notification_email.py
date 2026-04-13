@@ -47,6 +47,8 @@ def build_request_registration_email_payload(
     description: str | None,
     deadline_at: datetime,
     tg_bot_url: str,
+    registration_url: str,
+    registration_ttl_seconds: int,
     attachment_warning: str | None = None,
 ) -> EmailMessagePayload:
     subject = f"AcomOfferDesk — новая заявка №{request_id}"
@@ -58,6 +60,8 @@ def build_request_registration_email_payload(
             description=description,
             deadline_at=deadline_at,
             tg_bot_url=tg_bot_url,
+            registration_url=registration_url,
+            registration_ttl_seconds=registration_ttl_seconds,
             attachment_warning=attachment_warning,
         ),
         html_content=_build_registration_html(
@@ -65,6 +69,8 @@ def build_request_registration_email_payload(
             description=description,
             deadline_at=deadline_at,
             tg_bot_url=tg_bot_url,
+            registration_url=registration_url,
+            registration_ttl_seconds=registration_ttl_seconds,
             attachment_warning=attachment_warning,
         ),
     )
@@ -76,8 +82,14 @@ def _request_header(*, request_id: int, description: str | None, deadline_at: da
     return deadline_label, request_description
 
 
+def _registration_ttl_label(*, registration_ttl_seconds: int) -> str:
+    ttl_minutes = max(1, registration_ttl_seconds // 60)
+    if ttl_minutes % 60 == 0:
+        return f"{ttl_minutes // 60} ч."
+    return f"{ttl_minutes} мин."
+
+
 def _reply_token_mail_footer_text(*, reply_token: str) -> str:
-    """Строка с токеном в теле письма — чтобы ответы с Gmail и др. клиентов не теряли +rt- в Reply-To."""
     return (
         "\n\n---\n"
         "Ответ по почте: при ответе не удаляйте строку ниже целиком (можно оставить в цитате).\n"
@@ -90,7 +102,7 @@ def _reply_token_mail_footer_html(*, reply_token: str) -> str:
     return f"""
             <tr>
               <td style="padding:16px 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:13px;line-height:20px;border-top:1px solid #e6e8eb;">
-                <strong>Ответ по почте:</strong> при ответе не удаляйте следующую строку целиком (допустимо оставить в цитате).<br/>
+                <strong>Ответ по почте:</strong> при ответе не удаляйте строку целиком (допустимо оставить в цитате).<br/>
                 <span style="display:block;margin-top:8px;padding:10px 12px;background:#f3f4f6;border-radius:6px;font-family:ui-monospace,Consolas,monospace;word-break:break-all;">{escaped_token}</span>
               </td>
             </tr>
@@ -139,6 +151,8 @@ def _build_registration_text(
     description: str | None,
     deadline_at: datetime,
     tg_bot_url: str,
+    registration_url: str,
+    registration_ttl_seconds: int,
     attachment_warning: str | None,
 ) -> str:
     deadline_label, request_description = _request_header(
@@ -147,18 +161,37 @@ def _build_registration_text(
         deadline_at=deadline_at,
     )
     warning_block = f"\n\nВнимание: {attachment_warning}" if attachment_warning else ""
+    ttl_label = _registration_ttl_label(registration_ttl_seconds=registration_ttl_seconds)
 
     return (
         "AcomOfferDesk\n\n"
         f"Новая заявка №{request_id}\n"
         f"Описание: {request_description}\n"
         f"Дедлайн: {deadline_label}\n\n"
-        "Чтобы пользоваться сервисом и оставлять отклики по заявкам, сначала пройдите регистрацию через Telegram-бот AcomOfferDesk.\n"
-        "После регистрации вы сможете получать доступ к заявкам и работать с ними в сервисе.\n\n"
+        "Чтобы пользоваться сервисом и оставлять отклики по заявкам, сначала пройдите регистрацию, либо свяжитесь с контактным лицом лично:\n"
+        "Владислав Хлистун\n"
+        "Тел. (MAX): +79274558089 \n"
+        "Эл. почта: VKhlistun@alabuga.ru \n"  
+        f"Ссылка на регистрацию: {registration_url}\n"
+        f"Срок действия ссылки: {ttl_label}.\n"
+        "Если ссылка истекла, получить новую можно в Telegram-боте через /start.\n\n"
         f"Перейти в Telegram-бот: {tg_bot_url}"
         f"{warning_block}\n"
     )
 
+def _registration_contact_html() -> str:
+    return """
+            <tr>
+              <td style="padding:16px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                Если удобнее, вы можете связаться с контактным лицом напрямую:<br/><br/>
+                <strong>Владислав Хлистун</strong><br/>
+                Тел. (MAX):
+                <a href="tel:+79274558089" style="color:#0969da;text-decoration:underline;">+7 927 455-80-89</a><br/>
+                Эл. почта:
+                <a href="mailto:VKhlistun@alabuga.ru" style="color:#0969da;text-decoration:underline;">VKhlistun@alabuga.ru</a>
+              </td>
+            </tr>
+    """.rstrip()
 
 def _build_standard_html(
     *,
@@ -260,6 +293,8 @@ def _build_registration_html(
     description: str | None,
     deadline_at: datetime,
     tg_bot_url: str,
+    registration_url: str,
+    registration_ttl_seconds: int,
     attachment_warning: str | None,
 ) -> str:
     deadline_label, request_description = _request_header(
@@ -267,8 +302,11 @@ def _build_registration_html(
         description=description,
         deadline_at=deadline_at,
     )
+    contact_html = _registration_contact_html()
     escaped_description = escape(request_description)
     escaped_bot_url = escape(tg_bot_url)
+    escaped_registration_url = escape(registration_url)
+    ttl_label = _registration_ttl_label(registration_ttl_seconds=registration_ttl_seconds)
     warning_html = (
         f"""
             <tr>
@@ -303,14 +341,19 @@ def _build_registration_html(
             </tr>
             <tr>
               <td style="padding:14px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
-                Чтобы пользоваться сервисом и оставлять отклики по заявкам, сначала пройдите регистрацию через Telegram-бот AcomOfferDesk.<br/>
-                После регистрации вы сможете получать доступ к заявкам и работать с ними в сервисе.
+                Для доступа к заявке зарегистрируйтесь в сервисе по ссылке ниже.
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 8px 28px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
+                    <td bgcolor="#0969da" style="border-radius:6px;">
+                      <a href="{escaped_registration_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                        Перейти к регистрации
+                      </a>
+                    </td>
+                    <td style="width:10px;"></td>
                     <td bgcolor="#0969da" style="border-radius:6px;">
                       <a href="{escaped_bot_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
                         Открыть Telegram-бот
@@ -320,9 +363,14 @@ def _build_registration_html(
                 </table>
               </td>
             </tr>
+            {contact_html}
             {warning_html}
             <tr>
               <td style="padding:8px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;color:#374151;font-size:14px;line-height:22px;">
+                Ссылка на регистрацию:<br/>
+                <a href="{escaped_registration_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_registration_url}</a><br/><br/>
+                Срок действия ссылки: <strong>{ttl_label}</strong>.<br/>
+                Если ссылка истекла, получить новую можно в Telegram-боте через /start.<br/><br/>
                 Если кнопка не работает, откройте ссылку вручную:<br/>
                 <a href="{escaped_bot_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_bot_url}</a>
               </td>

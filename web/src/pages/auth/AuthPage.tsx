@@ -1,53 +1,54 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
-import { z } from 'zod';
+import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
 
-const schema = z.object({
-  login: z.string().min(1, 'Введите логин'),
-  password: z.string().min(1, 'Введите пароль')
-});
-
-type LoginFormValues = z.infer<typeof schema>;
-
 export const AuthPage = () => {
   const navigate = useNavigate();
-  const { login, isAuthenticated, session } = useAuth();
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting }
-  } = useForm<LoginFormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      login: '',
-      password: ''
+  const [searchParams] = useSearchParams();
+  const { beginLogin, isAuthenticated, session, status } = useAuth();
+  const nextPath = useMemo(() => {
+    const raw = searchParams.get('next')?.trim();
+    return raw && raw.startsWith('/') ? raw : '/';
+  }, [searchParams]);
+  const authErrorMessage = useMemo(() => {
+    const reason = (searchParams.get('auth_error') ?? '').trim();
+    if (!reason) {
+      return null;
     }
-  });
+    if (reason === 'session_expired') {
+      return 'Сессия входа истекла. Нажмите «Войти снова».';
+    }
+    if (reason === 'access_denied') {
+      return 'Вход отменён. Нажмите «Войти снова».';
+    }
+    if (reason === 'login_failed') {
+      return 'Не удалось завершить вход. Нажмите «Войти снова».';
+    }
+    return 'Не удалось завершить вход. Попробуйте ещё раз.';
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isAuthenticated || !session) {
       return;
     }
-    const target = getDefaultPathByRole(session.roleId);
-    navigate(target, { replace: true });
-  }, [isAuthenticated, navigate, session]);
-
-  const onSubmit = async (values: LoginFormValues) => {
-    setErrorMessage(null);
-    try {
-      const nextSession = await login(values);
-      const target = getDefaultPathByRole(nextSession.roleId);
-      navigate(target, { replace: true });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Ошибка авторизации');
+    if (!session.businessAccess) {
+      navigate('/account', { replace: true });
+      return;
     }
-  };
+    navigate(nextPath === '/' ? getDefaultPathByRole(session.roleId) : nextPath, { replace: true });
+  }, [isAuthenticated, navigate, nextPath, session]);
+
+  useEffect(() => {
+    if (status !== 'anonymous') {
+      return;
+    }
+    if (authErrorMessage) {
+      return;
+    }
+    beginLogin(nextPath);
+  }, [authErrorMessage, beginLogin, nextPath, status]);
 
   return (
     <Box
@@ -62,72 +63,38 @@ export const AuthPage = () => {
       <Paper
         elevation={0}
         sx={(theme) => ({
-          width: { xs: '90%', sm: 420 },
+          width: { xs: '94%', sm: 460 },
           borderRadius: 3,
           border: `1px solid ${theme.palette.divider}`,
           backgroundColor: theme.palette.background.paper,
-          padding: { xs: 4, sm: 6 }
+          padding: { xs: 4, sm: 5 }
         })}
       >
-        <Stack spacing={4} alignItems="center" component="form" onSubmit={handleSubmit(onSubmit)}>
-          <Stack spacing={1} alignItems="center">
-            <Typography variant="h5" fontWeight={600} color="text.primary">
-              Вход в систему
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Используйте логин и пароль для авторизации в веб-сервисе.
-            </Typography>
-          </Stack>
-          <Stack spacing={2.5} width="100%" alignItems="center">
-            <TextField
-              fullWidth
-              label="Логин"
-              variant="outlined"
-              error={Boolean(errors.login)}
-              helperText={errors.login?.message}
-              InputProps={{
-                sx: (theme) => ({
-                  borderRadius: 999,
-                  backgroundColor: theme.palette.primary.light
-                })
-              }}
-              {...register('login')}
-            />
-            <TextField
-              fullWidth
-              label="Пароль"
-              type="password"
-              variant="outlined"
-              error={Boolean(errors.password)}
-              helperText={errors.password?.message}
-              InputProps={{
-                sx: (theme) => ({
-                  borderRadius: 999,
-                  backgroundColor: theme.palette.primary.light
-                })
-              }}
-              {...register('password')}
-            />
-          </Stack>
-          <Button
-            variant="outlined"
-            type="submit"
-            sx={(theme) => ({
-              width: '100%',
-              borderRadius: 999,
-              textTransform: 'none',
-              backgroundColor: theme.palette.background.paper,
-              paddingY: 1.3
-            })}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Вход...' : 'Войти'}
-          </Button>
-          {errorMessage ? (
-            <Typography variant="body2" color="error" textAlign="center">
-              {errorMessage}
-            </Typography>
-          ) : null}
+        <Stack spacing={3} alignItems="center" textAlign="center">
+          <Typography variant="h5" fontWeight={700} color="text.primary">
+            Вход в AcomOfferDesk
+          </Typography>
+          {authErrorMessage ? (
+            <>
+              <Alert severity="warning" sx={{ width: '100%' }}>
+                {authErrorMessage}
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => beginLogin(nextPath)}
+                sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
+              >
+                Войти снова
+              </Button>
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                Перенаправляем на страницу входа.
+              </Typography>
+              <CircularProgress size={28} />
+            </>
+          )}
         </Stack>
       </Paper>
     </Box>

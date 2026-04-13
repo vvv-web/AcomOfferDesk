@@ -31,7 +31,10 @@ class AuthSessionService:
         user = await self._users.get_by_id(login)
         if user is None:
             raise NotFound("User not found")
-        if not await verify_password(password, user.password_hash):
+        password_hash = getattr(user, "password_hash", None)
+        if not password_hash:
+            raise Forbidden("Password is managed by the identity provider")
+        if not await verify_password(password, password_hash):
             raise Forbidden("Invalid credentials")
         UserPolicy.ensure_can_login(user.status)
         return await self.build_session_bundle(user=user)
@@ -44,9 +47,10 @@ class AuthSessionService:
     ) -> AuthSessionBundle:
         UserPolicy.ensure_can_login(user.status)
         access_token, access_token_expires_at = await create_access_token(user_id=user.id)
+        refresh_fingerprint_source = getattr(user, "password_hash", None) or f"user:{user.id}"
         refresh_token, refresh_token_expires_at, refresh_token_max_expires_at = await create_refresh_token(
             user_id=user.id,
-            password_hash=user.password_hash,
+            password_hash=refresh_fingerprint_source,
             max_expires_at=refresh_max_expires_at,
         )
         return AuthSessionBundle(

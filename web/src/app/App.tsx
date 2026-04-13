@@ -9,7 +9,7 @@ export const App = () => {
   const location = useLocation();
   const state = location.state as { backgroundLocation?: Location } | null;
 
-  const defaultPath = session ? getDefaultPathByRole(session.roleId) : '/requests';
+  const defaultPath = session ? (session.businessAccess ? getDefaultPathByRole(session.roleId) : '/account') : '/requests';
 
   return (
     <AppRoutes

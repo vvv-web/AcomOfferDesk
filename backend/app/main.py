@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1 import router as v1_router
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
+from app.infrastructure.db import engine
 from app.realtime.runtime import ChatRealtimeRuntime, set_chat_runtime
 from app.services.files import FileService
 

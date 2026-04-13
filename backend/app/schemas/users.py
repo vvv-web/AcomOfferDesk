@@ -1,7 +1,13 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domain.contractor_validation import (
+    validate_inn,
+    validate_optional_email,
+    validate_password_bcrypt_bytes,
+    validate_ru_phone,
+)
 from app.schemas.actions import UserActionsSchema
 from app.schemas.links import LinkSet
 
@@ -245,4 +251,135 @@ class SetMyUnavailabilityPeriodResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: MeData
+    links: LinkSet = Field(alias="_links")
+
+
+class ManualContractorCreateRequest(BaseModel):
+    company_name: str = Field(..., min_length=1, max_length=256)
+    inn: str = Field(..., min_length=1, max_length=32)
+    company_phone: str = Field(..., min_length=1, max_length=64)
+    company_mail: str | None = Field(default=None, max_length=256)
+    address: str | None = Field(default=None, max_length=256)
+    note: str | None = Field(default=None, max_length=1024)
+
+    @field_validator("company_name", "inn", "company_phone", mode="before")
+    @classmethod
+    def _strip_required(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Значение должно быть строкой")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Поле обязательно для заполнения")
+        return normalized
+
+    @field_validator("company_mail", "address", "note", mode="before")
+    @classmethod
+    def _strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("company_phone")
+    @classmethod
+    def _validate_phone(cls, value: str) -> str:
+        return validate_ru_phone(value)
+
+    @field_validator("inn")
+    @classmethod
+    def _validate_inn(cls, value: str) -> str:
+        return validate_inn(value)
+
+    @field_validator("company_mail")
+    @classmethod
+    def _validate_company_mail(cls, value: str | None) -> str | None:
+        return validate_optional_email(value, allow_placeholder=True)
+
+
+class ManualContractorCreateData(BaseModel):
+    user_id: str
+
+
+class ManualContractorCreateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: ManualContractorCreateData
+    links: LinkSet = Field(alias="_links")
+
+
+class ManualContractorUpdateRequest(BaseModel):
+    login: str | None = Field(default=None, min_length=3, max_length=128)
+    password: str | None = Field(default=None, min_length=6, max_length=72)
+    full_name: str | None = Field(default=None, max_length=256)
+    phone: str | None = Field(default=None, max_length=64)
+    mail: str | None = Field(default=None, max_length=256)
+    company_name: str | None = Field(default=None, max_length=256)
+    inn: str | None = Field(default=None, max_length=32)
+    company_phone: str | None = Field(default=None, max_length=64)
+    company_mail: str | None = Field(default=None, max_length=256)
+    address: str | None = Field(default=None, max_length=256)
+    note: str | None = Field(default=None, max_length=1024)
+
+    @field_validator(
+        "login",
+        "password",
+        "full_name",
+        "phone",
+        "mail",
+        "company_name",
+        "inn",
+        "company_phone",
+        "company_mail",
+        "address",
+        "note",
+        mode="before",
+    )
+    @classmethod
+    def _strip_optional_values(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Значение должно быть строкой")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Updated value cannot be empty")
+        return normalized
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_password_bcrypt_bytes(value)
+
+    @field_validator("phone", "company_phone")
+    @classmethod
+    def _validate_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_ru_phone(value)
+
+    @field_validator("mail", "company_mail")
+    @classmethod
+    def _validate_mail(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_optional_email(value, allow_placeholder=True)
+
+    @field_validator("inn")
+    @classmethod
+    def _validate_inn(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_inn(value)
+
+
+class ManualContractorUpdateData(BaseModel):
+    user_id: str
+
+
+class ManualContractorUpdateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: ManualContractorUpdateData
     links: LinkSet = Field(alias="_links")

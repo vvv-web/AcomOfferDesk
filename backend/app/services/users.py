@@ -1,26 +1,76 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.core.security import hash_password, verify_password
+from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.exceptions import Conflict, Forbidden, NotFound
+from app.models.auth_models import UserAuthAccount, UserContactChannel
 from app.domain.policies import CurrentUser, UserPolicy
-from app.models.orm_models import CompanyContact, Profile, TgUser, User, UserStatusPeriod
+from app.models.orm_models import CompanyContact, Profile, Role, TgUser, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
+from app.repositories.user_auth_accounts import UserAuthAccountRepository
+from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
-from app.services.tg_notifications import notify_access_closed, notify_access_opened
+from app.services.contractor_email_notifications import (
+    notify_contractor_access_opened_email,
+)
+from app.services.keycloak_admin import KeycloakAdminService
+from app.services.tg_notifications import (
+    notify_access_closed as notify_tg_access_closed,
+    notify_access_opened as notify_tg_access_opened,
+)
 
 ROLE_NAME_SUPERADMIN = "Суперадмин"
 ROLE_NAME_ADMIN = "Администратор"
-ROLE_NAME_PROJECT_MANAGER = "Руководитель Проекта"
+ROLE_NAME_PROJECT_MANAGER = "Руководитель проекта"
 ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
+PLACEHOLDER_TEXT = "Не указано"
+_LOGIN_CLEANUP_PATTERN = re.compile(r"[^a-z0-9_]+")
+_LOGIN_COLLAPSE_PATTERN = re.compile(r"_+")
+_CYRILLIC_TO_LATIN = {
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "e",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "y",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "h",
+    "ц": "ts",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "sch",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "yu",
+    "я": "ya",
+}
 
 def _normalize_db_timestamp(value: datetime) -> datetime:
     if value.tzinfo is None:
@@ -78,9 +128,33 @@ def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -
         return target_role_id == settings.economist_role_id
     return False
 
+
+def _normalize_keycloak_email_value(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized or normalized == PLACEHOLDER_TEXT:
+        return None
+    return normalized
+
+
+def _normalize_notification_email(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    if normalized.lower() in {PLACEHOLDER_TEXT.lower(), "none", "null"}:
+        return None
+    return normalized
+
 class UserRegistrationService:
-    def __init__(self, users: UserRepository):
+    def __init__(
+        self,
+        users: UserRepository,
+        profiles: ProfileRepository,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
+    ):
         self._users = users
+        self._profiles = profiles
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     async def register_user(
         self,
@@ -161,17 +235,39 @@ class UserRegistrationService:
             id_parent = None
         if await self._users.exists(user_id):
             raise Conflict("User already exists")
+
+        normalized_full_name = (full_name or "").strip() or PLACEHOLDER_TEXT
+        normalized_phone = (phone or "").strip() or PLACEHOLDER_TEXT
+        normalized_mail = (mail or "").strip()
+        if not normalized_mail:
+            raise Conflict("Email is required for user creation")
+        try:
+            normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) or normalized_mail
+        except ValueError as exc:
+            raise Conflict(str(exc)) from exc
         
-        password_hash = await hash_password(password)
         user = User(
             id=user_id,
-            password_hash=password_hash,
             id_role=role_id,
             id_parent=id_parent,
             status="active",
         )
 
         await self._users.add(user)
+        await self._profiles.add(
+            Profile(
+                id=user_id,
+                full_name=normalized_full_name,
+                phone=normalized_phone,
+                mail=normalized_mail,
+            )
+        )
+        await self._keycloak_admin.ensure_user(
+            username=user_id,
+            email=normalized_mail,
+            password=password.strip(),
+            email_verified=False,
+        )
         return user
     
 
@@ -181,12 +277,14 @@ class ContractorRegistrationService:
         users: UserRepository,
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
-        tg_users: TgUserRepository,
+        user_auth_accounts: UserAuthAccountRepository,
+        user_contact_channels: UserContactChannelRepository,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
-        self._tg_users = tg_users
+        self._user_auth_accounts = user_auth_accounts
+        self._user_contact_channels = user_contact_channels
 
     async def register_contractor(
         self,
@@ -203,22 +301,16 @@ class ContractorRegistrationService:
         address: str,
         note: str,
     ) -> User:
-        tg_user = await self._tg_users.get_by_id(tg_user_id)
-        if tg_user is None:
-            raise NotFound("TG user not found")
         if await self._users.exists(login):
             raise Conflict("User already exists")
         existing_by_tg = await self._users.get_by_tg_user_id(tg_user_id)
         if existing_by_tg is not None:
             raise Conflict("TG user already linked")
 
-        password_hash = await hash_password(password)
         user = User(
             id=login,
-            password_hash=password_hash,
             id_role=settings.contractor_role_id,
             status="review",
-            tg_user_id=tg_user_id,
         )
         profile = Profile(
             id=login,
@@ -236,8 +328,30 @@ class ContractorRegistrationService:
             note=note,
         )
         await self._users.add(user)
+        await self._users.flush()
         await self._profiles.add(profile)
         await self._company_contacts.add(company_contact)
+        await self._user_auth_accounts.add(
+            UserAuthAccount(
+                id_user=login,
+                provider="telegram",
+                external_subject_id=str(tg_user_id),
+                external_username=None,
+                external_email=None,
+                is_active=True,
+            )
+        )
+        await self._user_contact_channels.add(
+            UserContactChannel(
+                id_user=login,
+                channel_type="telegram",
+                channel_value=str(tg_user_id),
+                is_verified=False,
+                verified_at=None,
+                is_primary=True,
+                is_active=True,
+            )
+        )
         return user
 
 
@@ -738,6 +852,293 @@ class UserManagerUpdateResult:
     manager_user_id: str
 
 
+@dataclass(frozen=True)
+class ManualContractorUpdateInput:
+    login: str | None = None
+    password: str | None = None
+    full_name: str | None = None
+    phone: str | None = None
+    mail: str | None = None
+    company_name: str | None = None
+    inn: str | None = None
+    company_phone: str | None = None
+    company_mail: str | None = None
+    address: str | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class ManualContractorCreateInput:
+    company_name: str
+    inn: str
+    company_phone: str
+    company_mail: str | None = None
+    address: str | None = None
+    note: str | None = None
+
+
+class ManualContractorService:
+    def __init__(
+        self,
+        users: UserRepository,
+        profiles: ProfileRepository,
+        company_contacts: CompanyContactRepository,
+        *,
+        keycloak_admin: KeycloakAdminService | None = None,
+    ) -> None:
+        self._users = users
+        self._profiles = profiles
+        self._company_contacts = company_contacts
+        self._keycloak_admin = keycloak_admin or KeycloakAdminService()
+
+    def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            raise Conflict(f"{field_name} is required")
+        if max_length is not None and len(normalized) > max_length:
+            raise Conflict(f"{field_name} is too long")
+        return normalized
+
+    def _normalize_optional_text(self, value: str | None, *, max_length: int | None = None) -> str | None:
+        normalized = (value or "").strip()
+        if not normalized:
+            return None
+        if max_length is not None and len(normalized) > max_length:
+            raise Conflict("Value is too long")
+        return normalized
+
+    def _validate_manual_contractor_create_data(
+        self,
+        *,
+        data: ManualContractorCreateInput,
+    ) -> ManualContractorCreateInput:
+        try:
+            company_name = self._normalize_required_text(
+                data.company_name,
+                field_name="Company name",
+                max_length=256,
+            )
+            inn = validate_inn(
+                self._normalize_required_text(
+                    data.inn,
+                    field_name="INN",
+                    max_length=32,
+                )
+            )
+            company_phone = validate_ru_phone(
+                self._normalize_required_text(
+                    data.company_phone,
+                    field_name="Company phone",
+                    max_length=64,
+                )
+            )
+            company_mail = validate_optional_email(
+                self._normalize_optional_text(data.company_mail, max_length=256),
+                allow_placeholder=True,
+            )
+            address = self._normalize_optional_text(data.address, max_length=256)
+            note = self._normalize_optional_text(data.note, max_length=1024)
+        except ValueError as exc:
+            raise Conflict(str(exc)) from exc
+
+        return ManualContractorCreateInput(
+            company_name=company_name,
+            inn=inn,
+            company_phone=company_phone,
+            company_mail=company_mail,
+            address=address,
+            note=note,
+        )
+
+    def _build_login_slug(self, company_name: str) -> str:
+        normalized_name = unicodedata.normalize("NFKC", company_name.strip().lower())
+        transliterated: list[str] = []
+        for char in normalized_name:
+            if char in _CYRILLIC_TO_LATIN:
+                transliterated.append(_CYRILLIC_TO_LATIN[char])
+                continue
+            if char.isascii() and char.isalnum():
+                transliterated.append(char)
+                continue
+            transliterated.append("_")
+
+        candidate = "".join(transliterated)
+        candidate = _LOGIN_CLEANUP_PATTERN.sub("_", candidate)
+        candidate = _LOGIN_COLLAPSE_PATTERN.sub("_", candidate).strip("_")
+        if candidate:
+            return candidate
+        return "contractor"
+
+    async def _build_manual_login(self, *, company_name: str) -> str:
+        date_suffix = datetime.now().strftime("%d_%m")
+        base_slug = self._build_login_slug(company_name)
+        base_candidate = f"{base_slug}_{date_suffix}"
+        if len(base_candidate) > 120:
+            base_candidate = base_candidate[:120].rstrip("_")
+        if len(base_candidate) < 3:
+            base_candidate = f"{base_candidate}xxx"[:3]
+
+        if not await self._users.exists(base_candidate):
+            return base_candidate
+
+        index = 1
+        while True:
+            suffix = f"_{index}"
+            login_candidate = f"{base_candidate[: max(0, 128 - len(suffix))]}{suffix}"
+            if not await self._users.exists(login_candidate):
+                return login_candidate
+            index += 1
+            if index > 1000:
+                raise Conflict("Unable to generate unique login for manual contractor")
+
+    def _build_manual_password(self) -> str:
+        return datetime.now().strftime("%d%m%Y%H%M%S%f")[:-3]
+
+    async def _create_manual_contractor(self, *, data: ManualContractorCreateInput) -> str:
+        login = await self._build_manual_login(company_name=data.company_name)
+        await self._users.add(
+            User(
+                id=login,
+                id_role=settings.contractor_role_id,
+                status="active",
+            )
+        )
+        await self._profiles.add(
+            Profile(
+                id=login,
+                full_name=PLACEHOLDER_TEXT,
+                phone=PLACEHOLDER_TEXT,
+                mail=PLACEHOLDER_TEXT,
+            )
+        )
+        await self._company_contacts.add(
+            CompanyContact(
+                id=login,
+                company_name=data.company_name,
+                inn=data.inn,
+                phone=data.company_phone,
+                mail=data.company_mail or PLACEHOLDER_TEXT,
+                address=data.address or PLACEHOLDER_TEXT,
+                note=data.note or PLACEHOLDER_TEXT,
+            )
+        )
+        await self._keycloak_admin.ensure_user(
+            username=login,
+            email=_normalize_keycloak_email_value(data.company_mail),
+            email_verified=False,
+        )
+        return login
+
+    async def create_manual_contractor(
+        self,
+        *,
+        current_user: CurrentUser,
+        data: ManualContractorCreateInput,
+    ) -> str:
+        UserPolicy.ensure_can_register_user(current_user)
+        if current_user.role_id != settings.superadmin_role_id:
+            raise Forbidden("Only superadmin can create manual contractors")
+
+        normalized_data = self._validate_manual_contractor_create_data(data=data)
+        return await self._create_manual_contractor(data=normalized_data)
+
+    def _normalize_value(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise Conflict("Updated value cannot be empty")
+        return normalized
+
+    async def update_manual_contractor(
+        self,
+        *,
+        current_user: CurrentUser,
+        user_id: str,
+        data: ManualContractorUpdateInput,
+    ) -> str:
+        UserPolicy.ensure_can_manage_manual_contractors(current_user)
+        original_user_id = user_id
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("User not found")
+        if user.id_role != settings.contractor_role_id:
+            raise Conflict("Only contractor can be updated by this endpoint")
+        if user.tg_user_id is not None:
+            raise Conflict("Only manually created contractor can be updated by this endpoint")
+
+        profile = await self._profiles.get_by_id(user.id)
+        if profile is None:
+            raise NotFound("Profile not found")
+        company_contact = await self._company_contacts.get_by_id(user.id)
+        if company_contact is None:
+            raise NotFound("Company contacts not found")
+
+        next_login = self._normalize_value(data.login)
+        next_password = self._normalize_value(data.password)
+        if next_login is not None and next_login != user.id:
+            if await self._users.exists(next_login):
+                raise Conflict("User already exists")
+
+            cloned_user = User(
+                id=next_login,
+                id_role=user.id_role,
+                id_parent=user.id_parent,
+                status=user.status,
+                tg_user_id=user.tg_user_id,
+            )
+            await self._users.add(cloned_user)
+            await self._users.reassign_user_id(old_user_id=user.id, new_user_id=next_login)
+            await self._users.delete_by_id(user_id=user.id)
+            user = cloned_user
+            profile = await self._profiles.get_by_id(user.id)
+            company_contact = await self._company_contacts.get_by_id(user.id)
+            if profile is None or company_contact is None:
+                raise Conflict("Contractor profile data is inconsistent")
+
+        if next_password is not None:
+            raise Forbidden("Password is managed by the identity provider")
+
+        full_name = self._normalize_value(data.full_name)
+        phone = self._normalize_value(data.phone)
+        mail = self._normalize_value(data.mail)
+        company_name = self._normalize_value(data.company_name)
+        inn = self._normalize_value(data.inn)
+        company_phone = self._normalize_value(data.company_phone)
+        company_mail = self._normalize_value(data.company_mail)
+        address = self._normalize_value(data.address)
+        note = self._normalize_value(data.note)
+
+        if full_name is not None:
+            profile.full_name = full_name
+        if phone is not None:
+            profile.phone = phone
+        if mail is not None:
+            profile.mail = mail
+        if company_name is not None:
+            company_contact.company_name = company_name
+        if inn is not None:
+            company_contact.inn = inn
+        if company_phone is not None:
+            company_contact.phone = company_phone
+        if company_mail is not None:
+            company_contact.mail = company_mail
+        if address is not None:
+            company_contact.address = address
+        if note is not None:
+            company_contact.note = note
+
+        await self._keycloak_admin.ensure_user(
+            username=user.id,
+            previous_username=original_user_id,
+            email=_normalize_keycloak_email_value(company_contact.mail),
+            email_verified=False,
+        )
+
+        return user.id
+
+
 class UserRoleService:
     def __init__(self, users: UserRepository):
         self._users = users
@@ -848,9 +1249,15 @@ class UserStatusService:
     VALID_USER_STATUSES = {"active", "inactive", "review", "blacklist"}
     VALID_TG_STATUSES = {"approved", "disapproved", "review"}
 
-    def __init__(self, users: UserRepository, tg_users: TgUserRepository):
+    def __init__(
+        self,
+        users: UserRepository,
+        tg_users: TgUserRepository,
+        profiles: ProfileRepository,
+    ):
         self._users = users
         self._tg_users = tg_users
+        self._profiles = profiles
 
     async def update_statuses(
         self,
@@ -865,7 +1272,7 @@ class UserStatusService:
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Unsupported users.status value")
         if tg_status is not None and tg_status not in self.VALID_TG_STATUSES:
-            raise Conflict("Unsupported tg_users.status value")
+            raise Conflict("Unsupported Telegram status value")
 
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -917,11 +1324,20 @@ class UserStatusService:
             tg_status=tg_user.status if tg_user else None,
         )
 
+        notify_email: str | None = None
+        if user.id_role == settings.contractor_role_id:
+            profile = await self._profiles.get_by_id(user.id)
+            notify_email = _normalize_notification_email(profile.mail if profile is not None else None)
+
         if notify_tg_id is not None and tg_user is not None:
             if user.status == "active" and tg_user.status == "approved":
-                await notify_access_opened(notify_tg_id)
+                await notify_tg_access_opened(notify_tg_id)
             else:
-                await notify_access_closed(notify_tg_id)
+                await notify_tg_access_closed(notify_tg_id)
+
+        if notify_email is not None and notify_tg_id is None:
+            if user.status == "active":
+                await notify_contractor_access_opened_email(to_email=notify_email)
 
         return result
     
@@ -1000,16 +1416,7 @@ class UserSelfService:
         new_password: str,
     ) -> None:
         UserPolicy.ensure_can_manage_own_profile(current_user)
-
-        user = await self._users.get_by_id(current_user.user_id)
-        if user is None:
-            raise NotFound("User not found")
-
-        is_valid_current_password = await verify_password(current_password, user.password_hash)
-        if not is_valid_current_password:
-            raise Forbidden("Current password is invalid")
-
-        user.password_hash = await hash_password(new_password)
+        raise Forbidden("Password is managed by the identity provider")
 
     async def update_my_profile(
         self,
@@ -1055,7 +1462,20 @@ class UserSelfService:
 
         company_contacts = await self._company_contacts.get_by_id(current_user.user_id)
         if company_contacts is None:
-            raise NotFound("Company contacts not found")
+            if company_name is None or inn is None:
+                raise NotFound("Company contacts not found")
+            await self._company_contacts.add(
+                CompanyContact(
+                    id=current_user.user_id,
+                    company_name=company_name,
+                    inn=inn,
+                    phone=company_phone or PLACEHOLDER_TEXT,
+                    mail=company_mail or PLACEHOLDER_TEXT,
+                    address=address or PLACEHOLDER_TEXT,
+                    note=note or PLACEHOLDER_TEXT,
+                )
+            )
+            return
 
         if company_name is not None:
             company_contacts.company_name = company_name

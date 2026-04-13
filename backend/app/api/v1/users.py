@@ -14,6 +14,10 @@ from app.schemas.users import (
     EconomistListData,
     EconomistListItemSchema,
     EconomistListResponse,
+    ManualContractorCreateRequest,
+    ManualContractorCreateResponse,
+    ManualContractorUpdateRequest,
+    ManualContractorUpdateResponse,
     MeData,
     MeResponse,
     RequestContractorItemSchema,
@@ -44,7 +48,16 @@ from app.schemas.users import (
     UserStatusUpdateRequest,
     UserStatusUpdateResponse,
 )
-from app.services.users import UserManagerService, UserQueryService, UserRoleService, UserSelfService, UserStatusService
+from app.services.users import (
+    ManualContractorCreateInput,
+    ManualContractorService,
+    ManualContractorUpdateInput,
+    UserManagerService,
+    UserQueryService,
+    UserRoleService,
+    UserSelfService,
+    UserStatusService,
+)
 
 router = APIRouter()
 
@@ -81,6 +94,7 @@ def _user_list_schema(current_user: CurrentUser, item) -> UserListItemSchema:
         current_user,
         target_user_id=item.user_id,
         target_role_id=item.role_id,
+        target_tg_user_id=item.tg_user_id,
     )
     return UserListItemSchema(**data)
 
@@ -458,6 +472,69 @@ async def list_request_contractors(
     )
 
 
+@router.post("/users/manual-contractor", response_model=ManualContractorCreateResponse)
+async def create_manual_contractor(
+    payload: ManualContractorCreateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualContractorCreateResponse:
+    async with uow:
+        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts)
+        created_user_id = await service.create_manual_contractor(
+            current_user=current_user,
+            data=ManualContractorCreateInput(
+                company_name=payload.company_name,
+                inn=payload.inn,
+                company_phone=payload.company_phone,
+                company_mail=payload.company_mail,
+                address=payload.address,
+                note=payload.note,
+            ),
+        )
+
+    return ManualContractorCreateResponse(
+        data={"user_id": created_user_id},
+        _links=LinkSet(
+            self=Link(href="/api/v1/users/manual-contractor", method="POST"),
+        ),
+    )
+
+
+@router.patch("/users/{user_id}/manual-contractor", response_model=ManualContractorUpdateResponse)
+async def update_manual_contractor(
+    payload: ManualContractorUpdateRequest,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualContractorUpdateResponse:
+    async with uow:
+        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts)
+        updated_user_id = await service.update_manual_contractor(
+            current_user=current_user,
+            user_id=user_id,
+            data=ManualContractorUpdateInput(
+                login=payload.login,
+                password=payload.password,
+                full_name=payload.full_name,
+                phone=payload.phone,
+                mail=payload.mail,
+                company_name=payload.company_name,
+                inn=payload.inn,
+                company_phone=payload.company_phone,
+                company_mail=payload.company_mail,
+                address=payload.address,
+                note=payload.note,
+            ),
+        )
+
+    return ManualContractorUpdateResponse(
+        data={"user_id": updated_user_id},
+        _links=LinkSet(
+            self=Link(href=f"/api/v1/users/{updated_user_id}/manual-contractor", method="PATCH"),
+        ),
+    )
+
+
 @router.patch("/users/{user_id}/status", response_model=UserStatusUpdateResponse)
 async def update_user_status(
     payload: UserStatusUpdateRequest,
@@ -466,7 +543,7 @@ async def update_user_status(
     uow: UnitOfWork = Depends(get_uow),
 ) -> UserStatusUpdateResponse:
     async with uow:
-        service = UserStatusService(uow.users, uow.tg_users)
+        service = UserStatusService(uow.users, uow.tg_users, uow.profiles)
         result = await service.update_statuses(
             current_user=current_user,
             user_id=user_id,

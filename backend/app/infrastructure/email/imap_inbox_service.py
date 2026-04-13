@@ -3,6 +3,7 @@ from __future__ import annotations
 import imaplib
 import logging
 import re
+import socket
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import EmailMessage
@@ -45,6 +46,7 @@ class IMAPInboxService:
         self._mailbox = mailbox
         self._attachment_parser = attachment_parser or EmailAttachmentParser()
         self._poll_limit = max(1, poll_limit)
+        self._last_seen_uid = 0
 
     async def read_unseen(self) -> list[InboxEmail]:
         raw_emails = await anyio.to_thread.run_sync(self._read_unseen_sync)
@@ -75,34 +77,80 @@ class IMAPInboxService:
         return emails
 
     def _read_unseen_sync(self) -> list[dict[str, str | EmailMessage]]:
-        conn = imaplib.IMAP4_SSL(self._host, self._port)
+        conn: imaplib.IMAP4_SSL | None = None
         try:
+            conn = imaplib.IMAP4_SSL(self._host, self._port)
             conn.login(self._username, self._password)
             conn.select(self._mailbox)
             logger.info("IMAP mailbox selected: mailbox=%s", self._mailbox)
-            status, data = conn.uid("search", None, "UNSEEN")
-            if status != "OK":
+            all_status, all_data = conn.uid("search", None, "ALL")
+            unseen_status, unseen_data = conn.uid("search", None, "UNSEEN")
+            if all_status != "OK":
                 return []
 
-            uids = [uid.decode("utf-8") for uid in (data[0] or b"").split() if uid]
-            if len(uids) > self._poll_limit:
-                uids = uids[-self._poll_limit :]
-            logger.info("IMAP unseen emails: total_uids=%s polled_uids=%s poll_limit=%s", len((data[0] or b"").split()), len(uids), self._poll_limit)
+            all_uids = [uid.decode("utf-8") for uid in (all_data[0] or b"").split() if uid]
+            unseen_count = len((unseen_data[0] or b"").split()) if unseen_status == "OK" else 0
+            uids = self._select_uids_to_poll(all_uids)
+            logger.info(
+                "IMAP emails selected: total_uids=%s unseen_uids=%s polled_uids=%s poll_limit=%s last_seen_uid=%s",
+                len(all_uids),
+                unseen_count,
+                len(uids),
+                self._poll_limit,
+                self._last_seen_uid,
+            )
             emails: list[dict[str, str | EmailMessage]] = []
             for uid in uids:
                 fetched = self._fetch_email(conn=conn, uid=uid)
                 if fetched is not None:
                     emails.append(fetched)
+                try:
+                    self._last_seen_uid = max(self._last_seen_uid, int(uid))
+                except ValueError:
+                    continue
             return emails
+        except (socket.gaierror, TimeoutError, OSError, imaplib.IMAP4.error) as exc:
+            logger.warning(
+                "IMAP polling skipped due to connection error: host=%s port=%s mailbox=%s error=%s",
+                self._host,
+                self._port,
+                self._mailbox,
+                exc,
+            )
+            return []
         finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except imaplib.IMAP4.error:
+                    pass
+                try:
+                    conn.logout()
+                except imaplib.IMAP4.error:
+                    pass
+
+    def _select_uids_to_poll(self, all_uids: list[str]) -> list[str]:
+        if not all_uids:
+            return []
+
+        parsed_uids: list[tuple[int, str]] = []
+        for uid in all_uids:
             try:
-                conn.close()
-            except imaplib.IMAP4.error:
-                pass
-            conn.logout()
+                parsed_uids.append((int(uid), uid))
+            except ValueError:
+                continue
+
+        if not parsed_uids:
+            return []
+
+        if self._last_seen_uid <= 0:
+            return [uid for _, uid in parsed_uids[-self._poll_limit :]]
+
+        new_uids = [uid for numeric_uid, uid in parsed_uids if numeric_uid > self._last_seen_uid]
+        return new_uids[: self._poll_limit]
 
     def _fetch_email(self, *, conn: imaplib.IMAP4_SSL, uid: str) -> dict[str, str | EmailMessage] | None:
-        status, data = conn.uid("fetch", uid, "(RFC822)")
+        status, data = conn.uid("fetch", uid, "(BODY.PEEK[])")
         if status != "OK" or not data or not data[0]:
             return None
 

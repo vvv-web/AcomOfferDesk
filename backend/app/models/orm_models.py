@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import (
@@ -13,7 +14,7 @@ from sqlalchemy import (
     TIMESTAMP,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, query_expression, relationship
 
 from app.models.base import Base
 
@@ -25,14 +26,10 @@ class Role(Base):
     role: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
 
 
-class TgUser(Base):
-    __tablename__ = "tg_users"
-    __table_args__ = (
-        CheckConstraint("status IN ('approved','disapproved','review')", name="tg_users_status_check"),
-    )
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="review")
+@dataclass(slots=True)
+class TgUser:
+    id: int
+    status: str
 
 
 
@@ -46,7 +43,7 @@ class User(Base):
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[Optional[str]] = query_expression()
     id_role: Mapped[int] = mapped_column(SmallInteger, ForeignKey("roles.id"), nullable=False)
     id_parent: Mapped[Optional[str]] = mapped_column(
         Text,
@@ -54,12 +51,7 @@ class User(Base):
         nullable=True,
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="review")
-    tg_user_id: Mapped[Optional[int]] = mapped_column(
-        BigInteger,
-        ForeignKey("tg_users.id", ondelete="SET NULL"),
-        nullable=True,
-        unique=True,
-    )
+    tg_user_id: Mapped[Optional[int]] = query_expression()
     profile: Mapped[Optional[Profile]] = relationship(
         "Profile",
         back_populates="user",
@@ -72,7 +64,6 @@ class User(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
-    tg_user: Mapped[Optional[TgUser]] = relationship("TgUser", uselist=False)
 
 
 class Profile(Base):
