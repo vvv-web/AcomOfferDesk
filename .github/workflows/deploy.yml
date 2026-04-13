@@ -30,10 +30,20 @@ jobs:
             git checkout test
             git pull upstream test
             docker compose down --remove-orphans || true
+            docker compose -f docker-compose.init.yml up keycloak_db_prepare
             if ! docker compose up -d --build; then
               echo "=== docker compose ps -a ==="
               docker compose ps -a || true
+              echo "=== keycloak logs (tail) ==="
+              docker compose logs --tail=160 keycloak || true
               echo "=== backend logs (tail) ==="
-              docker compose logs --tail=120 backend || true
+              docker compose logs --tail=160 backend || true
+              exit 1
+            fi
+            if ! docker compose -f docker-compose.init.yml up keycloak_bootstrap; then
+              echo "=== keycloak bootstrap logs (tail) ==="
+              docker compose -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
+              echo "=== keycloak logs (tail) ==="
+              docker compose logs --tail=160 keycloak || true
               exit 1
             fi
