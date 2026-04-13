@@ -37,6 +37,19 @@ ssh root@VPS "export GITHUB_TOKEN='$TOKEN'; bash /root/install-order-database-vp
 
 После пересоздания **`backend`** вручную всегда пересоздавайте **`gateway`**, иначе возможен **502** на API (см. **[vps-troubleshooting.md](./vps-troubleshooting.md)**).
 
+## Связь с GitHub Actions deploy
+
+Workflow **`.github/workflows/deploy.yml`** в этом репозитории **не выполняет Flyway migrate автоматически** для `order_database`.
+
+Он считает `order_database` отдельным prerequisite на VPS и перед app deploy проверяет:
+
+- каталог **`/opt/order_database`** и его **`.env`**;
+- healthy-статус контейнера **`order-database-postgres`**;
+- наличие **`flyway_schema_history`**;
+- что **`backend/.env`** уже смотрит на **`order-database-postgres:5432`**.
+
+Если одна из этих проверок не проходит, workflow падает с меткой **`ORDER_DB_PREREQUISITE`** и просит сначала привести VPS к состоянию из этого документа, обычно через **`scripts/install-order-database-vps.sh`** до **`INSTALL_SUCCESS`**.
+
 ## Ожидания по данным (как в задаче)
 
 | Проверка | Ожидание |
