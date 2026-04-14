@@ -15,16 +15,23 @@ class UserContactChannelRepository:
     async def add(self, channel: UserContactChannel) -> None:
         self._session.add(channel)
 
-    async def get_primary_by_type(self, *, user_id: str, channel_type: str) -> UserContactChannel | None:
+    async def get_primary_by_type(
+        self,
+        *,
+        user_id: str,
+        channel_type: str,
+        include_inactive: bool = False,
+    ) -> UserContactChannel | None:
         stmt = (
             select(UserContactChannel)
             .where(
                 UserContactChannel.id_user == user_id,
                 UserContactChannel.channel_type == channel_type,
-                UserContactChannel.is_active.is_(True),
             )
             .order_by(UserContactChannel.is_primary.desc(), UserContactChannel.id.asc())
         )
+        if not include_inactive:
+            stmt = stmt.where(UserContactChannel.is_active.is_(True))
         result = await self._session.execute(stmt)
         return result.scalars().first()
 
@@ -45,7 +52,13 @@ class UserContactChannelRepository:
         is_verified: bool,
         is_primary: bool,
     ) -> UserContactChannel:
-        existing = await self.get_primary_by_type(user_id=user_id, channel_type=channel_type)
+        # Reuse inactive channel rows to preserve uniqueness by (channel_type, channel_value)
+        # and allow clean re-activation of legacy Telegram links.
+        existing = await self.get_primary_by_type(
+            user_id=user_id,
+            channel_type=channel_type,
+            include_inactive=True,
+        )
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if existing is None:
             channel = UserContactChannel(

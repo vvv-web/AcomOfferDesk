@@ -39,7 +39,7 @@ class EmailVerificationService:
         if profile is None:
             raise NotFound("Профиль пользователя не найден")
 
-        current_email = profile.mail.strip().lower()
+        current_email = (profile.mail or "").strip().lower()
         candidate_email = normalized_email.lower()
         if current_email == candidate_email and current_email not in {"", "не указано", "none", "null"}:
             return "same_email"

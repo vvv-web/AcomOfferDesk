@@ -12,7 +12,6 @@ from app.core.tg_links import decode_token
 from app.core.tg_shortcodes import TgShortcodeCodec
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Conflict, Forbidden
-from app.models.orm_models import TgUser
 from app.schemas.contractor_registration import (
     ContractorEmailVerificationRequest,
     ContractorRegistrationRequest,
@@ -43,7 +42,17 @@ from app.services.tg_users import TgUserRegistrationService
 from app.services.users import ContractorRegistrationService
 from app.services.email_verification import EmailVerificationService
 
-router = APIRouter(prefix="/tg")
+
+def require_telegram_legacy_enabled() -> None:
+    if not settings.telegram_legacy_enabled:
+        raise Forbidden("Telegram legacy endpoints are disabled")
+
+
+router = APIRouter(
+    prefix="/tg",
+    deprecated=True,
+    dependencies=[Depends(require_telegram_legacy_enabled)],
+)
 
 
 def _build_registration_link_status_url(reason: str) -> str:
@@ -60,9 +69,9 @@ async def create_register_link(
     if not settings.tg_link_secret:
         raise Forbidden("TG links are not configured")
     async with uow:
-        tg_user = await uow.tg_users.get_by_id(payload.tg_id)
-        if tg_user is None:
-            await uow.tg_users.add(TgUser(id=payload.tg_id, status="review"))
+        # No standalone tg_users table in current schema.
+        # Keep a logical "get-or-create" over user_auth_accounts/user_contact_channels only.
+        await uow.tg_users.get_or_create(payload.tg_id)
 
     code = create_tg_registration_token(tg_id=payload.tg_id)
     url = build_keycloak_registration_link(token=code)

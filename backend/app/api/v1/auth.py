@@ -171,6 +171,7 @@ async def _link_telegram_registration_context(
     telegram_account = await uow.user_auth_accounts.get_by_user_provider(
         user_id=user_id,
         provider="telegram",
+        include_inactive=True,
     )
     if telegram_account is None:
         await uow.user_auth_accounts.add(
@@ -352,6 +353,11 @@ async def begin_keycloak_registration(
         )
 
     if tg_token:
+        if not settings.telegram_legacy_enabled:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="invalid"),
+                status_code=status.HTTP_302_FOUND,
+            )
         try:
             tg_registration_id = await resolve_tg_registration_token(tg_token)
         except TgRegistrationLinkExpiredError:
@@ -488,6 +494,8 @@ async def keycloak_callback(
                 allow_user_creation=claims.flow == "register",
             )
             if claims.tg_registration_id is not None:
+                if not settings.telegram_legacy_enabled:
+                    raise Forbidden("Telegram legacy authentication is disabled")
                 await _link_telegram_registration_context(
                     uow=uow,
                     user_id=synced.user.id,
@@ -592,9 +600,9 @@ async def logout(request: Request, response: Response) -> Response:
     return response
 
 
-@router.post("/auth/tg/exchange")
+@router.post("/auth/tg/exchange", deprecated=True)
 async def tg_exchange_disabled() -> dict[str, str]:
-    raise Forbidden("Прямой вход из Telegram отключен")
+    raise Forbidden("Telegram legacy authentication is disabled")
 
 
 @router.post("/users/register", response_model=RegisterUserResponse)
@@ -626,3 +634,4 @@ async def register_user(
             self=Link(href=f"/api/v1/users/{user.id}", method="GET"),
         ),
     )
+

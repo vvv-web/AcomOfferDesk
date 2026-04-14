@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.registration_invite_tokens import RegistrationInviteTokenCodec
-from app.domain.exceptions import Conflict, NotFound
+from app.domain.exceptions import NotFound
 from app.infrastructure.email.email_attachment import EmailAttachment
 from app.infrastructure.email.email_templates.request_notification_email import (
     build_request_notification_email_payload,
@@ -81,7 +81,7 @@ class SendRequestNotificationEmailUseCase:
         )
         attachments, attachment_warning = await self._build_attachments(request_id=request_id)
         request_url = f"{self._app_url}/login?next={quote(f'/requests/{request_id}/contractor', safe='/')}"
-        tg_bot_url = settings.tg_bot_public_url
+        tg_bot_url = settings.tg_bot_public_url if settings.telegram_legacy_enabled else None
         registration_base_url = (settings.public_backend_base_url or self._app_url).rstrip("/")
 
         for recipient in recipients:
@@ -104,8 +104,6 @@ class SendRequestNotificationEmailUseCase:
                     attachment_warning=attachment_warning,
                 )
             else:
-                if not tg_bot_url:
-                    raise Conflict("TG_BOT_PUBLIC_URL is not configured")
                 invite_token = invite_token_codec.create_token(email=recipient.email)
                 registration_url = (
                     f"{registration_base_url}/api/v1/auth/oidc/register"

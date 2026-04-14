@@ -20,8 +20,6 @@ class UserListItemSchema(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None
-    tg_user_id: int | None = None
-    tg_status: str | None = None
     company_name: str | None = None
     inn: str | None = None
     company_phone: str | None = None
@@ -98,14 +96,11 @@ class UserManagerUpdateResponse(BaseModel):
 
 class UserStatusUpdateRequest(BaseModel):
     user_status: str
-    tg_status: str | None = None
 
 
 class UserStatusUpdateData(BaseModel):
     user_id: str
     user_status: str
-    tg_user_id: int | None = None
-    tg_status: str | None = None
 
 
 class UserStatusUpdateResponse(BaseModel):
@@ -167,7 +162,6 @@ class MeData(BaseModel):
     status: str
     unavailable_period: "UserUnavailabilityPeriodSchema | None" = None
     unavailable_periods: list[UserUnavailabilityPeriodSchema] = Field(default_factory=list)
-    tg_user_id: int | None = None
     full_name: str | None = None
     phone: str | None = None
     mail: str | None = None

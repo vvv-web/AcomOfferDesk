@@ -61,7 +61,7 @@ Workflow **`.github/workflows/deploy.yml`** в этом репозитории *
 ## Связка с приложением AcomOfferDesk
 
 - В **`backend/.env`** сервис БД в Docker-сети обычно **`order-database-postgres:5432`** (имя контейнера из compose репозитория БД), а не обязательно `postgres`.
-- Шаблоны переменных приложения: **`backend/env.example`**, **`compose.env.example`**, **`tg_bot/env.example`**.
+- Шаблоны переменных приложения: **`backend/env.example`**, **`compose.env.example`**.
 
 ## Ручной путь (без скрипта)
 

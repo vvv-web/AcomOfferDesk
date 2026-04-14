@@ -250,16 +250,17 @@ class RequestService:
             contractor_user_ids=normalized_hidden_contractor_ids,
         )
 
-        tg_ids = await self._users.list_active_approved_contractor_tg_ids(
-            contractor_role_id=settings.contractor_role_id,
-            exclude_user_ids=normalized_hidden_contractor_ids,
-        )
-        await notify_new_request(
-            tg_ids=tg_ids,
-            request_id=request.id,
-            description=description,
-            deadline_at=deadline_at,
-        )
+        if settings.telegram_legacy_enabled:
+            tg_ids = await self._users.list_active_approved_contractor_tg_ids(
+                contractor_role_id=settings.contractor_role_id,
+                exclude_user_ids=normalized_hidden_contractor_ids,
+            )
+            await notify_new_request(
+                tg_ids=tg_ids,
+                request_id=request.id,
+                description=description,
+                deadline_at=deadline_at,
+            )
 
         if self._email_notifications is not None:
             await self._email_notifications.notify_new_request(
@@ -409,7 +410,7 @@ class RequestService:
                 closed_at=closed_at,
                 chosen_offer_id=chosen_offer_id,
             )
-            if status_changed:
+            if status_changed and settings.telegram_legacy_enabled:
                 tg_ids = await self._offers.list_contractor_tg_ids_for_request(
                     request_id=request.id,
                     contractor_role_id=settings.contractor_role_id,

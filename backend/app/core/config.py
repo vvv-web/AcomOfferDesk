@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     lead_economist_role_id: int = 5
     economist_role_id: int = 6
     operator_role_id: int = 7
+    telegram_legacy_enabled: bool = Field(
+        default=False,
+        validation_alias="LEGACY_TELEGRAM_ENABLED",
+    )
     tg_link_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("TG_LINK_SECRET", "TG_LINK_SALT"),

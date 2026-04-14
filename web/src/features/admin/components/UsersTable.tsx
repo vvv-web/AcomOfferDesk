@@ -94,24 +94,12 @@ const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = 
   blacklist: 'В черном списке'
 };
 
-const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
-  review: 'На проверке',
-  approved: 'Одобрен',
-  disapproved: 'Не одобрен'
-};
-
 const userStatusValueByLabel: Record<string, StatusFormValues['user_status']> = {
   'на проверке': 'review',
   'активен': 'active',
   'неактивен': 'inactive',
   'в черном списке': 'blacklist',
   'в чёрном списке': 'blacklist'
-};
-
-const tgStatusValueByLabel: Record<string, 'review' | 'approved' | 'disapproved'> = {
-  'на проверке': 'review',
-  'одобрен': 'approved',
-  'не одобрен': 'disapproved'
 };
 
 const normalizeUserStatus = (value: string | null | undefined): StatusFormValues['user_status'] => {
@@ -130,9 +118,6 @@ const normalizeAnyStatus = (value: string | null | undefined): string => {
   if (normalized in userStatusValueByLabel) {
     return userStatusValueByLabel[normalized];
   }
-  if (normalized in tgStatusValueByLabel) {
-    return tgStatusValueByLabel[normalized];
-  }
   return normalized;
 };
 
@@ -141,9 +126,6 @@ const toStatusLabel = (value: string | null | undefined): string => {
   if (normalized in userStatusLabelByValue) {
     return userStatusLabelByValue[normalized as StatusFormValues['user_status']];
   }
-  if (normalized in tgStatusLabelByValue) {
-    return tgStatusLabelByValue[normalized as 'review' | 'approved' | 'disapproved'];
-  }
   return value ?? '—';
 };
 
@@ -151,9 +133,7 @@ const statusColorByValue: Record<string, { bg: string; text: string; border: str
   review: { bg: '#fff8e1', text: '#8a6d1f', border: '#f2dd9b' },
   active: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
   inactive: { bg: '#f3f4f8', text: '#4d5563', border: '#d9dde8' },
-  blacklist: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' },
-  approved: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
-  disapproved: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' }
+  blacklist: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' }
 };
 
 const StatusPill = ({ value }: { value: string | null | undefined }) => {
@@ -406,37 +386,21 @@ const validateManualContractorPayload = (
   return { fieldErrors, firstError };
 };
 
-const mapUserStatusToTgStatus = (status: StatusFormValues['user_status']) => {
-  if (status === 'review') return 'review';
-  if (status === 'active') return 'approved';
-  return 'disapproved';
-};
-
-const resolveTgStatusForUpdate = (
-  user: UserListItem,
-  status: StatusFormValues['user_status']
-): 'review' | 'approved' | 'disapproved' | undefined => {
-  if (user.tg_user_id === null) {
-    return undefined;
-  }
-  return mapUserStatusToTgStatus(status);
-};
-
 const inlineStatusOptions: Array<StatusFormValues['user_status']> = ['review', 'active', 'inactive', 'blacklist'];
 
 
-const statusMemoText = `Связь статусов users и tg_users:
+const statusMemoText = `Статусы users:
 
-1) users: review  → tg_users: review
+1) review
    Пользователь на проверке, доступ не выдан.
 
-2) users: active  → tg_users: approved
+2) active
    Пользователь активен, доступ разрешён.
 
-3) users: inactive → tg_users: disapproved
+3) inactive
    Пользователь деактивирован, доступ запрещён.
 
-4) users: blacklist → tg_users: disapproved
+4) blacklist
    Пользователь в чёрном списке, доступ запрещён.`;
 
 const dialogPaperSx = (theme: Theme) => ({
@@ -662,8 +626,7 @@ export const UsersTable = ({
 
     try {
       await updateUserStatus(selectedUser.user_id, {
-        user_status: values.user_status,
-        tg_status: resolveTgStatusForUpdate(selectedUser, values.user_status)
+        user_status: values.user_status
       });
       setSubmitSuccess('Статус успешно обновлён.');
       await onStatusUpdated();
@@ -677,10 +640,8 @@ export const UsersTable = ({
     setUpdatingUserId(userId);
 
     try {
-      const user = users.find((item) => item.user_id === userId);
       await updateUserStatus(userId, {
-        user_status: nextStatus,
-        tg_status: user ? resolveTgStatusForUpdate(user, nextStatus) : undefined
+        user_status: nextStatus
       });
       await onStatusUpdated();
     } catch (error) {
@@ -1177,23 +1138,6 @@ export const UsersTable = ({
                     </Stack>
                   </SourceSection>
 
-                  <SourceSection title="Telegram данные" source="tg_users">
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                        gap: 1.5
-                      }}
-                    >
-                      <InfoRow label="Telegram ID" value={selectedUser.tg_user_id} />
-                      <Stack spacing={0.2} sx={{ alignItems: 'flex-start' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          Telegram статус
-                        </Typography>
-                        <StatusPill value={selectedUser.tg_status} />
-                      </Stack>
-                    </Box>
-                  </SourceSection>
                 </Stack>
               </Box>
 

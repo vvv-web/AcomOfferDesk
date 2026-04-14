@@ -12,21 +12,37 @@ class UserAuthAccountRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def get_by_provider_subject(self, *, provider: str, subject: str) -> UserAuthAccount | None:
+    async def get_by_provider_subject(
+        self,
+        *,
+        provider: str,
+        subject: str,
+        include_inactive: bool = False,
+    ) -> UserAuthAccount | None:
         stmt = select(UserAuthAccount).where(
             UserAuthAccount.provider == provider,
             UserAuthAccount.external_subject_id == subject,
-            UserAuthAccount.is_active.is_(True),
         )
+        if not include_inactive:
+            stmt = stmt.where(UserAuthAccount.is_active.is_(True))
+        stmt = stmt.order_by(UserAuthAccount.is_active.desc(), UserAuthAccount.id.asc()).limit(1)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_user_provider(self, *, user_id: str, provider: str) -> UserAuthAccount | None:
+    async def get_by_user_provider(
+        self,
+        *,
+        user_id: str,
+        provider: str,
+        include_inactive: bool = False,
+    ) -> UserAuthAccount | None:
         stmt = select(UserAuthAccount).where(
             UserAuthAccount.id_user == user_id,
             UserAuthAccount.provider == provider,
-            UserAuthAccount.is_active.is_(True),
         )
+        if not include_inactive:
+            stmt = stmt.where(UserAuthAccount.is_active.is_(True))
+        stmt = stmt.order_by(UserAuthAccount.is_active.desc(), UserAuthAccount.id.asc()).limit(1)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

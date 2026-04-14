@@ -87,7 +87,6 @@ proxy_read_timeout 86400;
 
 ## `.env`
 
-- Не дублировать **`WEB_BASE_URL`** / **`PUBLIC_BACKEND_BASE_URL`** / **`TG_LINK_SECRET`**.
-- **`tg_bot/.env`** — только ключи из **`tg_bot/env.example`**, не копия **`backend/.env`**.
+- Не дублировать **`WEB_BASE_URL`** / **`PUBLIC_BACKEND_BASE_URL`**.
 - **`DATABASE_URL`:** хост Postgres = имя сервиса в вашей Docker-сети (часто **`order-database-postgres`**).
 - Публичные URL — **ваш** домен/туннель.

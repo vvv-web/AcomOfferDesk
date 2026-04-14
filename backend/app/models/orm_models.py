@@ -51,6 +51,8 @@ class User(Base):
         nullable=True,
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="review")
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     tg_user_id: Mapped[Optional[int]] = query_expression()
     profile: Mapped[Optional[Profile]] = relationship(
         "Profile",
@@ -71,8 +73,8 @@ class Profile(Base):
 
     id: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
-    phone: Mapped[str] = mapped_column(Text, nullable=False)
-    mail: Mapped[str] = mapped_column(Text, nullable=False, server_default="Не указано")
+    phone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="profile")
 
@@ -83,10 +85,10 @@ class CompanyContact(Base):
     id: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     company_name: Mapped[str] = mapped_column(Text, nullable=False)
     inn: Mapped[str] = mapped_column(Text, nullable=False)
-    phone: Mapped[str] = mapped_column(Text, nullable=False)
-    mail: Mapped[str] = mapped_column(Text, nullable=False, server_default="Не указано")
-    address: Mapped[str] = mapped_column(Text, nullable=False, server_default="Не указано")
-    note: Mapped[str] = mapped_column(Text, nullable=False, server_default="Не указано")
+    phone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="company_contact")
 
@@ -406,5 +408,5 @@ class UserStatusPeriod(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    started_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)
+    started_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     ended_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)

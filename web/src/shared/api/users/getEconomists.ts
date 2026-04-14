@@ -43,8 +43,6 @@ export const getEconomists = async (): Promise<GetEconomistsResult> => {
       full_name: item.full_name ?? null,
       phone: item.phone ?? null,
       mail: item.mail ?? null,
-      tg_user_id: null,
-      tg_status: null,
       company_name: null,
       inn: null,
       company_phone: null,

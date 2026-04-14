@@ -58,7 +58,7 @@ API после запуска:
 
 - Основной вход: Keycloak (`/api/v1/auth/oidc/login`, `/api/v1/auth/callback`)
 - Локальный password login через backend API не используется; вход выполняется через Keycloak.
-- Прямой вход из Telegram отключен (`/api/v1/auth/tg/exchange` -> `Forbidden`)
+- Прямой вход из legacy Telegram отключен (`/api/v1/auth/tg/exchange` -> `Forbidden`)
 
 ## Полезно при разработке
 

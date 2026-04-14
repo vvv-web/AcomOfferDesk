@@ -85,15 +85,20 @@ services:
     networks:
       - project_net
 
-  tg_bot:
-    build: ./tg_bot
-    container_name: tg_bot
-    env_file:
-      - ./tg_bot/.env
-    depends_on:
-      - gateway
-    networks:
-      - project_net
+  # LEGACY Telegram bot service. Keep this block for quick rollback.
+  # To restore:
+  # 1) uncomment this service
+  # 2) provide ./tg_bot/.env
+  # 3) enable LEGACY_TELEGRAM_ENABLED=true in backend/.env
+  # tg_bot:
+  #   build: ./tg_bot
+  #   container_name: tg_bot
+  #   env_file:
+  #     - ./tg_bot/.env
+  #   depends_on:
+  #     - gateway
+  #   networks:
+  #     - project_net
 
   rabbitmq:
     image: rabbitmq:3-management

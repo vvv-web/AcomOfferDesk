@@ -69,27 +69,15 @@ USER_STATUS_RU = {
     "blacklist": "В черном списке",
 }
 
-TG_STATUS_RU = {
-    "approved": "Одобрен",
-    "disapproved": "Не одобрен",
-    "review": "На проверке",
-}
-
 
 def _ru_user_status(status: str) -> str:
     return USER_STATUS_RU.get(status, status)
 
-
-def _ru_tg_status(status: str | None) -> str | None:
-    if status is None:
-        return None
-    return TG_STATUS_RU.get(status, status)
-
-
 def _user_list_schema(current_user: CurrentUser, item) -> UserListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
-    data["tg_status"] = _ru_tg_status(data.get("tg_status"))
+    data.pop("tg_user_id", None)
+    data.pop("tg_status", None)
     data["actions"] = UserActionBuilder.build_list_item(
         current_user,
         target_user_id=item.user_id,
@@ -113,6 +101,7 @@ def _economist_list_schema(current_user: CurrentUser, item) -> EconomistListItem
 def _me_data(current_user: CurrentUser, item) -> MeData:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
+    data.pop("tg_user_id", None)
     data["permissions"] = serialize_permissions(current_user)
     data["actions"] = UserActionBuilder.build_me(current_user)
     return MeData(**data)
@@ -548,15 +537,13 @@ async def update_user_status(
             current_user=current_user,
             user_id=user_id,
             user_status=payload.user_status,
-            tg_status=payload.tg_status,
+            tg_status=None,
         )
 
     return UserStatusUpdateResponse(
         data=UserStatusUpdateData(
             user_id=result.user_id,
             user_status=_ru_user_status(result.user_status),
-            tg_user_id=result.tg_user_id,
-            tg_status=_ru_tg_status(result.tg_status),
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/status", method="PATCH"),
@@ -608,3 +595,4 @@ async def update_user_manager(
             self=Link(href=f"/api/v1/users/{result.user_id}/manager", method="PATCH"),
         ),
     )
+
