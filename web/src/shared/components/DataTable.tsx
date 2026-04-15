@@ -1,26 +1,1807 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Box,
-  Button,
-  Checkbox,
-  FormControl,
-  InputLabel,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Pagination,
-  Select,
-  Stack,
-  Typography,
-} from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material/Select';
+import { ChangeEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import AddRounded from "@mui/icons-material/AddRounded";
+import ArrowDownwardRounded from "@mui/icons-material/ArrowDownwardRounded";
+import ArrowUpwardRounded from "@mui/icons-material/ArrowUpwardRounded";
+import FilterAltRounded from "@mui/icons-material/FilterAltRounded";
+import KeyboardArrowDownRounded from "@mui/icons-material/KeyboardArrowDownRounded";
+import NavigateBeforeRounded from "@mui/icons-material/NavigateBeforeRounded";
+import NavigateNextRounded from "@mui/icons-material/NavigateNextRounded";
+import SearchRounded from "@mui/icons-material/SearchRounded";
+import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
+import TableRowsRounded from "@mui/icons-material/TableRowsRounded";
+import UnfoldMoreRounded from "@mui/icons-material/UnfoldMoreRounded";
+import ViewAgendaRounded from "@mui/icons-material/ViewAgendaRounded";
+import ButtonBase from "@mui/material/ButtonBase";
+import Divider from "@mui/material/Divider";
+import InputBase from "@mui/material/InputBase";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import Popover from "@mui/material/Popover";
+import Select from "@mui/material/Select";
+import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
+import Typography from "@mui/material/Typography";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormGroup from "@mui/material/FormGroup";
+import Button from "@mui/material/Button";
+import { alpha, useTheme } from "@mui/material/styles";
+import { ActionButton } from "@shared/ui/buttons";
+
+type CellAlign = "left" | "center" | "right";
+
+type TableUiScale = {
+  toolbarGap: number;
+  searchWidth: number;
+  searchHeight: number;
+  controlRadius: number;
+  headerHeight: number;
+  rowHeight: number;
+  footerHeight: number;
+  pagerButtonSize: number;
+  rowsPerPageWidth: number;
+  fontSize: number;
+  iconSize: number;
+  rowGap: string;
+  gridColumnGap: number;
+  rowPaddingX: number;
+  cellPaddingX: number;
+};
+
+type ColumnResizeState = {
+  index: number;
+  startX: number;
+  initialWidths: number[];
+};
+
+const DEFAULT_COLUMN_WIDTH = 160;
+const FR_COLUMN_WIDTH_UNIT = 150;
+const MIN_COLUMN_WIDTH = 120;
+const MIN_NARROW_COLUMN_WIDTH = 40;
+type PaginationItem = number | "ellipsis-left" | "ellipsis-right";
+type ColumnFilterKind = "select" | "none";
+type SortDirection = "asc" | "desc";
+type DataViewMode = "table" | "cards";
+
+export type TableTemplateFilterOption = {
+  label: string;
+  value: string;
+};
+
+const tableUiScale: TableUiScale = {
+  toolbarGap: 12,
+  searchWidth: 360,
+  searchHeight: 44,
+  controlRadius: 12,
+  headerHeight: 44,
+  rowHeight: 52,
+  footerHeight: 56,
+  pagerButtonSize: 40,
+  rowsPerPageWidth: 64,
+  fontSize: 15,
+  iconSize: 22,
+  rowGap: "2px",
+  gridColumnGap: 0,
+  rowPaddingX: 2,
+  cellPaddingX: 0.75
+};
+
+export type TableTemplateColumn<T> = {
+  id: string;
+  header: string;
+  field?: keyof T;
+  width?: string;
+  minWidth?: number;
+  align?: CellAlign;
+  filterKind?: ColumnFilterKind;
+  filterOptions?: TableTemplateFilterOption[];
+  getFilterValue?: (row: T) => string;
+  sortable?: boolean;
+  getSortValue?: (row: T) => unknown;
+  renderCell?: (row: T) => ReactNode;
+  renderValue?: (value: unknown, row: T) => ReactNode;
+  getSearchValue?: (row: T) => string;
+};
+
+export type TableTemplateProps<T> = {
+  columns: TableTemplateColumn<T>[];
+  rows: T[];
+  getCardPrimaryText?: (row: T) => ReactNode;
+  getCardSecondaryText?: (row: T) => ReactNode;
+  renderCard?: (row: T, rowIndex: number) => ReactNode;
+  cardExcludedColumnIds?: string[];
+  getRowId?: (row: T, index: number) => string | number;
+  showSearch?: boolean;
+  searchPlaceholder?: string;
+  addButtonLabel?: string;
+  onAddClick?: () => void;
+  showAddAction?: boolean;
+  onSettingsClick?: () => void;
+  showSettingsAction?: boolean;
+  showViewToggle?: boolean;
+  rowsPerPageOptions?: number[];
+  defaultRowsPerPage?: number;
+  noRowsLabel?: string;
+  noSearchResultsLabel?: string;
+  minTableWidth?: number;
+  onSearchChange?: (value: string) => void;
+  resizableColumns?: boolean;
+  defaultViewMode?: DataViewMode;
+  cardExpansionControl?: {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    openLabel?: string;
+    closeLabel?: string;
+  };
+};
+
+function alignToFlex(align: CellAlign | undefined) {
+  if (align === "center") {
+    return "center";
+  }
+
+  if (align === "right") {
+    return "flex-end";
+  }
+
+  return "flex-start";
+}
+
+function normalizeSearch(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function getColumnMinWidth<T>(column: TableTemplateColumn<T>) {
+  if (typeof column.minWidth === "number" && Number.isFinite(column.minWidth)) {
+    return Math.max(MIN_NARROW_COLUMN_WIDTH, column.minWidth);
+  }
+
+  return MIN_COLUMN_WIDTH;
+}
+
+function parseColumnWidth(width: string | undefined, columnMinWidth: number) {
+  if (!width) {
+    return DEFAULT_COLUMN_WIDTH;
+  }
+
+  const normalized = width.trim().toLocaleLowerCase();
+
+  if (normalized.endsWith("px")) {
+    const parsed = Number.parseFloat(normalized.replace("px", ""));
+    return Number.isFinite(parsed) ? Math.max(columnMinWidth, parsed) : DEFAULT_COLUMN_WIDTH;
+  }
+
+  if (normalized.endsWith("fr")) {
+    const parsed = Number.parseFloat(normalized.replace("fr", ""));
+    return Number.isFinite(parsed) ? Math.max(columnMinWidth, parsed * FR_COLUMN_WIDTH_UNIT) : DEFAULT_COLUMN_WIDTH;
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? Math.max(columnMinWidth, parsed) : DEFAULT_COLUMN_WIDTH;
+}
+
+function isStretchableColumnWidth(width: string | undefined) {
+  if (!width) {
+    return true;
+  }
+
+  return width.trim().toLocaleLowerCase().endsWith("fr");
+}
+
+function valueToText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(valueToText).join(" ");
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).map(valueToText).join(" ");
+  }
+
+  return "";
+}
+
+function valueToDisplay(value: unknown) {
+  const text = valueToText(value).trim();
+  return text.length > 0 ? text : "-";
+}
+
+function getSearchTextByColumn<T>(column: TableTemplateColumn<T>, row: T) {
+  if (column.getSearchValue) {
+    return column.getSearchValue(row);
+  }
+
+  if (column.field) {
+    return valueToText(row[column.field]);
+  }
+
+  return "";
+}
+
+function getFilterTextByColumn<T>(column: TableTemplateColumn<T>, row: T) {
+  if (column.getFilterValue) {
+    return column.getFilterValue(row);
+  }
+
+  return getSearchTextByColumn(column, row);
+}
+
+function getSortValueByColumn<T>(column: TableTemplateColumn<T>, row: T) {
+  if (column.getSortValue) {
+    return column.getSortValue(row);
+  }
+
+  if (column.field) {
+    const rawValue = row[column.field];
+
+    if (
+      typeof rawValue === "string" ||
+      typeof rawValue === "number" ||
+      typeof rawValue === "boolean" ||
+      rawValue instanceof Date ||
+      rawValue === null ||
+      rawValue === undefined
+    ) {
+      return rawValue;
+    }
+
+    return valueToText(rawValue);
+  }
+
+  return getSearchTextByColumn(column, row);
+}
+
+function getColumnSignature<T>(column: TableTemplateColumn<T>) {
+  return `${column.id} ${column.header}`.toLocaleLowerCase();
+}
+
+function getContactFieldLabel<T>(column: TableTemplateColumn<T>) {
+  const signature = getColumnSignature(column);
+  const id = column.id.toLocaleLowerCase();
+
+  if (id.includes("phone") || signature.includes("phone")) {
+    return "Телефон";
+  }
+
+  if (id.includes("email") || signature.includes("email") || signature.includes("mail")) {
+    return "Почта";
+  }
+
+  return column.header;
+}
+
+function compareSortValues(left: unknown, right: unknown) {
+  if (left === right) {
+    return 0;
+  }
+
+  if (left === null || left === undefined) {
+    return -1;
+  }
+
+  if (right === null || right === undefined) {
+    return 1;
+  }
+
+  if (left instanceof Date && right instanceof Date) {
+    return left.getTime() - right.getTime();
+  }
+
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+
+  if (typeof left === "boolean" && typeof right === "boolean") {
+    return Number(left) - Number(right);
+  }
+
+  return String(left).localeCompare(String(right), "ru", { sensitivity: "base", numeric: true });
+}
+
+function getColumnContentWeight<T>(column: TableTemplateColumn<T>, rows: T[]) {
+  const headerLength = column.header.trim().length;
+  const valuesLength = rows.reduce((maxLength, row) => {
+    const value = getSearchTextByColumn(column, row);
+    return Math.max(maxLength, value.trim().length);
+  }, 0);
+
+  const totalLength = Math.max(headerLength, valuesLength);
+  return Math.max(8, Math.min(40, totalLength));
+}
+
+function resolveDefaultColumnWidths<T>(columns: TableTemplateColumn<T>[], rows: T[], minTableContentWidth: number) {
+  const columnMinWidths = columns.map((column) => getColumnMinWidth(column));
+  const explicitWidths = columns.map((column, index) => (column.width ? parseColumnWidth(column.width, columnMinWidths[index]) : null));
+  const explicitTotal = explicitWidths.reduce<number>((total, width) => total + (width ?? 0), 0);
+
+  const autoColumnIndexes = explicitWidths
+    .map((width, index) => ({ width, index }))
+    .filter((item) => item.width === null)
+    .map((item) => item.index);
+
+  if (autoColumnIndexes.length === 0) {
+    return explicitWidths.map((width, index) => width ?? Math.max(DEFAULT_COLUMN_WIDTH, columnMinWidths[index]));
+  }
+
+  const autoWeights = autoColumnIndexes.map((index) => getColumnContentWeight(columns[index], rows));
+  const totalWeight = autoWeights.reduce<number>((sum, weight) => sum + weight, 0);
+  const minAutoTotal = autoColumnIndexes.reduce<number>((sum, index) => sum + columnMinWidths[index], 0);
+  const availableForAuto = Math.max(minAutoTotal, minTableContentWidth - explicitTotal);
+
+  return columns.map((column, index) => {
+    const explicitWidth = explicitWidths[index];
+    if (explicitWidth !== null) {
+      return explicitWidth;
+    }
+
+    const autoIndex = autoColumnIndexes.indexOf(index);
+    const weight = autoWeights[autoIndex];
+    const proportionalWidth = (availableForAuto * weight) / totalWeight;
+    return Math.max(getColumnMinWidth(column), proportionalWidth);
+  });
+}
+
+function getPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, "ellipsis-right", totalPages];
+  }
+
+  if (currentPage >= totalPages - 3) {
+    return [1, "ellipsis-left", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+
+  return [1, "ellipsis-left", currentPage - 1, currentPage, currentPage + 1, "ellipsis-right", totalPages];
+}
+
+export function TableTemplate<T>({
+  columns,
+  rows,
+  getCardPrimaryText,
+  getCardSecondaryText,
+  renderCard,
+  cardExcludedColumnIds = [],
+  getRowId,
+  showSearch = true,
+  searchPlaceholder = "Найти",
+  addButtonLabel = "Добавить",
+  onAddClick,
+  showAddAction = true,
+  onSettingsClick,
+  showSettingsAction = true,
+  rowsPerPageOptions = [8, 16, 32],
+  defaultRowsPerPage,
+  noRowsLabel = "Список пуст",
+  noSearchResultsLabel = "Ничего не найдено",
+  minTableWidth = 980,
+  onSearchChange,
+  resizableColumns = true,
+  showViewToggle = true,
+  defaultViewMode,
+  cardExpansionControl
+}: TableTemplateProps<T>) {
+  const theme = useTheme();
+  const isCompactViewport = useMediaQuery(theme.breakpoints.down("md"));
+  const {
+    toolbarGap,
+    searchWidth,
+    searchHeight,
+    controlRadius,
+    headerHeight,
+    rowHeight,
+    footerHeight,
+    pagerButtonSize,
+    rowsPerPageWidth,
+    fontSize,
+    iconSize,
+    rowGap,
+    gridColumnGap,
+    rowPaddingX,
+    cellPaddingX
+  } = tableUiScale;
+
+  const allColumnIds = useMemo(() => columns.map((column) => column.id), [columns]);
+  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>(allColumnIds);
+  const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(null);
+  const rowHorizontalPadding = Number.parseFloat(theme.spacing(rowPaddingX));
+  const rowPaddingTotal = rowHorizontalPadding * 2;
+
+  useEffect(() => {
+    setVisibleColumnIds((currentVisibleColumnIds) => {
+      const nextVisibleColumnIds = allColumnIds.filter((columnId) => currentVisibleColumnIds.includes(columnId));
+      return nextVisibleColumnIds.length > 0 ? nextVisibleColumnIds : allColumnIds;
+    });
+  }, [allColumnIds]);
+
+  const visibleColumns = useMemo(
+    () => columns.filter((column) => visibleColumnIds.includes(column.id)),
+    [columns, visibleColumnIds]
+  );
+
+  const getMinTableContentWidth = (targetColumns: TableTemplateColumn<T>[]) => {
+    const minColumnsTotalWidth = targetColumns.reduce((total, column) => total + getColumnMinWidth(column), 0);
+    const safeMinColumnsTotalWidth = targetColumns.length > 0 ? minColumnsTotalWidth : MIN_COLUMN_WIDTH;
+    return Math.max(safeMinColumnsTotalWidth, minTableWidth - rowPaddingTotal);
+  };
+  const minTableContentWidth = getMinTableContentWidth(visibleColumns);
+
+  const [columnWidths, setColumnWidths] = useState<number[]>(() => resolveDefaultColumnWidths(visibleColumns, rows, minTableContentWidth));
+  const [hasManualColumnSizing, setHasManualColumnSizing] = useState(false);
+  const [isResizingColumn, setIsResizingColumn] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(minTableWidth);
+  const resizeStateRef = useRef<ColumnResizeState | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+
+  const safeRowsPerPageOptions = useMemo(() => {
+    const positiveOptions = rowsPerPageOptions.filter((value) => Number.isFinite(value) && value > 0);
+    const uniqueOptions = Array.from(new Set(positiveOptions));
+
+    return uniqueOptions.length > 0 ? uniqueOptions : [8];
+  }, [rowsPerPageOptions]);
+
+  const [searchValue, setSearchValue] = useState("");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+  const [sortState, setSortState] = useState<{ columnId: string; direction: SortDirection } | null>(null);
+  const [selectFilterAnchor, setSelectFilterAnchor] = useState<{ columnId: string; anchorEl: HTMLElement } | null>(null);
+  const [viewMode, setViewMode] = useState<DataViewMode>(defaultViewMode ?? (isCompactViewport ? "cards" : "table"));
+  const [rowsPerPage, setRowsPerPage] = useState(
+    defaultRowsPerPage && safeRowsPerPageOptions.includes(defaultRowsPerPage) ? defaultRowsPerPage : safeRowsPerPageOptions[0]
+  );
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    if (!defaultViewMode) {
+      return;
+    }
+
+    setViewMode(defaultViewMode);
+  }, [defaultViewMode]);
+
+  useEffect(() => {
+    setColumnFilters((currentFilters) => {
+      const nextFilters = Object.entries(currentFilters).filter(([columnId]) => allColumnIds.includes(columnId));
+      return Object.fromEntries(nextFilters);
+    });
+  }, [allColumnIds]);
+
+  useEffect(() => {
+    if (!sortState) {
+      return;
+    }
+
+    if (!visibleColumns.some((column) => column.id === sortState.columnId)) {
+      setSortState(null);
+    }
+  }, [sortState, visibleColumns]);
+
+  useEffect(() => {
+    if (!selectFilterAnchor) {
+      return;
+    }
+
+    const hasSelectColumn = visibleColumns.some(
+      (column) => column.id === selectFilterAnchor.columnId && column.filterKind === "select"
+    );
+
+    if (!hasSelectColumn) {
+      setSelectFilterAnchor(null);
+    }
+  }, [selectFilterAnchor, visibleColumns]);
+
+  useEffect(() => {
+    const nextWidths = resolveDefaultColumnWidths(visibleColumns, rows, minTableContentWidth);
+
+    if (!hasManualColumnSizing || columnWidths.length !== visibleColumns.length) {
+      setColumnWidths(nextWidths);
+    }
+  }, [columnWidths.length, hasManualColumnSizing, minTableContentWidth, rows, visibleColumns]);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) {
+      return;
+    }
+
+    const syncViewportWidth = () => {
+      setViewportWidth(element.clientWidth);
+    };
+
+    syncViewportWidth();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", syncViewportWidth);
+
+      return () => {
+        window.removeEventListener("resize", syncViewportWidth);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      syncViewportWidth();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isResizingColumn) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const state = resizeStateRef.current;
+      if (!state) {
+        return;
+      }
+
+      const leftIndex = state.index;
+      const rightIndex = state.index + 1;
+      const initialLeftWidth = state.initialWidths[leftIndex];
+      const initialRightWidth = state.initialWidths[rightIndex];
+
+      if (initialLeftWidth === undefined || initialRightWidth === undefined) {
+        return;
+      }
+
+      const widthDelta = event.clientX - state.startX;
+      const leftMinWidth = getColumnMinWidth(visibleColumns[leftIndex]);
+      const rightMinWidth = getColumnMinWidth(visibleColumns[rightIndex]);
+      const minDelta = leftMinWidth - initialLeftWidth;
+      const maxDelta = initialRightWidth - rightMinWidth;
+      const boundedDelta = Math.min(maxDelta, Math.max(minDelta, widthDelta));
+
+      const nextWidths = [...state.initialWidths];
+      nextWidths[leftIndex] = initialLeftWidth + boundedDelta;
+      nextWidths[rightIndex] = initialRightWidth - boundedDelta;
+
+      setColumnWidths(nextWidths);
+    };
+
+    const handleMouseUp = () => {
+      resizeStateRef.current = null;
+      setIsResizingColumn(false);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingColumn, visibleColumns]);
+
+  useEffect(() => {
+    if (!safeRowsPerPageOptions.includes(rowsPerPage)) {
+      setRowsPerPage(safeRowsPerPageOptions[0]);
+    }
+  }, [rowsPerPage, safeRowsPerPageOptions]);
+
+  const normalizedSearch = useMemo(() => normalizeSearch(searchValue), [searchValue]);
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((row) => {
+      if (normalizedSearch) {
+        const byColumns = columns.map((column) => getSearchTextByColumn(column, row)).join(" ");
+        const allRowText = valueToText(row);
+        const joinedText = `${byColumns} ${allRowText}`.toLocaleLowerCase();
+
+        if (!joinedText.includes(normalizedSearch)) {
+          return false;
+        }
+      }
+
+      return visibleColumns.every((column) => {
+        if (column.filterKind !== "select") {
+          return true;
+        }
+
+        const selectedFilterValues = columnFilters[column.id] ?? [];
+
+        if (selectedFilterValues.length === 0) {
+          return true;
+        }
+
+        const normalizedColumnValue = normalizeSearch(getFilterTextByColumn(column, row));
+        return selectedFilterValues.some((filterValue) => normalizeSearch(filterValue) === normalizedColumnValue);
+      });
+    });
+  }, [columnFilters, columns, normalizedSearch, rows, visibleColumns]);
+
+  const sortedRows = useMemo(() => {
+    if (!sortState) {
+      return filteredRows;
+    }
+
+    const sortColumn = visibleColumns.find((column) => column.id === sortState.columnId);
+
+    if (!sortColumn) {
+      return filteredRows;
+    }
+
+    const directionFactor = sortState.direction === "asc" ? 1 : -1;
+
+    return [...filteredRows].sort((leftRow, rightRow) => {
+      const leftValue = getSortValueByColumn(sortColumn, leftRow);
+      const rightValue = getSortValueByColumn(sortColumn, rightRow);
+      return compareSortValues(leftValue, rightValue) * directionFactor;
+    });
+  }, [filteredRows, sortState, visibleColumns]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [columnFilters, normalizedSearch, rowsPerPage]);
+
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / rowsPerPage));
+
+  useEffect(() => {
+    if (page > pageCount) {
+      setPage(pageCount);
+    }
+  }, [page, pageCount]);
+
+  const visibleRows = useMemo(() => {
+    const start = (page - 1) * rowsPerPage;
+    return sortedRows.slice(start, start + rowsPerPage);
+  }, [page, rowsPerPage, sortedRows]);
+  const paginationItems = useMemo(() => getPaginationItems(page, pageCount), [page, pageCount]);
+
+  const firstVisibleRow = sortedRows.length > 0 ? (page - 1) * rowsPerPage + 1 : 0;
+  const lastVisibleRow = sortedRows.length > 0 ? Math.min(page * rowsPerPage, sortedRows.length) : 0;
+  const hasActiveSelectFilters = Object.values(columnFilters).some((values) => values.length > 0);
+  const showEmptySearchState = (normalizedSearch.length > 0 || hasActiveSelectFilters) && sortedRows.length === 0;
+
+  const normalizedColumnWidths =
+    columnWidths.length === visibleColumns.length ? columnWidths : resolveDefaultColumnWidths(visibleColumns, rows, minTableContentWidth);
+  const autoStretchedColumnWidths = useMemo(() => {
+    if (normalizedColumnWidths.length === 0) {
+      return normalizedColumnWidths;
+    }
+
+    const baseTotalWidth = normalizedColumnWidths.reduce((sum, width) => sum + width, 0);
+    const viewportContentWidth = Math.max(0, viewportWidth - rowPaddingTotal);
+    const targetWidth = Math.max(minTableContentWidth, viewportContentWidth);
+
+    if (baseTotalWidth >= targetWidth || baseTotalWidth <= 0) {
+      return normalizedColumnWidths;
+    }
+
+    const extraWidth = targetWidth - baseTotalWidth;
+    const stretchableIndexes = visibleColumns
+      .map((column, index) => (isStretchableColumnWidth(column.width) ? index : -1))
+      .filter((index) => index >= 0);
+
+    if (stretchableIndexes.length === 0) {
+      return normalizedColumnWidths;
+    }
+
+    const stretchableIndexSet = new Set(stretchableIndexes);
+    const stretchableBaseTotal = stretchableIndexes.reduce((sum, index) => sum + normalizedColumnWidths[index], 0);
+
+    if (stretchableBaseTotal <= 0) {
+      return normalizedColumnWidths;
+    }
+
+    return normalizedColumnWidths.map((width, index) => {
+      if (!stretchableIndexSet.has(index)) {
+        return width;
+      }
+
+      const ratio = width / stretchableBaseTotal;
+      return width + extraWidth * ratio;
+    });
+  }, [minTableContentWidth, normalizedColumnWidths, rowPaddingTotal, viewportWidth, visibleColumns]);
+  const displayColumnWidths = hasManualColumnSizing ? normalizedColumnWidths : autoStretchedColumnWidths;
+  const gridTemplateColumns = displayColumnWidths.map((width) => `${Math.round(width)}px`).join(" ");
+  const tracksTotalWidth = displayColumnWidths.reduce((acc, width) => acc + width, 0);
+  const gapsTotalWidth = Math.max(0, visibleColumns.length - 1) * gridColumnGap;
+  const contentMinWidth = Math.max(minTableWidth, tracksTotalWidth + gapsTotalWidth + rowPaddingTotal);
+  const effectiveHeaderHeight = headerHeight;
+
+  const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value;
+    setSearchValue(nextValue);
+    onSearchChange?.(nextValue);
+  };
+
+  const handleSortToggle = (columnId: string) => {
+    setSortState((currentSortState) => {
+      if (!currentSortState || currentSortState.columnId !== columnId) {
+        return { columnId, direction: "asc" };
+      }
+
+      if (currentSortState.direction === "asc") {
+        return { columnId, direction: "desc" };
+      }
+
+      return null;
+    });
+  };
+
+  const handleToggleColumnSelectFilterValue = (columnId: string, nextValue: string) => {
+    setColumnFilters((currentFilters) => {
+      const currentValues = currentFilters[columnId] ?? [];
+      const hasValue = currentValues.includes(nextValue);
+      const nextValues = hasValue ? currentValues.filter((value) => value !== nextValue) : [...currentValues, nextValue];
+
+      if (nextValues.length === 0) {
+        const { [columnId]: _, ...rest } = currentFilters;
+        return rest;
+      }
+
+      return {
+        ...currentFilters,
+        [columnId]: nextValues
+      };
+    });
+  };
+
+  const handleSelectAllColumnSelectFilter = (columnId: string, options: TableTemplateFilterOption[]) => {
+    const nextValues = Array.from(new Set(options.map((option) => option.value)));
+
+    if (nextValues.length === 0) {
+      return;
+    }
+
+    setColumnFilters((currentFilters) => ({
+      ...currentFilters,
+      [columnId]: nextValues
+    }));
+  };
+
+  const handleResetColumnSelectFilter = (columnId: string) => {
+    setColumnFilters((currentFilters) => {
+      if (!currentFilters[columnId]) {
+        return currentFilters;
+      }
+
+      const { [columnId]: _, ...rest } = currentFilters;
+      return rest;
+    });
+  };
+
+  const handleOpenSelectFilter = (columnId: string, event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+
+    setSelectFilterAnchor((currentAnchor) => {
+      if (currentAnchor?.columnId === columnId) {
+        return null;
+      }
+
+      return {
+        columnId,
+        anchorEl: event.currentTarget
+      };
+    });
+  };
+
+  const handleCloseSelectFilter = () => {
+    setSelectFilterAnchor(null);
+  };
+
+  const handleSettingsButtonClick = (event: ReactMouseEvent<HTMLElement>) => {
+    onSettingsClick?.();
+    setSettingsAnchorEl((currentAnchorEl) => (currentAnchorEl ? null : event.currentTarget));
+  };
+
+  const handleCloseSettings = () => {
+    setSettingsAnchorEl(null);
+  };
+
+  const handleToggleColumn = (columnId: string) => {
+    setVisibleColumnIds((currentVisibleColumnIds) => {
+      const isVisible = currentVisibleColumnIds.includes(columnId);
+
+      if (isVisible) {
+        if (currentVisibleColumnIds.length === 1) {
+          return currentVisibleColumnIds;
+        }
+
+        return currentVisibleColumnIds.filter((id) => id !== columnId);
+      }
+
+      return allColumnIds.filter((id) => id === columnId || currentVisibleColumnIds.includes(id));
+    });
+
+    setHasManualColumnSizing(false);
+  };
+
+  const handleShowAllColumns = () => {
+    setVisibleColumnIds(allColumnIds);
+    setHasManualColumnSizing(false);
+  };
+
+  const handleResetDefaultSettings = () => {
+    setVisibleColumnIds(allColumnIds);
+    setHasManualColumnSizing(false);
+    setColumnFilters({});
+    setSortState(null);
+    setColumnWidths(resolveDefaultColumnWidths(columns, rows, getMinTableContentWidth(columns)));
+  };
+
+  const handleResizeStart = (index: number, event: ReactMouseEvent<HTMLElement>) => {
+    if (!resizableColumns || index >= visibleColumns.length - 1) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const baseWidths = hasManualColumnSizing ? normalizedColumnWidths : autoStretchedColumnWidths;
+
+    if (!hasManualColumnSizing) {
+      setColumnWidths(baseWidths);
+      setHasManualColumnSizing(true);
+    }
+
+    resizeStateRef.current = {
+      index,
+      startX: event.clientX,
+      initialWidths: [...baseWidths]
+    };
+
+    setIsResizingColumn(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const activeSelectFilterColumn = useMemo(() => {
+    if (!selectFilterAnchor) {
+      return null;
+    }
+
+    const column = visibleColumns.find((item) => item.id === selectFilterAnchor.columnId);
+
+    if (!column || column.filterKind !== "select") {
+      return null;
+    }
+
+    return column;
+  }, [selectFilterAnchor, visibleColumns]);
+  const isCardsView = viewMode === "cards";
+  const viewToggleButtonRadius = Math.max(8, controlRadius - 4);
+
+  return (
+    <Paper
+      sx={{
+        borderRadius: `${theme.acomShape.panelRadius}px`,
+        border: "1px solid",
+        borderColor: "divider",
+        bgcolor: "brand.softSection",
+        p: `${theme.acomShape.panelPadding}px`
+      }}
+    >
+      <Stack spacing={1.25}>
+        <Stack direction="row" gap={`${toolbarGap}px`} justifyContent="space-between" alignItems="center" flexWrap="wrap">
+          {showSearch && (
+            <Paper
+            sx={{
+              width: { xs: "100%", md: searchWidth },
+              minHeight: searchHeight,
+              borderRadius: `${controlRadius}px`,
+              border: "1px solid",
+              borderColor: "divider",
+              bgcolor: "background.paper",
+              px: 2,
+              py: 0.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 1
+            }}
+          >
+            <InputBase
+              value={searchValue}
+              onChange={handleSearchChange}
+              placeholder={searchPlaceholder}
+              inputProps={{ "aria-label": "Поиск по таблице" }}
+              sx={{
+                flex: 1,
+                fontSize,
+                color: "text.primary",
+                "& input::placeholder": {
+                  color: "text.secondary",
+                  opacity: 1
+                }
+              }}
+            />
+            <SearchRounded sx={{ color: "text.secondary", fontSize: iconSize }} />
+            </Paper>
+          )}
+
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ width: { xs: "100%", md: "auto" }, justifyContent: "flex-end" }}>
+            {showViewToggle && (
+              <Paper
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  p: 0.5,
+                  borderRadius: `${controlRadius}px`,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.paper"
+                }}
+              >
+              <ActionButton
+                kind="custom"
+                selected={viewMode === "table"}
+                showNavigationIcons={false}
+                aria-label={"Режим таблицы"}
+                onClick={() => setViewMode("table")}
+                sx={{
+                  minHeight: searchHeight - 8,
+                  minWidth: 0,
+                  px: { xs: 1.25, sm: 1.6 },
+                  borderTopLeftRadius: `${viewToggleButtonRadius}px`,
+                  borderBottomLeftRadius: `${viewToggleButtonRadius}px`,
+                  borderTopRightRadius: 0,
+                  borderBottomRightRadius: 0,
+                  transition: "background-color 0.2s ease, color 0.2s ease"
+                }}
+              >
+                <Stack direction="row" alignItems="center" gap={0.75}>
+                  <TableRowsRounded sx={{ fontSize: 18 }} />
+                  <Typography sx={{ display: { xs: "none", sm: "block" }, fontSize: fontSize - 1, fontWeight: 600 }}>
+                    {"Таблица"}
+                  </Typography>
+                </Stack>
+              </ActionButton>
+              <ActionButton
+                kind="custom"
+                selected={viewMode === "cards"}
+                showNavigationIcons={false}
+                aria-label={"Режим карточек"}
+                onClick={() => setViewMode("cards")}
+                sx={{
+                  minHeight: searchHeight - 8,
+                  minWidth: 0,
+                  px: { xs: 1.25, sm: 1.6 },
+                  borderTopRightRadius: `${viewToggleButtonRadius}px`,
+                  borderBottomRightRadius: `${viewToggleButtonRadius}px`,
+                  borderTopLeftRadius: 0,
+                  borderBottomLeftRadius: 0,
+                  transition: "background-color 0.2s ease, color 0.2s ease"
+                }}
+              >
+                <Stack direction="row" alignItems="center" gap={0.75}>
+                  <ViewAgendaRounded sx={{ fontSize: 18 }} />
+                  <Typography sx={{ display: { xs: "none", sm: "block" }, fontSize: fontSize - 1, fontWeight: 600 }}>
+                    {"Карточки"}
+                  </Typography>
+                </Stack>
+              </ActionButton>
+              {viewMode === "cards" && cardExpansionControl && (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  sx={{
+                    ml: 0.5,
+                    pl: 1,
+                    borderLeft: "1px solid",
+                    borderColor: "divider"
+                  }}
+                >
+                  <Switch
+                    size="small"
+                    checked={cardExpansionControl.checked}
+                    onChange={(event) => cardExpansionControl.onChange(event.target.checked)}
+                    inputProps={{ "aria-label": "Раскрыть или свернуть все карточки" }}
+                  />
+                  <Typography
+                    sx={{
+                      display: { xs: "none", sm: "block" },
+                      fontSize: fontSize - 2,
+                      color: "text.secondary",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {cardExpansionControl.checked
+                      ? cardExpansionControl.closeLabel ?? "Свернуть все"
+                      : cardExpansionControl.openLabel ?? "Раскрыть все"}
+                  </Typography>
+                </Stack>
+              )}
+              </Paper>
+            )}
+            {showAddAction && onAddClick && (
+              <ActionButton
+                kind="filled"
+                showNavigationIcons={false}
+                startIcon={<AddRounded />}
+                onClick={onAddClick}
+                sx={{
+                  minHeight: searchHeight,
+                  px: 2.5,
+                  borderRadius: `${controlRadius}px`,
+                  fontSize
+                }}
+              >
+                {addButtonLabel}
+              </ActionButton>
+            )}
+            {showSettingsAction && (
+              <ActionButton
+                kind="outlined"
+                showNavigationIcons={false}
+                onClick={handleSettingsButtonClick}
+                sx={{
+                  minHeight: searchHeight,
+                  width: searchHeight,
+                  minWidth: searchHeight,
+                  px: 0,
+                  borderRadius: `${controlRadius}px`,
+                  borderColor: "divider",
+                  color: "text.secondary"
+                }}
+              >
+                <SettingsOutlined sx={{ fontSize: iconSize }} />
+              </ActionButton>
+            )}
+          </Stack>
+        </Stack>
+
+        <Popover
+          open={Boolean(settingsAnchorEl)}
+          anchorEl={settingsAnchorEl}
+          onClose={handleCloseSettings}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+        >
+          <Stack sx={{ width: 320, p: 2, gap: 1.25 }}>
+            <Typography sx={{ fontWeight: 600, color: "text.primary", fontSize }}>{"Настройки таблицы"}</Typography>
+            <FormGroup
+              sx={{
+                maxHeight: 240,
+                overflowY: "auto",
+                overflowX: "hidden",
+                flexWrap: "nowrap",
+                alignItems: "stretch"
+              }}
+            >
+              {columns.map((column) => {
+                const isChecked = visibleColumnIds.includes(column.id);
+                const isOnlyVisibleColumn = isChecked && visibleColumnIds.length === 1;
+
+                return (
+                  <FormControlLabel
+                    key={column.id}
+                    control={<Checkbox size="small" checked={isChecked} onChange={() => handleToggleColumn(column.id)} disabled={isOnlyVisibleColumn} />}
+                    label={column.header}
+                    sx={{
+                      width: "100%",
+                      m: 0,
+                      "& .MuiFormControlLabel-label": {
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }
+                    }}
+                  />
+                );
+              })}
+            </FormGroup>
+            <Divider />
+            <Stack direction="column" alignItems="stretch" gap={0.25}>
+              <Button variant="text" size="small" onClick={handleShowAllColumns} sx={{ justifyContent: "flex-start" }}>
+                {"Показать все"}
+              </Button>
+              <Button variant="text" size="small" onClick={handleResetDefaultSettings} sx={{ justifyContent: "flex-start" }}>
+                {"По умолчанию"}
+              </Button>
+            </Stack>
+          </Stack>
+        </Popover>
+
+        <Popover
+          open={Boolean(selectFilterAnchor && activeSelectFilterColumn)}
+          anchorEl={selectFilterAnchor?.anchorEl}
+          onClose={handleCloseSelectFilter}
+          anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+          transformOrigin={{ vertical: "top", horizontal: "left" }}
+        >
+          <Stack sx={{ minWidth: 220, p: 1, gap: 1 }}>
+            <Typography sx={{ fontSize: fontSize - 1, fontWeight: 600, color: "text.secondary", textTransform: "uppercase" }}>
+              {activeSelectFilterColumn?.header}
+            </Typography>
+            <Stack direction="column" gap={0.25}>
+              {(activeSelectFilterColumn?.filterOptions ?? []).map((option) => {
+                const isSelected = (columnFilters[activeSelectFilterColumn?.id ?? ""] ?? []).includes(option.value);
+
+                return (
+                  <FormControlLabel
+                    key={`${activeSelectFilterColumn?.id}-${option.value}`}
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (!activeSelectFilterColumn) {
+                            return;
+                          }
+
+                          handleToggleColumnSelectFilterValue(activeSelectFilterColumn.id, option.value);
+                        }}
+                      />
+                    }
+                    label={option.label}
+                    sx={{
+                      width: "100%",
+                      m: 0
+                    }}
+                  />
+                );
+              })}
+            </Stack>
+            <Divider />
+            <Stack direction="column" alignItems="stretch" gap={0.25}>
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => {
+                  if (!activeSelectFilterColumn) {
+                    return;
+                  }
+
+                  handleSelectAllColumnSelectFilter(activeSelectFilterColumn.id, activeSelectFilterColumn.filterOptions ?? []);
+                }}
+                sx={{ justifyContent: "flex-start" }}
+              >
+                {"Выбрать все"}
+              </Button>
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => {
+                  if (!activeSelectFilterColumn) {
+                    return;
+                  }
+
+                  handleResetColumnSelectFilter(activeSelectFilterColumn.id);
+                }}
+                disabled={!activeSelectFilterColumn || (columnFilters[activeSelectFilterColumn.id] ?? []).length === 0}
+                sx={{ justifyContent: "flex-start" }}
+              >
+                {"Сбросить"}
+              </Button>
+            </Stack>
+          </Stack>
+        </Popover>
+        <Stack ref={viewportRef} sx={{ overflowX: isCardsView ? "visible" : "auto" }}>
+          {!isCardsView && (
+            <Stack sx={{ minWidth: `${contentMinWidth}px`, gap: rowGap }}>
+              <Stack
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns,
+                  alignItems: "center",
+                  columnGap: `${gridColumnGap}px`,
+                  px: rowPaddingX,
+                  minHeight: effectiveHeaderHeight,
+                  borderRadius: `${theme.acomShape.controlRadius}px`,
+                  bgcolor: alpha(theme.palette.primary.main, 0.14)
+                }}
+              >
+                {visibleColumns.map((column, index) => (
+                  <Stack
+                    key={column.id}
+                    sx={{
+                      position: "relative",
+                      minWidth: 0,
+                      height: "100%",
+                      px: cellPaddingX,
+                      justifyContent: "center",
+                      gap: 0.5
+                    }}
+                  >
+                    <Stack direction="row" alignItems="center" gap={0.5} sx={{ width: "100%", minWidth: 0 }}>
+                      <Typography
+                        sx={{
+                          minWidth: 0,
+                          flex: 1,
+                          fontSize: fontSize - 1,
+                          fontWeight: 600,
+                          color: "text.secondary",
+                          textTransform: "uppercase",
+                          textAlign: column.align ?? "left",
+                          whiteSpace: "normal",
+                          overflowWrap: "normal",
+                          wordBreak: "normal",
+                          lineHeight: 1.2,
+                          pr: resizableColumns && index < visibleColumns.length - 1 ? 1 : 0
+                        }}
+                      >
+                        {column.header}
+                      </Typography>
+                      <Stack direction="row" alignItems="center" sx={{ flexShrink: 0 }}>
+                        {column.filterKind !== "select" && column.sortable !== false && (
+                          <ButtonBase
+                            onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                              event.stopPropagation();
+                              handleSortToggle(column.id);
+                            }}
+                            sx={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: "4px",
+                              color: sortState?.columnId === column.id ? "primary.main" : "text.secondary",
+                              flexShrink: 0
+                            }}
+                          >
+                            {sortState?.columnId === column.id ? (
+                              sortState.direction === "asc" ? (
+                                <ArrowUpwardRounded sx={{ fontSize: 14 }} />
+                              ) : (
+                                <ArrowDownwardRounded sx={{ fontSize: 14 }} />
+                              )
+                            ) : (
+                              <UnfoldMoreRounded sx={{ fontSize: 14 }} />
+                            )}
+                          </ButtonBase>
+                        )}
+                        {column.filterKind === "select" && (
+                          <ButtonBase
+                            onClick={(event: ReactMouseEvent<HTMLButtonElement>) => handleOpenSelectFilter(column.id, event)}
+                            sx={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: "4px",
+                              color: (columnFilters[column.id] ?? []).length > 0
+                                ? "primary.main"
+                                : selectFilterAnchor?.columnId === column.id
+                                  ? "primary.main"
+                                  : "text.secondary",
+                              flexShrink: 0
+                            }}
+                          >
+                            <FilterAltRounded sx={{ fontSize: 14 }} />
+                          </ButtonBase>
+                        )}
+                      </Stack>
+                    </Stack>
+                    {resizableColumns && index < visibleColumns.length - 1 && (
+                      <Stack
+                        component="span"
+                        onMouseDown={(event: ReactMouseEvent<HTMLElement>) => handleResizeStart(index, event)}
+                        sx={{
+                          position: "absolute",
+                          top: 0,
+                          bottom: 0,
+                          right: -7,
+                          width: 14,
+                          zIndex: 10,
+                          cursor: "col-resize",
+                          backgroundColor: "transparent"
+                        }}
+                      />
+                    )}
+                  </Stack>
+                ))}
+              </Stack>
+
+              {visibleRows.length > 0 &&
+                visibleRows.map((row, index) => {
+                  const rowId = getRowId ? getRowId(row, index) : index;
+
+                  return (
+                    <Stack
+                      key={rowId}
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns,
+                        alignItems: "center",
+                        columnGap: `${gridColumnGap}px`,
+                        px: rowPaddingX,
+                        minHeight: rowHeight,
+                        borderRadius: `${theme.acomShape.controlRadius}px`,
+                        bgcolor: "background.paper",
+                        border: "1px solid",
+                        borderColor: "transparent",
+                        transition: "border-color 0.2s ease",
+                        "&:hover": {
+                          borderColor: "primary.main"
+                        }
+                      }}
+                    >
+                      {visibleColumns.map((column) =>
+                        column.renderCell ? (
+                          <Stack
+                            key={`${rowId}-${column.id}`}
+                            alignItems={alignToFlex(column.align)}
+                            sx={{ minWidth: 0, px: cellPaddingX }}
+                          >
+                            {column.renderCell(row)}
+                          </Stack>
+                        ) : column.renderValue ? (
+                          <Stack
+                            key={`${rowId}-${column.id}`}
+                            alignItems={alignToFlex(column.align)}
+                            sx={{ minWidth: 0, px: cellPaddingX }}
+                          >
+                            {column.renderValue(column.field ? row[column.field] : undefined, row)}
+                          </Stack>
+                        ) : (
+                          <Typography
+                            key={`${rowId}-${column.id}`}
+                            component="span"
+                            sx={{
+                              fontSize,
+                              color: "text.primary",
+                              textAlign: column.align ?? "left",
+                              px: cellPaddingX,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            {valueToDisplay(column.field ? row[column.field] : undefined)}
+                          </Typography>
+                        )
+                      )}
+                    </Stack>
+                  );
+                })}
+            </Stack>
+          )}
+
+          {isCardsView && (
+            <Stack
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  md: "repeat(2, minmax(0, 1fr))",
+                  lg: "repeat(3, minmax(0, 1fr))",
+                  xl: "repeat(4, minmax(0, 1fr))"
+                },
+                gap: 1.25
+              }}
+            >
+              {visibleRows.length > 0 &&
+                visibleRows.map((row, index) => {
+                  const rowId = getRowId ? getRowId(row, index) : index;
+
+                  if (renderCard) {
+                    return (
+                      <Stack key={rowId} sx={{ minWidth: 0 }}>
+                        {renderCard(row, index)}
+                      </Stack>
+                    );
+                  }
+
+                  const nameColumn =
+                    visibleColumns.find((column) => {
+                      const signature = getColumnSignature(column);
+                      const id = column.id.toLocaleLowerCase();
+                      return id.includes("fullname") || signature.includes("full") || signature.includes("name");
+                    }) ?? visibleColumns[0];
+                  const identityColumn = visibleColumns.find((column) => {
+                    if (column.id === nameColumn?.id) {
+                      return false;
+                    }
+
+                    const signature = getColumnSignature(column);
+                    const id = column.id.toLocaleLowerCase();
+                    return id.includes("login") || signature.includes("login") || signature.includes("id");
+                  });
+                  const statusColumn = visibleColumns.find((column) => column.filterKind === "select");
+                  const cardDetailColumns = visibleColumns.filter((column) => {
+                    return column.id !== nameColumn?.id && column.id !== identityColumn?.id && column.id !== statusColumn?.id;
+                  });
+                  const normalizedExcludedColumnIds = new Set(cardExcludedColumnIds);
+                  const visibleCardDetailColumns = cardDetailColumns.filter((column) => !normalizedExcludedColumnIds.has(column.id));
+                  const personalContactColumns = visibleCardDetailColumns.filter((column) => {
+                    const signature = getColumnSignature(column);
+                    const id = column.id.toLocaleLowerCase();
+                    const isContact = id.includes("phone") || id.includes("email") || signature.includes("phone") || signature.includes("email");
+                    const isCompany = id.includes("company") || signature.includes("company");
+                    return isContact && !isCompany;
+                  });
+                  const companyContactColumns = visibleCardDetailColumns.filter((column) => {
+                    const signature = getColumnSignature(column);
+                    const id = column.id.toLocaleLowerCase();
+                    const isContact = id.includes("phone") || id.includes("email") || signature.includes("phone") || signature.includes("email");
+                    const isCompany = id.includes("company") || signature.includes("company");
+                    return isContact && isCompany;
+                  });
+                  const extraColumns = visibleCardDetailColumns.filter(
+                    (column) => !personalContactColumns.includes(column) && !companyContactColumns.includes(column)
+                  );
+                  const cardPrimaryText = getCardPrimaryText?.(row);
+                  const cardSecondaryText = getCardSecondaryText?.(row);
+
+                  return (
+                    <Paper
+                      key={rowId}
+                      sx={{
+                        p: { xs: 1.25, sm: 1.5 },
+                        borderRadius: `${theme.acomShape.controlRadius}px`,
+                        bgcolor: "background.paper",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        boxShadow: `0 2px 8px ${alpha(theme.palette.common.black, 0.04)}`,
+                        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                        "&:hover": {
+                          borderColor: "primary.main",
+                          boxShadow: `0 6px 14px ${alpha(theme.palette.common.black, 0.08)}`
+                        }
+                      }}
+                    >
+                      {(nameColumn || statusColumn) && (
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1.25} mb={1.25}>
+                          {nameColumn && (
+                            <Stack sx={{ minWidth: 0, gap: 0.25 }}>
+                              <Typography
+                                sx={{
+                                  minWidth: 0,
+                                  fontSize: fontSize + 1,
+                                  fontWeight: 600,
+                                  color: "text.primary",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap"
+                                }}
+                              >
+                                {cardPrimaryText ??
+                                  `${valueToDisplay(nameColumn.field ? row[nameColumn.field] : getSearchTextByColumn(nameColumn, row))}${identityColumn
+                                    ? ` (${valueToDisplay(
+                                      identityColumn.field ? row[identityColumn.field] : getSearchTextByColumn(identityColumn, row)
+                                    )})`
+                                    : ""
+                                  }`}
+                              </Typography>
+                              {cardSecondaryText && (
+                                <Typography
+                                  sx={{
+                                    minWidth: 0,
+                                    fontSize: fontSize - 2,
+                                    fontWeight: 400,
+                                    color: "text.secondary",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                >
+                                  {cardSecondaryText}
+                                </Typography>
+                              )}
+                            </Stack>
+                          )}
+
+                          {statusColumn && (
+                            <Stack sx={{ alignItems: "flex-start", flexShrink: 0 }}>
+                              {statusColumn.renderCell ? (
+                                statusColumn.renderCell(row)
+                              ) : statusColumn.renderValue ? (
+                                statusColumn.renderValue(statusColumn.field ? row[statusColumn.field] : undefined, row)
+                              ) : (
+                                <Typography component="span" sx={{ fontSize, color: "text.primary" }}>
+                                  {valueToDisplay(statusColumn.field ? row[statusColumn.field] : undefined)}
+                                </Typography>
+                              )}
+                            </Stack>
+                          )}
+                        </Stack>
+                      )}
+                      <Divider sx={{ mb: 1.1 }} />
+
+                      <Stack sx={{ px: 0.25 }}>
+                        {extraColumns.length > 0 && (
+                          <Stack divider={<Divider flexItem />}>
+                            {extraColumns.map((column) => (
+                              <Stack
+                                key={`${rowId}-extra-${column.id}`}
+                                sx={{
+                                  minWidth: 0,
+                                  py: 0.9
+                                }}
+                              >
+                                <Stack direction="row" alignItems="flex-start" gap={1.1} sx={{ minWidth: 0 }}>
+                                  <Typography
+                                    sx={{
+                                      minWidth: 0,
+                                      flex: "0 0 44%",
+                                      fontSize: fontSize - 4,
+                                      fontWeight: 600,
+                                      color: "text.secondary",
+                                      textTransform: "uppercase",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap"
+                                    }}
+                                  >
+                                    {column.header}
+                                  </Typography>
+                                  <Stack sx={{ minWidth: 0, flex: 1, alignItems: "flex-start" }}>
+                                    {column.renderCell ? (
+                                      <Stack sx={{ minWidth: 0 }}>{column.renderCell(row)}</Stack>
+                                    ) : column.renderValue ? (
+                                      <Stack sx={{ minWidth: 0 }}>{column.renderValue(column.field ? row[column.field] : undefined, row)}</Stack>
+                                    ) : (
+                                      <Typography
+                                        component="span"
+                                        sx={{
+                                          fontSize,
+                                          color: "text.primary",
+                                          whiteSpace: "normal",
+                                          wordBreak: "break-word"
+                                        }}
+                                      >
+                                        {valueToDisplay(column.field ? row[column.field] : undefined)}
+                                      </Typography>
+                                    )}
+                                  </Stack>
+                                </Stack>
+                              </Stack>
+                            ))}
+                          </Stack>
+                        )}
+
+                        {personalContactColumns.length > 0 && (
+                          <Stack>
+                            <Typography
+                              sx={{
+                                mb: 0.65,
+                                fontSize: fontSize - 4,
+                                fontWeight: 700,
+                                color: "primary.main",
+                                textTransform: "uppercase",
+                                letterSpacing: 0.3
+                              }}
+                            >
+                              {"Для связи"}
+                            </Typography>
+                            <Stack divider={<Divider flexItem />}>
+                              {personalContactColumns.map((column) => (
+                                <Stack key={`${rowId}-personal-${column.id}`} sx={{ minWidth: 0, py: 0.85 }}>
+                                  <Stack direction="row" alignItems="flex-start" gap={1.1} sx={{ minWidth: 0 }}>
+                                    <Typography
+                                      sx={{
+                                        minWidth: 0,
+                                        flex: "0 0 44%",
+                                        fontSize: fontSize - 4,
+                                        fontWeight: 600,
+                                        color: "text.secondary",
+                                        textTransform: "uppercase",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap"
+                                      }}
+                                    >
+                                      {getContactFieldLabel(column)}
+                                    </Typography>
+                                    <Stack sx={{ minWidth: 0, flex: 1, alignItems: "flex-start" }}>
+                                      {column.renderCell ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderCell(row)}</Stack>
+                                      ) : column.renderValue ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderValue(column.field ? row[column.field] : undefined, row)}</Stack>
+                                      ) : (
+                                        <Typography component="span" sx={{ fontSize, color: "text.primary", wordBreak: "break-word" }}>
+                                          {valueToDisplay(column.field ? row[column.field] : undefined)}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </Stack>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          </Stack>
+                        )}
+
+                        {companyContactColumns.length > 0 && (
+                          <Stack sx={{ mt: personalContactColumns.length > 0 ? 0.8 : 0 }}>
+                            <Typography
+                              sx={{
+                                mb: 0.65,
+                                fontSize: fontSize - 4,
+                                fontWeight: 700,
+                                color: "primary.main",
+                                textTransform: "uppercase",
+                                letterSpacing: 0.3
+                              }}
+                            >
+                              {"Компания"}
+                            </Typography>
+                            <Stack divider={<Divider flexItem />}>
+                              {companyContactColumns.map((column) => (
+                                <Stack key={`${rowId}-company-${column.id}`} sx={{ minWidth: 0, py: 0.85 }}>
+                                  <Stack direction="row" alignItems="flex-start" gap={1.1} sx={{ minWidth: 0 }}>
+                                    <Typography
+                                      sx={{
+                                        minWidth: 0,
+                                        flex: "0 0 44%",
+                                        fontSize: fontSize - 4,
+                                        fontWeight: 600,
+                                        color: "text.secondary",
+                                        textTransform: "uppercase",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap"
+                                      }}
+                                    >
+                                      {getContactFieldLabel(column)}
+                                    </Typography>
+                                    <Stack sx={{ minWidth: 0, flex: 1, alignItems: "flex-start" }}>
+                                      {column.renderCell ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderCell(row)}</Stack>
+                                      ) : column.renderValue ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderValue(column.field ? row[column.field] : undefined, row)}</Stack>
+                                      ) : (
+                                        <Typography component="span" sx={{ fontSize, color: "text.primary", wordBreak: "break-word" }}>
+                                          {valueToDisplay(column.field ? row[column.field] : undefined)}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </Stack>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          </Stack>
+                        )}
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+            </Stack>
+          )}
+
+          {visibleRows.length === 0 && (
+            <Paper
+              sx={{
+                minHeight: rowHeight * 1.1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+                bgcolor: "background.paper"
+              }}
+            >
+              <Typography sx={{ fontSize, color: "text.secondary" }}>
+                {showEmptySearchState ? noSearchResultsLabel : noRowsLabel}
+              </Typography>
+            </Paper>
+          )}
+        </Stack>
+
+        <Divider />
+
+        <Stack
+          sx={{
+            minHeight: footerHeight,
+            display: { xs: "flex", md: "grid" },
+            gridTemplateColumns: { md: "minmax(280px, 1fr) auto minmax(220px, 1fr)" },
+            alignItems: "center",
+            gap: 1.5
+          }}
+        >
+          <Typography sx={{ fontSize, color: "text.secondary", justifySelf: { md: "start" } }}>
+            {"Показаны строки"} {firstVisibleRow}-{lastVisibleRow} {"из"} {filteredRows.length}
+          </Typography>
+
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ justifySelf: { md: "center" } }}>
+            <ActionButton
+              kind="outlined"
+              showNavigationIcons={false}
+              disabled={page <= 1}
+              onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+              sx={{
+                minHeight: pagerButtonSize,
+                width: pagerButtonSize,
+                minWidth: pagerButtonSize,
+                px: 0,
+                borderRadius: `${controlRadius}px`,
+                borderColor: "divider",
+                color: "text.secondary"
+              }}
+            >
+              <NavigateBeforeRounded />
+            </ActionButton>
+            {paginationItems.map((item) =>
+              typeof item === "number" ? (
+                <ActionButton
+                  key={item}
+                  kind={item === page ? "filled" : "outlined"}
+                  showNavigationIcons={false}
+                  onClick={() => setPage(item)}
+                  disabled={filteredRows.length === 0}
+                  sx={{
+                    minHeight: pagerButtonSize,
+                    width: pagerButtonSize,
+                    minWidth: pagerButtonSize,
+                    px: 0,
+                    borderRadius: `${controlRadius}px`,
+                    fontSize,
+                    borderColor: item === page ? undefined : "divider",
+                    color: item === page ? undefined : "text.secondary"
+                  }}
+                >
+                  {item}
+                </ActionButton>
+              ) : (
+                <Stack key={item} sx={{ minWidth: pagerButtonSize, alignItems: "center", justifyContent: "center" }}>
+                  <Typography sx={{ color: "text.secondary", fontSize }}>...</Typography>
+                </Stack>
+              )
+            )}
+            <ActionButton
+              kind="outlined"
+              showNavigationIcons={false}
+              disabled={page >= pageCount}
+              onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))}
+              sx={{
+                minHeight: pagerButtonSize,
+                width: pagerButtonSize,
+                minWidth: pagerButtonSize,
+                px: 0,
+                borderRadius: `${controlRadius}px`,
+                borderColor: "divider",
+                color: "text.secondary"
+              }}
+            >
+              <NavigateNextRounded />
+            </ActionButton>
+          </Stack>
+
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ color: "text.secondary", justifySelf: { md: "end" } }}>
+            <Typography sx={{ fontSize, color: "inherit" }}>{"Показать"}</Typography>
+            <Select
+              value={rowsPerPage}
+              onChange={(event) => setRowsPerPage(Number(event.target.value))}
+              IconComponent={KeyboardArrowDownRounded}
+              sx={{
+                width: rowsPerPageWidth,
+                minHeight: pagerButtonSize,
+                borderRadius: `${controlRadius}px`,
+                bgcolor: "background.paper",
+                color: "text.secondary",
+                "& .MuiOutlinedInput-notchedOutline": {
+                  borderColor: "divider"
+                },
+                "&:hover .MuiOutlinedInput-notchedOutline": {
+                  borderColor: "divider"
+                }
+              }}
+            >
+              {safeRowsPerPageOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </Select>
+            <Typography sx={{ fontSize, color: "inherit" }}>{"строк"}</Typography>
+          </Stack>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+}
+
+type LegacyDataViewMode = "table" | "cards";
 
 export type DataTableColumn = {
   key: string;
   label: ReactNode;
-  align?: 'left' | 'center' | 'right';
-  width?: number; // px hint for manual
+  align?: "left" | "center" | "right";
+  width?: number;
   minWidth?: number;
   fraction?: number;
 };
@@ -39,675 +1820,193 @@ type DataTableProps<T> = {
   enableColumnControls?: boolean;
   defaultHiddenColumnKeys?: string[];
   storageKey?: string;
-
   stickyFirstColumn?: boolean;
   stickyLastColumn?: boolean;
   pageSize?: number;
+  showSearch?: boolean;
+  searchPlaceholder?: string;
+  getRowSearchText?: (row: T) => string;
+  toolbarContent?: ReactNode;
+  addButtonLabel?: string;
+  onAddClick?: () => void;
+  showAddAction?: boolean;
+  showSettingsAction?: boolean;
+  showViewToggle?: boolean;
+  defaultViewMode?: LegacyDataViewMode;
+  renderCard?: (row: T, rowIndex: number) => ReactNode;
+  cardExpansionControl?: {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    openLabel?: string;
+    closeLabel?: string;
+  };
 };
 
-const tablePalette = {
-  surface: '#ffffff',
-  surfaceMuted: '#edf3ff',
-  border: '#d3dbe7',
-  headerBg: '#e7f0ff',
-  headerText: '#1f2a44',
-  rowHover: '#eaf2ff',
-  accent: '#2f6fd6',
-};
-
-const controlButtonSx = {
-  borderColor: tablePalette.accent,
-  color: tablePalette.accent,
-  fontWeight: 600,
-  textTransform: 'none',
-  '&:hover': {
-    borderColor: '#245bb5',
-    backgroundColor: 'rgba(47, 111, 214, 0.08)',
-  },
-};
-
-const baseCellSx = {
-  paddingY: 1.4,
-  paddingX: 1.5,
-  borderRight: `1px solid ${tablePalette.border}`,
-  borderBottom: `1px solid ${tablePalette.border}`,
-  display: 'flex',
-  alignItems: 'center',
-  boxSizing: 'border-box' as const,
-  minWidth: 0,
-
-  // ✅ перенос по умолчанию (и в шапке, и в ячейках)
-  whiteSpace: 'normal' as const,
-  overflow: 'hidden' as const,
-  textOverflow: 'clip' as const,
-  overflowWrap: 'anywhere' as const,
-  wordBreak: 'break-word' as const,
-
-  color: tablePalette.headerText,
-  fontSize: 14,
-  lineHeight: 1.35,
-};
-
-const resolveAlignment = (align: DataTableColumn['align']) => {
-  if (align === 'center') return 'center';
-  if (align === 'right') return 'flex-end';
-  return 'flex-start';
-};
-
-type StickySide = false | 'left' | 'right';
-
-const TableCell = ({
-  children,
-  isLast,
-  align,
-  isHeader,
-  columnKey,
-  showResizer = false,
-  onResizeStart,
-  setRef,
-  stickySide = false,
-}: {
-  children: ReactNode;
-  isLast: boolean;
-  align?: DataTableColumn['align'];
-  isHeader?: boolean;
-  columnKey?: string;
-  showResizer?: boolean;
-  onResizeStart?: (event: ReactMouseEvent<HTMLDivElement>) => void;
-  setRef?: (node: HTMLDivElement | null) => void;
-  stickySide?: StickySide;
-}) => (
-  <Box
-    ref={setRef}
-    data-column-key={columnKey}
-    data-cell-role={isHeader ? 'header' : 'body'}
-    sx={{
-      ...baseCellSx,
-      borderRight: isLast ? 'none' : baseCellSx.borderRight,
-      fontWeight: isHeader ? 700 : 400,
-      justifyContent: resolveAlignment(align),
-
-      position: stickySide ? 'sticky' : showResizer ? 'relative' : 'static',
-      left: stickySide === 'left' ? 0 : 'auto',
-      right: stickySide === 'right' ? 0 : 'auto',
-      zIndex: stickySide ? (isHeader ? 6 : 4) : 'auto',
-
-      backgroundColor: isHeader ? tablePalette.headerBg : tablePalette.surface,
-      userSelect: showResizer ? 'none' : 'auto',
-      textTransform: isHeader ? 'uppercase' : 'none',
-      letterSpacing: isHeader ? '0.04em' : 'normal',
-
-      // ✅ убрали затемнение/тени при скролле полностью
-      boxShadow: 'none',
-      borderLeft: stickySide === 'right' ? `1px solid ${tablePalette.border}` : undefined,
-    }}
-  >
-    {children}
-    {showResizer && (
-      <Box
-        onMouseDown={onResizeStart}
-        sx={{
-          position: 'absolute',
-          top: 0,
-          right: -4,
-          width: 8,
-          height: '100%',
-          cursor: 'col-resize',
-          zIndex: 10,
-          '&:hover': { backgroundColor: 'rgba(47, 111, 214, 0.12)' },
-        }}
-      />
-    )}
-  </Box>
-);
-
-const renderHeaderLabel = (label: ReactNode) => {
-  if (typeof label === 'string' || typeof label === 'number') {
-    return <Typography variant="body2">{label}</Typography>;
-  }
-  return label;
-};
-
-type ResizeSession = {
-  key: string;
-  startX: number;
-  startWidth: number;
-};
-
-export const DataTable = <T,>({
+export function DataTable<T>({
   columns,
   rows,
   rowKey,
   renderRow,
   isLoading = false,
-  emptyMessage = 'Данные отсутствуют.',
+  emptyMessage = "Данные отсутствуют.",
   statusContent,
   onRowClick,
-  rowHoverOutlineColor = 'rgba(47, 111, 214, 0.4)',
   showHeader = true,
-  enableColumnControls = true,
-  defaultHiddenColumnKeys,
-  storageKey,
-  stickyFirstColumn = true,
-  stickyLastColumn = true,
   pageSize = 8,
-}: DataTableProps<T>) => {
-  const hasRows = rows.length > 0;
+  showSearch = true,
+  searchPlaceholder = "Найти",
+  getRowSearchText,
+  addButtonLabel = "Добавить",
+  onAddClick,
+  showAddAction = true,
+  showSettingsAction = true,
+  showViewToggle = true,
+  defaultViewMode,
+  renderCard,
+  cardExpansionControl
+}: DataTableProps<T>) {
+  const theme = useTheme();
 
-  const columnOrder = useMemo(() => columns.map((c) => c.key), [columns]);
-  const hiddenColumnKeys = useMemo(() => defaultHiddenColumnKeys ?? [], [defaultHiddenColumnKeys]);
-
-  const storageKeyValue = storageKey ? `dataTable:${storageKey}` : null;
-  const storedState = useMemo(() => {
-    if (!storageKeyValue) return null;
-    try {
-      const raw = sessionStorage.getItem(storageKeyValue);
-      if (!raw) return null;
-      return JSON.parse(raw) as {
-        visibleColumnKeys?: string[];
-        columnWidths?: Record<string, number>;
-        currentPage?: number;
-      };
-    } catch {
-      return null;
-    }
-  }, [storageKeyValue]);
-
-  const initialVisibleColumnKeys = useMemo(
-    () => columns.filter((c) => !hiddenColumnKeys.includes(c.key)).map((c) => c.key),
-    [columns, hiddenColumnKeys]
-  );
-
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(
-    storedState?.visibleColumnKeys?.length ? storedState.visibleColumnKeys : initialVisibleColumnKeys
-  );
-
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(
-    () => storedState?.columnWidths ?? {}
-  );
-  const [currentPage, setCurrentPage] = useState<number>(() => {
-    const storedPage = storedState?.currentPage;
-    if (typeof storedPage === 'number' && Number.isFinite(storedPage) && storedPage >= 1) {
-      return Math.floor(storedPage);
-    }
-    return 1;
-  });
-  const [settingsAnchor, setSettingsAnchor] = useState<HTMLElement | null>(null);
-
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const headerRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const resizeRef = useRef<ResizeSession | null>(null);
-
-  const [scrollerWidth, setScrollerWidth] = useState<number>(0);
-
-  const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(rows.length / pageSize)),
-    [pageSize, rows.length]
-  );
-
-  const pagedRows = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return rows.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, pageSize, rows]);
-
-  const currentRangeStart = hasRows ? (currentPage - 1) * pageSize + 1 : 0;
-  const currentRangeEnd = hasRows ? Math.min(currentPage * pageSize, rows.length) : 0;
-
-  const columnsWithIndex = useMemo(() => columns.map((column, index) => ({ ...column, index })), [columns]);
-
-  const normalizeVisibleColumns = useCallback(
-    (keys: string[]) => columnOrder.filter((key) => keys.includes(key)),
-    [columnOrder]
-  );
-
-  useEffect(() => {
-    setVisibleColumnKeys((prev) => {
-      if (prev.length === 0 || prev.every((key) => !columnOrder.includes(key))) return initialVisibleColumnKeys;
-      return normalizeVisibleColumns(prev);
+  const rowContentByKey = useMemo(() => {
+    const map = new Map<string, ReactNode[]>();
+    rows.forEach((row) => {
+      map.set(String(rowKey(row)), renderRow(row));
     });
-  }, [columnOrder, initialVisibleColumnKeys, normalizeVisibleColumns]);
+    return map;
+  }, [renderRow, rowKey, rows]);
 
-  const visibleColumns = useMemo(
-    () => columnsWithIndex.filter((c) => visibleColumnKeys.includes(c.key)),
-    [columnsWithIndex, visibleColumnKeys]
-  );
+  const tableColumns = useMemo<TableTemplateColumn<T>[]>(() => {
+    return columns.map((column, index) => ({
+      id: column.key,
+      header: typeof column.label === "string" ? column.label : typeof column.label === "number" ? String(column.label) : column.key,
+      width: typeof column.width === "number" ? `${column.width}px` : column.fraction ? `${column.fraction}fr` : undefined,
+      minWidth: column.minWidth,
+      align: column.align,
+      renderCell: (row) => {
+        const currentCells = rowContentByKey.get(String(rowKey(row))) ?? renderRow(row);
+        const content = currentCells[index];
 
-  const hasCustomWidths = useMemo(
-    () => Object.values(columnWidths).some((w) => typeof w === 'number'),
-    [columnWidths]
-  );
-
-  useEffect(() => {
-    if (!storageKeyValue) return;
-    sessionStorage.setItem(storageKeyValue, JSON.stringify({ visibleColumnKeys, columnWidths, currentPage }));
-  }, [columnWidths, currentPage, storageKeyValue, visibleColumnKeys]);
-
-  useEffect(() => {
-    setCurrentPage((prev) => Math.min(Math.max(prev, 1), totalPages));
-  }, [totalPages]);
-
-  const handleVisibleColumnsChange = (event: SelectChangeEvent<string[]>) => {
-    const value = event.target.value;
-    const nextKeys = Array.isArray(value) ? value : value.split(',');
-    if (nextKeys.length === 0) return;
-    setVisibleColumnKeys(normalizeVisibleColumns(nextKeys));
-  };
-
-  const handleToggleColumn = (key: string) => {
-    setVisibleColumnKeys((prev) => {
-      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
-      return next.length > 0 ? normalizeVisibleColumns(next) : prev;
-    });
-  };
-
-  const handleShowAllColumns = () => setVisibleColumnKeys(columnOrder);
-  const handleResetWidths = () => setColumnWidths({});
-  const handlePageChange = useCallback(
-    (page: number) => {
-      setCurrentPage(Math.min(Math.max(Math.round(page), 1), totalPages));
-    },
-    [totalPages]
-  );
-
-  const updateScrollerWidth = useCallback((el: HTMLDivElement) => {
-    setScrollerWidth(el.clientWidth);
-  }, []);
-
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-
-    updateScrollerWidth(el);
-
-    const ro = new ResizeObserver(() => updateScrollerWidth(el));
-    ro.observe(el);
-
-    return () => ro.disconnect();
-  }, [updateScrollerWidth]);
-
-  const ensureManualWidths = useCallback(() => {
-    const next = visibleColumns.reduce<Record<string, number>>((acc, c) => {
-      const measured = headerRefs.current[c.key]?.offsetWidth;
-      const fallback = c.width ?? c.minWidth ?? 140;
-      acc[c.key] = typeof measured === 'number' && measured > 0 ? measured : fallback;
-      return acc;
-    }, {});
-    setColumnWidths(next);
-    return next;
-  }, [visibleColumns]);
-
-  // ------- "приклеить" последний столбец к правому краю в MANUAL, если всё помещается -------
-  const manualLayout = useMemo(() => {
-    if (!hasCustomWidths || visibleColumns.length === 0) {
-      return { containerWidth: '100%' as const, gridTemplateColumns: '' };
-    }
-
-    const last = visibleColumns[visibleColumns.length - 1];
-
-    const getWidth = (c: DataTableColumn) =>
-      typeof columnWidths[c.key] === 'number' ? columnWidths[c.key]! : c.width ?? c.minWidth ?? 140;
-
-    const fixedBeforeLast = visibleColumns.slice(0, -1).reduce((sum, c) => sum + getWidth(c), 0);
-    const lastWidth = getWidth(last);
-
-    const fits = scrollerWidth > 0 && fixedBeforeLast + lastWidth < scrollerWidth;
-
-    const template = fits
-      ? [...visibleColumns.slice(0, -1).map((c) => `${Math.max(0, Math.floor(getWidth(c)))}px`), 'minmax(0px, 1fr)'].join(
-          ' '
-        )
-      : visibleColumns.map((c) => `${Math.max(0, Math.floor(getWidth(c)))}px`).join(' ');
-
-    return {
-      containerWidth: fits ? ('100%' as const) : ('max-content' as const),
-      gridTemplateColumns: template,
-    };
-  }, [columnWidths, hasCustomWidths, scrollerWidth, visibleColumns]);
-
-  const gridTemplateColumns = useMemo(() => {
-    if (!visibleColumns.length) return '1fr';
-
-    if (hasCustomWidths) return manualLayout.gridTemplateColumns || '1fr';
-
-    const total = visibleColumns.reduce((sum, c) => sum + (c.fraction ?? 1), 0) || 1;
-    return visibleColumns
-      .map((c) => {
-        const fr = (c.fraction ?? 1) / total;
-        return `minmax(0px, ${fr}fr)`;
-      })
-      .join(' ');
-  }, [hasCustomWidths, manualLayout.gridTemplateColumns, visibleColumns]);
-
-  // --- Resizing ---
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    const s = resizeRef.current;
-    if (!s) return;
-
-    const dx = e.clientX - s.startX;
-    const nextWidth = Math.max(0, s.startWidth + dx);
-    setColumnWidths((prev) => ({ ...prev, [s.key]: nextWidth }));
-  }, []);
-
-  const endResize = useCallback(() => {
-    if (!resizeRef.current) return;
-    resizeRef.current = null;
-
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-
-    window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', endResize);
-    window.removeEventListener('pointercancel', endResize);
-  }, [onPointerMove]);
-
-  useEffect(() => {
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', endResize);
-      window.removeEventListener('pointercancel', endResize);
-    };
-  }, [endResize, onPointerMove]);
-
-  const handleResizeStart = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>, columnKey: string) => {
-      event.preventDefault();
-
-      const manual = hasCustomWidths ? columnWidths : ensureManualWidths();
-
-      const headerWidth = headerRefs.current[columnKey]?.offsetWidth ?? manual[columnKey] ?? 140;
-      const currentWidth = typeof manual[columnKey] === 'number' ? manual[columnKey] : headerWidth;
-
-      resizeRef.current = { key: columnKey, startX: event.clientX, startWidth: currentWidth };
-
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-
-      window.addEventListener('pointermove', onPointerMove, { passive: true });
-      window.addEventListener('pointerup', endResize, { passive: true });
-      window.addEventListener('pointercancel', endResize, { passive: true });
-    },
-    [columnWidths, endResize, ensureManualWidths, hasCustomWidths, onPointerMove]
-  );
-
-  const showControls = enableColumnControls && columns.length > 1;
-  const settingsOpen = Boolean(settingsAnchor);
-  const selectedColumnCountLabel = `Выбрано: ${visibleColumnKeys.length}/${columns.length}`;
-
-  const getStickySide = useCallback(
-    (index: number, len: number): StickySide => {
-      const isFirst = index === 0;
-      const isLast = index === len - 1;
-
-      if (stickyFirstColumn && isFirst) return 'left';
-      if (stickyLastColumn && isLast) return 'right';
-      return false;
-    },
-    [stickyFirstColumn, stickyLastColumn]
-  );
-
-  const content = () => {
-    if (statusContent) return <Box sx={{ padding: 2 }}>{statusContent}</Box>;
-
-    if (isLoading) {
-      return (
-        <Box sx={{ padding: 2 }}>
-          <Typography variant="body2">Загрузка...</Typography>
-        </Box>
-      );
-    }
-
-    if (!hasRows) {
-      return (
-        <Box sx={{ padding: 2 }}>
-          <Typography variant="body2">{emptyMessage}</Typography>
-        </Box>
-      );
-    }
-
-    return pagedRows.map((row) => {
-      const cells = renderRow(row);
-
-      return (
-        <Box
-          key={rowKey(row)}
-          sx={{
-            display: 'grid',
-            gridTemplateColumns,
-            alignItems: 'stretch',
-            width: hasCustomWidths ? manualLayout.containerWidth : '100%',
-            minWidth: '100%',
-            backgroundColor: tablePalette.surface,
-            borderRadius: 2,
-            overflow: 'hidden',
-            transition: 'background-color 0.2s ease',
-            '&:hover': {
-              backgroundColor: tablePalette.rowHover,
-              outline: `2px solid ${rowHoverOutlineColor}`,
-              outlineOffset: -1,
-            },
-            cursor: onRowClick ? 'pointer' : 'default',
-          }}
-          onClick={() => onRowClick?.(row)}
-        >
-          {visibleColumns.map((column, index) => {
-            const stickySide = getStickySide(index, visibleColumns.length);
-
-            return (
-              <TableCell
-                key={column.key}
-                isLast={index === visibleColumns.length - 1}
-                align={column.align}
-                columnKey={column.key}
-                stickySide={stickySide}
-              >
-                {cells[column.index]}
-              </TableCell>
-            );
-          })}
-        </Box>
-      );
-    });
-  };
-
-  const showPagination = hasRows && totalPages > 1;
-
-  return (
-    <Box
-      sx={{
-        backgroundColor: tablePalette.surfaceMuted,
-        borderRadius: 3,
-        padding: 2.5,
-        border: `1px solid ${tablePalette.border}`,
-        boxShadow: '0 12px 28px rgba(15, 35, 75, 0.08)',
-        width: '100%',
-      }}
-    >
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        {showControls && (
+        return (
           <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={1.5}
-            alignItems={{ xs: 'stretch', sm: 'center' }}
-            justifyContent="space-between"
+            sx={{ minWidth: 0, width: "100%", cursor: onRowClick ? "pointer" : "default" }}
+            onClick={() => onRowClick?.(row)}
           >
-            <FormControl
-              size="small"
-              sx={{
-                minWidth: 220,
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: tablePalette.surface,
-                  borderRadius: 2,
-                },
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: tablePalette.border,
-                },
-                '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: tablePalette.accent,
-                },
-                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: tablePalette.accent,
-                },
-                '& .MuiInputLabel-root': {
-                  color: tablePalette.headerText,
-                },
-                '& .MuiSvgIcon-root': {
-                  color: tablePalette.accent,
-                },
-              }}
-            >
-              <InputLabel id="columns-filter-label">Столбцы</InputLabel>
-              <Select
-                labelId="columns-filter-label"
-                multiple
-                value={visibleColumnKeys}
-                label="Столбцы"
-                onChange={handleVisibleColumnsChange}
-                renderValue={() => selectedColumnCountLabel}
-              >
-                {columns.map((column) => (
-                  <MenuItem key={column.key} value={column.key}>
-                    <Checkbox checked={visibleColumnKeys.includes(column.key)} />
-                    <ListItemText primary={column.label} />
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {content}
+          </Stack>
+        );
+      },
+      getSearchValue: getRowSearchText
+        ? (row) => getRowSearchText(row)
+        : (row) => {
+          const currentCells = rowContentByKey.get(String(rowKey(row))) ?? renderRow(row);
+          return valueToText(currentCells[index]);
+        }
+    }));
+  }, [columns, getRowSearchText, onRowClick, renderRow, rowContentByKey, rowKey]);
 
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Button size="small" variant="outlined" sx={controlButtonSx} onClick={handleShowAllColumns}>
-                Показать все
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                sx={controlButtonSx}
-                onClick={(event) => setSettingsAnchor(event.currentTarget)}
-              >
-                Настройки
-              </Button>
-            </Stack>
+  if (statusContent) {
+    return (
+      <Paper
+        sx={{
+          borderRadius: `${theme.acomShape.panelRadius}px`,
+          border: "1px solid",
+          borderColor: "divider",
+          p: 2
+        }}
+      >
+        {statusContent}
+      </Paper>
+    );
+  }
 
-            <Menu
-              anchorEl={settingsAnchor}
-              open={settingsOpen}
-              onClose={() => setSettingsAnchor(null)}
-              MenuListProps={{ dense: true }}
-            >
-              <MenuItem disabled>Настройка столбцов</MenuItem>
-              {columns.map((column) => (
-                <MenuItem key={column.key} onClick={() => handleToggleColumn(column.key)}>
-                  <Checkbox checked={visibleColumnKeys.includes(column.key)} />
-                  <ListItemText primary={column.label} />
-                </MenuItem>
-              ))}
-              <MenuItem onClick={handleShowAllColumns}>Показать все</MenuItem>
-              <MenuItem onClick={handleResetWidths}>Сбросить ширину</MenuItem>
-            </Menu>
+  if (isLoading) {
+    return (
+      <Paper
+        sx={{
+          borderRadius: `${theme.acomShape.panelRadius}px`,
+          border: "1px solid",
+          borderColor: "divider",
+          p: 2
+        }}
+      >
+        <Typography variant="body2">{"Загрузка..."}</Typography>
+      </Paper>
+    );
+  }
+
+  if (!showHeader) {
+    return (
+      <Paper
+        sx={{
+          borderRadius: `${theme.acomShape.panelRadius}px`,
+          border: "1px solid",
+          borderColor: "divider",
+          p: 1.5
+        }}
+      >
+        {rows.length === 0 ? (
+          <Typography variant="body2">{emptyMessage}</Typography>
+        ) : (
+          <Stack spacing={0.75}>
+            {rows.map((row) => {
+              const cells = renderRow(row);
+
+              return (
+                <Stack
+                  key={rowKey(row)}
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(0, 1fr))`,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: `${theme.acomShape.controlRadius}px`,
+                    overflow: "hidden",
+                    backgroundColor: "background.paper"
+                  }}
+                >
+                  {columns.map((column, index) => (
+                    <Stack
+                      key={`${rowKey(row)}-${column.key}`}
+                      alignItems={alignToFlex(column.align)}
+                      sx={{
+                        minWidth: 0,
+                        px: 1.5,
+                        py: 1.2,
+                        borderRight: index === columns.length - 1 ? "none" : "1px solid",
+                        borderColor: "divider"
+                      }}
+                    >
+                      {cells[index]}
+                    </Stack>
+                  ))}
+                </Stack>
+              );
+            })}
           </Stack>
         )}
+      </Paper>
+    );
+  }
 
-        <Box
-          ref={scrollerRef}
-          onScroll={(e) => updateScrollerWidth(e.currentTarget)}
-          sx={{
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            width: '100%',
-            paddingBottom: 0.5,
-          }}
-        >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {showHeader && (
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns,
-                  alignItems: 'stretch',
-                  width: hasCustomWidths ? manualLayout.containerWidth : '100%',
-                  minWidth: '100%',
-                  borderRadius: 2,
-                  overflow: 'hidden',
-                  border: `1px solid ${tablePalette.border}`,
-                  borderBottom: 'none',
-                  boxShadow: '0 6px 16px rgba(15, 35, 75, 0.06)',
-                }}
-              >
-                {visibleColumns.map((column, index) => {
-                  const stickySide = getStickySide(index, visibleColumns.length);
-
-                  return (
-                    <TableCell
-                      key={column.key}
-                      isLast={index === visibleColumns.length - 1}
-                      align={column.align}
-                      columnKey={column.key}
-                      isHeader
-                      showResizer
-                      stickySide={stickySide}
-                      setRef={(node) => {
-                        headerRefs.current[column.key] = node;
-                      }}
-                      onResizeStart={(event) => handleResizeStart(event, column.key)}
-                    >
-                      {renderHeaderLabel(column.label)}
-                    </TableCell>
-                  );
-                })}
-              </Box>
-            )}
-
-            {content()}
-          </Box>
-        </Box>
-
-        {showPagination ? (
-          <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={2}
-            alignItems={{ xs: 'stretch', md: 'center' }}
-            justifyContent="space-between"
-            sx={{
-              borderTop: `1px solid ${tablePalette.border}`,
-              pt: 1.5,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              Показаны строки {currentRangeStart}-{currentRangeEnd} из {rows.length}
-            </Typography>
-
-            <Box sx={{ display: 'flex', justifyContent: { xs: 'center', md: 'flex-end' } }}>
-              <Pagination
-                count={totalPages}
-                page={currentPage}
-                onChange={(_, page) => handlePageChange(page)}
-                variant="outlined"
-                shape="rounded"
-                size="small"
-                siblingCount={1}
-                boundaryCount={1}
-                sx={{
-                  '& .MuiPaginationItem-root': {
-                    color: '#6b7280',
-                    borderColor: tablePalette.border,
-                    minWidth: 32,
-                    height: 32,
-                    borderRadius: 1,
-                    fontWeight: 600,
-                  },
-                  '& .MuiPaginationItem-root.Mui-selected': {
-                    backgroundColor: tablePalette.accent,
-                    borderColor: tablePalette.accent,
-                    color: '#fff',
-                    '&:hover': {
-                      backgroundColor: '#245bb5',
-                    },
-                  },
-                }}
-              />
-            </Box>
-          </Stack>
-        ) : null}
-      </Box>
-    </Box>
+  return (
+    <TableTemplate
+      columns={tableColumns}
+      rows={rows}
+      getRowId={(row) => rowKey(row)}
+      renderCard={renderCard}
+      searchPlaceholder={searchPlaceholder}
+      showSearch={showSearch}
+      addButtonLabel={addButtonLabel}
+      onAddClick={showAddAction ? onAddClick : undefined}
+      showAddAction={showAddAction}
+      showSettingsAction={showSettingsAction}
+      showViewToggle={showViewToggle}
+      defaultViewMode={defaultViewMode}
+      rowsPerPageOptions={[pageSize]}
+      defaultRowsPerPage={pageSize}
+      noRowsLabel={emptyMessage}
+      noSearchResultsLabel={"Ничего не найдено по запросу."}
+      cardExpansionControl={cardExpansionControl}
+    />
   );
-};
+}

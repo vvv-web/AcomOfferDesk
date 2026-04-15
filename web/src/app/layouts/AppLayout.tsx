@@ -16,16 +16,16 @@ export const AppLayout = () => {
       <Stack sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
         <Box
           sx={{
-            minHeight: '100vh',
+            flex: 1,
+            minHeight: 0,
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', lg: '280px minmax(0, 1fr)' },
-            alignItems: { lg: 'start' },
-            gap: { xs: 2, lg: 2.5 },
-            p: { xs: 1.5, md: 2 }
+            gridTemplateColumns: { xs: '1fr', lg: 'max-content minmax(0, 1fr)' },
+            alignItems: { lg: 'stretch' },
+            gap: { xs: 2, lg: 0 }
           }}
         >
           <AppHeader config={headerConfig} onLogout={logout} />
-          <Stack component="section" spacing={2} sx={{ minWidth: 0 }}>
+          <Stack component="section" spacing={2} sx={{ minWidth: 0, p: { xs: 1.5, md: 2 } }}>
             {headerConfig.actions.length ? (
               <Stack direction="row" justifyContent="flex-end">
                 <HeaderActions
@@ -39,13 +39,11 @@ export const AppLayout = () => {
               </Stack>
             ) : null}
 
-            <Box component="main">
+            <Box component="main" sx={{ minWidth: 0, pb: 0.5 }}>
               <Outlet />
             </Box>
           </Stack>
         </Box>
-
-        <AppFooter />
       </Stack>
     );
   }
