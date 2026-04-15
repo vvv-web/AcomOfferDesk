@@ -42,10 +42,6 @@ class Settings(BaseSettings):
     refresh_token_secret: str | None = Field(default=None, validation_alias="REFRESH_TOKEN_SECRET")
 
     keycloak_enabled: bool = Field(default=False, validation_alias="KEYCLOAK_ENABLED")
-    auth_enable_legacy_password_login: bool = Field(
-        default=True,
-        validation_alias="AUTH_ENABLE_LEGACY_PASSWORD_LOGIN",
-    )
     keycloak_realm: str = Field(default="acom-offerdesk", validation_alias="KEYCLOAK_REALM")
     keycloak_client_id: str = Field(default="acom-offerdesk-web", validation_alias="KEYCLOAK_CLIENT_ID")
     keycloak_internal_base_url: str = Field(
