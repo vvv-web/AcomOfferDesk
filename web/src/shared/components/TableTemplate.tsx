@@ -1252,7 +1252,7 @@ export function TableTemplate<T>({
                               borderRadius: '4px',
                               color:
                                 (columnFilters[column.id] ?? []).length > 0 ||
-                                selectFilterAnchor?.columnId === column.id
+                                  selectFilterAnchor?.columnId === column.id
                                   ? 'primary.main'
                                   : 'text.secondary',
                               flexShrink: 0
@@ -1339,10 +1339,27 @@ export function TableTemplate<T>({
                             sx={{
                               minWidth: 0,
                               px: cellPaddingX,
-                              py: 0.8
+                              py: 0.8,
+                              overflow: 'hidden'
                             }}
                           >
-                            <Stack sx={{ minWidth: 0, width: '100%' }}>{rendered}</Stack>
+                            <Stack
+                              sx={{
+                                minWidth: 0,
+                                width: '100%',
+                                overflow: 'hidden',
+                                '& > *': {
+                                  minWidth: 0
+                                },
+                                '& .MuiTypography-root': {
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }
+                              }}
+                            >
+                              {rendered}
+                            </Stack>
                           </Stack>
                         );
                       })}
@@ -1368,91 +1385,305 @@ export function TableTemplate<T>({
               )}
             </Stack>
           ) : (
-            <Stack spacing={1.25}>
-              {visibleRows.length > 0 ? (
+            <Stack
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  md: 'repeat(2, minmax(0, 1fr))',
+                  lg: 'repeat(3, minmax(0, 1fr))',
+                  xl: 'repeat(4, minmax(0, 1fr))'
+                },
+                gap: 1.25
+              }}
+            >
+              {visibleRows.length > 0 &&
                 visibleRows.map((row, rowIndex) => {
                   const rowKey = String(getRowId ? getRowId(row, rowIndex) : rowIndex);
 
                   if (renderCard) {
-                    return <Stack key={rowKey}>{renderCard(row, rowIndex)}</Stack>;
+                    return (
+                      <Stack key={rowKey} sx={{ minWidth: 0 }}>
+                        {renderCard(row, rowIndex)}
+                      </Stack>
+                    );
                   }
+
+                  const nameColumn =
+                    visibleColumns.find((column) => {
+                      const signature = getColumnSignature(column);
+                      const id = column.id.toLocaleLowerCase();
+                      return id.includes('fullname') || signature.includes('full') || signature.includes('name');
+                    }) ?? visibleColumns[0];
+                  const identityColumn = visibleColumns.find((column) => {
+                    if (column.id === nameColumn?.id) {
+                      return false;
+                    }
+
+                    const signature = getColumnSignature(column);
+                    const id = column.id.toLocaleLowerCase();
+                    return id.includes('login') || signature.includes('login') || signature.includes('id');
+                  });
+                  const statusColumn = visibleColumns.find((column) => column.filterKind === 'select');
+                  const cardDetailColumns = visibleColumns.filter((column) => {
+                    return column.id !== nameColumn?.id && column.id !== identityColumn?.id && column.id !== statusColumn?.id;
+                  });
+                  const normalizedExcludedColumnIds = new Set(cardExcludedColumnIds);
+                  const visibleCardDetailColumns = cardDetailColumns.filter((column) => !normalizedExcludedColumnIds.has(column.id));
+                  const personalContactColumns = visibleCardDetailColumns.filter((column) => {
+                    const signature = getColumnSignature(column);
+                    const id = column.id.toLocaleLowerCase();
+                    const isContact = id.includes('phone') || id.includes('email') || signature.includes('phone') || signature.includes('email');
+                    const isCompany = id.includes('company') || signature.includes('company');
+                    return isContact && !isCompany;
+                  });
+                  const companyContactColumns = visibleCardDetailColumns.filter((column) => {
+                    const signature = getColumnSignature(column);
+                    const id = column.id.toLocaleLowerCase();
+                    const isContact = id.includes('phone') || id.includes('email') || signature.includes('phone') || signature.includes('email');
+                    const isCompany = id.includes('company') || signature.includes('company');
+                    return isContact && isCompany;
+                  });
+                  const extraColumns = visibleCardDetailColumns.filter(
+                    (column) => !personalContactColumns.includes(column) && !companyContactColumns.includes(column)
+                  );
+                  const cardPrimaryText = getCardPrimaryText?.(row);
+                  const cardSecondaryText = getCardSecondaryText?.(row);
 
                   return (
                     <Paper
                       key={rowKey}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
                       sx={{
-                        p: 1.5,
+                        p: { xs: 1.25, sm: 1.5 },
                         borderRadius: `${theme.acomShape.controlRadius}px`,
+                        bgcolor: 'background.paper',
                         border: '1px solid',
                         borderColor: 'divider',
-                        bgcolor: 'background.paper',
-                        cursor: onRowClick ? 'pointer' : 'default'
+                        boxShadow: `0 2px 8px ${alpha(theme.palette.common.black, 0.04)}`,
+                        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                        cursor: onRowClick ? 'pointer' : 'default',
+                        '&:hover': {
+                          borderColor: 'primary.main',
+                          boxShadow: `0 6px 14px ${alpha(theme.palette.common.black, 0.08)}`
+                        }
                       }}
                     >
-                      <Stack spacing={1.1}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                          <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary' }}>
-                            {getCardPrimaryText ? getCardPrimaryText(row) : `Запись ${firstVisibleRow + rowIndex}`}
-                          </Typography>
-                          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                            {getCardSecondaryText ? getCardSecondaryText(row) : ''}
-                          </Typography>
-                        </Stack>
-                        <Stack spacing={0.9}>
-                          {visibleColumns
-                            .filter((column) => !cardExcludedColumnIds.includes(column.id))
-                            .map((column) => {
-                              const rawValue = column.field ? row[column.field] : undefined;
-                              const rendered = column.renderCell
-                                ? column.renderCell(row)
-                                : column.renderValue
-                                  ? column.renderValue(rawValue, row)
-                                  : valueToDisplay(rawValue);
-                              return (
-                                <Stack
-                                  key={`${rowKey}-${column.id}`}
-                                  direction="row"
-                                  gap={1}
-                                  alignItems="flex-start"
+                      {(nameColumn || statusColumn) && (
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1.25} mb={1.25}>
+                          {nameColumn && (
+                            <Stack sx={{ minWidth: 0, gap: 0.25 }}>
+                              <Typography
+                                sx={{
+                                  minWidth: 0,
+                                  fontSize: fontSize + 1,
+                                  fontWeight: 600,
+                                  color: 'text.primary',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {cardPrimaryText ??
+                                  `${valueToDisplay(nameColumn.field ? row[nameColumn.field] : getSearchTextByColumn(nameColumn, row))}${identityColumn
+                                    ? ` (${valueToDisplay(
+                                      identityColumn.field ? row[identityColumn.field] : getSearchTextByColumn(identityColumn, row)
+                                    )})`
+                                    : ''
+                                  }`}
+                              </Typography>
+                              {cardSecondaryText && (
+                                <Typography
+                                  sx={{
+                                    minWidth: 0,
+                                    fontSize: fontSize - 2,
+                                    fontWeight: 400,
+                                    color: 'text.secondary',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
                                 >
+                                  {cardSecondaryText}
+                                </Typography>
+                              )}
+                            </Stack>
+                          )}
+
+                          {statusColumn && (
+                            <Stack sx={{ alignItems: 'flex-start', flexShrink: 0 }}>
+                              {statusColumn.renderCell ? (
+                                statusColumn.renderCell(row)
+                              ) : statusColumn.renderValue ? (
+                                statusColumn.renderValue(statusColumn.field ? row[statusColumn.field] : undefined, row)
+                              ) : (
+                                <Typography component="span" sx={{ fontSize, color: 'text.primary' }}>
+                                  {valueToDisplay(statusColumn.field ? row[statusColumn.field] : undefined)}
+                                </Typography>
+                              )}
+                            </Stack>
+                          )}
+                        </Stack>
+                      )}
+                      <Divider sx={{ mb: 1.1 }} />
+
+                      <Stack sx={{ px: 0.25 }}>
+                        {extraColumns.length > 0 && (
+                          <Stack divider={<Divider flexItem />}>
+                            {extraColumns.map((column) => (
+                              <Stack
+                                key={`${rowKey}-extra-${column.id}`}
+                                sx={{
+                                  minWidth: 0,
+                                  py: 0.9
+                                }}
+                              >
+                                <Stack direction="row" alignItems="flex-start" gap={1.1} sx={{ minWidth: 0 }}>
                                   <Typography
                                     sx={{
-                                      minWidth: 110,
-                                      fontSize: 11,
+                                      minWidth: 0,
+                                      flex: '0 0 44%',
+                                      fontSize: fontSize - 4,
                                       fontWeight: 600,
                                       color: 'text.secondary',
-                                      textTransform: 'uppercase'
+                                      textTransform: 'uppercase',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
                                     }}
                                   >
-                                    {getContactFieldLabel(column)}
+                                    {column.header}
                                   </Typography>
-                                  <Stack sx={{ minWidth: 0, flex: 1 }}>{rendered}</Stack>
+                                  <Stack sx={{ minWidth: 0, flex: 1, alignItems: 'flex-start' }}>
+                                    {column.renderCell ? (
+                                      <Stack sx={{ minWidth: 0 }}>{column.renderCell(row)}</Stack>
+                                    ) : column.renderValue ? (
+                                      <Stack sx={{ minWidth: 0 }}>{column.renderValue(column.field ? row[column.field] : undefined, row)}</Stack>
+                                    ) : (
+                                      <Typography
+                                        component="span"
+                                        sx={{
+                                          fontSize,
+                                          color: 'text.primary',
+                                          whiteSpace: 'normal',
+                                          wordBreak: 'break-word'
+                                        }}
+                                      >
+                                        {valueToDisplay(column.field ? row[column.field] : undefined)}
+                                      </Typography>
+                                    )}
+                                  </Stack>
                                 </Stack>
-                              );
-                            })}
-                        </Stack>
+                              </Stack>
+                            ))}
+                          </Stack>
+                        )}
+
+                        {personalContactColumns.length > 0 && (
+                          <Stack>
+                            <Typography
+                              sx={{
+                                mb: 0.65,
+                                fontSize: fontSize - 4,
+                                fontWeight: 700,
+                                color: 'primary.main',
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.3
+                              }}
+                            >
+                              {'Для связи'}
+                            </Typography>
+                            <Stack divider={<Divider flexItem />}>
+                              {personalContactColumns.map((column) => (
+                                <Stack key={`${rowKey}-personal-${column.id}`} sx={{ minWidth: 0, py: 0.85 }}>
+                                  <Stack direction="row" alignItems="flex-start" gap={1.1} sx={{ minWidth: 0 }}>
+                                    <Typography
+                                      sx={{
+                                        minWidth: 0,
+                                        flex: '0 0 44%',
+                                        fontSize: fontSize - 4,
+                                        fontWeight: 600,
+                                        color: 'text.secondary',
+                                        textTransform: 'uppercase',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      {getContactFieldLabel(column)}
+                                    </Typography>
+                                    <Stack sx={{ minWidth: 0, flex: 1, alignItems: 'flex-start' }}>
+                                      {column.renderCell ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderCell(row)}</Stack>
+                                      ) : column.renderValue ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderValue(column.field ? row[column.field] : undefined, row)}</Stack>
+                                      ) : (
+                                        <Typography component="span" sx={{ fontSize, color: 'text.primary', wordBreak: 'break-word' }}>
+                                          {valueToDisplay(column.field ? row[column.field] : undefined)}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </Stack>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          </Stack>
+                        )}
+
+                        {companyContactColumns.length > 0 && (
+                          <Stack sx={{ mt: personalContactColumns.length > 0 ? 0.8 : 0 }}>
+                            <Typography
+                              sx={{
+                                mb: 0.65,
+                                fontSize: fontSize - 4,
+                                fontWeight: 700,
+                                color: 'primary.main',
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.3
+                              }}
+                            >
+                              {'Компания'}
+                            </Typography>
+                            <Stack divider={<Divider flexItem />}>
+                              {companyContactColumns.map((column) => (
+                                <Stack key={`${rowKey}-company-${column.id}`} sx={{ minWidth: 0, py: 0.85 }}>
+                                  <Stack direction="row" alignItems="flex-start" gap={1.1} sx={{ minWidth: 0 }}>
+                                    <Typography
+                                      sx={{
+                                        minWidth: 0,
+                                        flex: '0 0 44%',
+                                        fontSize: fontSize - 4,
+                                        fontWeight: 600,
+                                        color: 'text.secondary',
+                                        textTransform: 'uppercase',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      {getContactFieldLabel(column)}
+                                    </Typography>
+                                    <Stack sx={{ minWidth: 0, flex: 1, alignItems: 'flex-start' }}>
+                                      {column.renderCell ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderCell(row)}</Stack>
+                                      ) : column.renderValue ? (
+                                        <Stack sx={{ minWidth: 0 }}>{column.renderValue(column.field ? row[column.field] : undefined, row)}</Stack>
+                                      ) : (
+                                        <Typography component="span" sx={{ fontSize, color: 'text.primary', wordBreak: 'break-word' }}>
+                                          {valueToDisplay(column.field ? row[column.field] : undefined)}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </Stack>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          </Stack>
+                        )}
                       </Stack>
                     </Paper>
                   );
-                })
-              ) : (
-                <Stack
-                  sx={{
-                    minHeight: rowHeight * 2,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: `${theme.acomShape.controlRadius}px`,
-                    border: '1px dashed',
-                    borderColor: 'divider',
-                    bgcolor: 'background.paper'
-                  }}
-                >
-                  <Typography sx={{ fontSize, color: 'text.secondary' }}>
-                    {isLoading ? 'Загрузка...' : showEmptySearchState ? noSearchResultsLabel : noRowsLabel}
-                  </Typography>
-                </Stack>
-              )}
+                })}
             </Stack>
           )}
         </Stack>

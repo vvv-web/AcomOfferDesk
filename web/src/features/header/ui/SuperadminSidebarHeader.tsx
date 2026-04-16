@@ -31,12 +31,31 @@ export const SuperadminSidebarHeader = ({
   const [isCompactHeight, setIsCompactHeight] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerHeight <= 760 : false
   );
+  const [isEdgeHovered, setIsEdgeHovered] = useState(false);
+  const [isToggleHovered, setIsToggleHovered] = useState(false);
+  const [isToggleVisible, setIsToggleVisible] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsCompactHeight(window.innerHeight <= 760);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    const shouldShow = Boolean(onToggleCollapse) && (isEdgeHovered || isToggleHovered);
+    if (shouldShow) {
+      setIsToggleVisible(true);
+      return;
+    }
+
+    const hideTimeout = window.setTimeout(() => {
+      setIsToggleVisible(false);
+    }, 160);
+
+    return () => {
+      window.clearTimeout(hideTimeout);
+    };
+  }, [isEdgeHovered, isToggleHovered, onToggleCollapse]);
 
   const iconByKey = useMemo(
     () => ({
@@ -60,6 +79,7 @@ export const SuperadminSidebarHeader = ({
       justifyContent="space-between"
       sx={{
         width: '100%',
+        position: 'relative',
         minHeight: { xs: 'auto', lg: '100vh' },
         height: { xs: 'auto', lg: '100vh' },
         bgcolor: 'background.paper',
@@ -77,26 +97,6 @@ export const SuperadminSidebarHeader = ({
             <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>
               AcomOfferDesk
             </Typography>
-          ) : null}
-          {onToggleCollapse ? (
-            <IconButton
-              onClick={onToggleCollapse}
-              size="small"
-              sx={(theme) => ({
-                borderRadius: `${theme.acomShape.controlRadius}px`,
-                border: '1px solid',
-                borderColor: 'divider',
-                color: 'text.secondary',
-                bgcolor: 'background.paper',
-                '&:hover': {
-                  borderColor: 'primary.main',
-                  bgcolor: alpha(theme.palette.primary.main, 0.04),
-                  color: 'primary.main'
-                }
-              })}
-            >
-              {collapsed ? <KeyboardDoubleArrowRightRounded fontSize="small" /> : <KeyboardDoubleArrowLeftRounded fontSize="small" />}
-            </IconButton>
           ) : null}
         </Stack>
 
@@ -178,6 +178,46 @@ export const SuperadminSidebarHeader = ({
             );
           })}
         </Stack>
+
+        {onToggleCollapse ? (
+          <>
+            <Stack
+              component="div"
+              onMouseEnter={() => setIsEdgeHovered(true)}
+              onMouseLeave={() => setIsEdgeHovered(false)}
+              sx={{ position: 'absolute', top: 0, right: 0, width: 28, height: '100%', zIndex: 3 }}
+            />
+
+            <IconButton
+              onClick={onToggleCollapse}
+              size="small"
+              onMouseEnter={() => setIsToggleHovered(true)}
+              onMouseLeave={() => setIsToggleHovered(false)}
+              sx={(theme) => ({
+                position: 'absolute',
+                top: '50%',
+                right: 8,
+                transform: isToggleVisible ? 'translate(0, -50%)' : 'translate(8px, -50%)',
+                opacity: isToggleVisible ? 1 : 0,
+                pointerEvents: isToggleVisible ? 'auto' : 'none',
+                zIndex: 4,
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+                border: '1px solid',
+                borderColor: 'divider',
+                color: 'text.secondary',
+                bgcolor: 'background.paper',
+                transition: 'opacity 180ms ease, transform 180ms ease, border-color 180ms ease, color 180ms ease',
+                '&:hover': {
+                  borderColor: 'primary.main',
+                  bgcolor: alpha(theme.palette.primary.main, 0.04),
+                  color: 'primary.main'
+                }
+              })}
+            >
+              {collapsed ? <KeyboardDoubleArrowRightRounded fontSize="small" /> : <KeyboardDoubleArrowLeftRounded fontSize="small" />}
+            </IconButton>
+          </>
+        ) : null}
       </Stack>
     </Stack>
   );

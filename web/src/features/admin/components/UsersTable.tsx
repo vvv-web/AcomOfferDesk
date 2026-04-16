@@ -137,47 +137,6 @@ const ContractorStatusPill = ({ value }: { value: string | null | undefined }) =
   <BaseStatusPill label={toStatusLabel(value)} tone={contractorStatusToneByValue[normalizeAnyStatus(value)] ?? 'info'} />
 );
 
-const ContractorMobileCard = ({
-  user,
-  onOpen,
-}: {
-  user: UserListItem;
-  onOpen: (user: UserListItem) => void;
-}) => (
-  <Box
-    onClick={() => onOpen(user)}
-    sx={{
-      p: 1.5,
-      borderRadius: 1,
-      border: '1px solid',
-      borderColor: 'divider',
-      backgroundColor: 'background.paper',
-      cursor: 'pointer'
-    }}
-  >
-    <Stack spacing={1}>
-      <Stack direction="row" justifyContent="space-between" gap={1}>
-        <Stack sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary' }}>
-            {user.full_name ?? user.user_id}
-          </Typography>
-          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-            {user.user_id}
-          </Typography>
-        </Stack>
-        <ContractorStatusPill value={user.status} />
-      </Stack>
-      <Typography variant="body2" color="text.secondary">
-        {user.mail ?? '—'}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {user.company_mail ?? '—'}
-      </Typography>
-    </Stack>
-  </Box>
-);
-
-
 const formatPhoneForView = (value: string | null | undefined) => {
   if (!value) {
     return null;
@@ -1041,16 +1000,6 @@ export const UsersTable = ({
         addButtonLabel="Добавить контрагента"
         onAddClick={onAddClick}
         minTableWidth={980}
-        renderCard={(row) => (
-          <ContractorMobileCard
-            user={row}
-            onOpen={(user) => {
-              setSelectedUser(user);
-              setSubmitError(null);
-              setSubmitSuccess(null);
-            }}
-          />
-        )}
         getCardPrimaryText={(row) => row.company_name ?? row.full_name ?? row.user_id}
         getCardSecondaryText={(row) => row.user_id}
         cardExcludedColumnIds={['login']}
