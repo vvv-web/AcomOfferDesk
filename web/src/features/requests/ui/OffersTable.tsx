@@ -45,13 +45,6 @@ type NotificationStyle = {
   icon: ReactNode;
 };
 
-const offerStatusLabelMap: Record<string, string> = {
-  submitted: 'На рассмотрении',
-  accepted: 'Принято',
-  rejected: 'Отклонено',
-  deleted: 'Удалено'
-};
-
 const getFileLabelWithHint = (value: string, max = 24) => {
   if (value.length <= max) {
     return value;

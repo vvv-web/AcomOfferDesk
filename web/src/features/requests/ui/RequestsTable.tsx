@@ -6,6 +6,7 @@ import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { StatusPill } from '@shared/components/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
+import { NotificationBadge } from '@shared/ui/NotificationBadge';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 type OwnerOption = {
@@ -568,7 +569,7 @@ export const RequestsTable = ({
                 return (
                     <Stack spacing={0.75} alignItems="flex-start">
                         {contractorOffers.map((offer) => {
-                            const statusMeta = getContractorOfferStatusMeta(offer.status);
+                            const statusMeta = getContractorOfferStatusMeta(offer.status, theme.palette.statusTones);
                             return (
                                 <Chip
                                     key={offer.id}

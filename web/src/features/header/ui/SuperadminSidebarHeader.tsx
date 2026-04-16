@@ -161,7 +161,7 @@ export const SuperadminSidebarHeader = ({
                   label={item.label}
                   icon={icon}
                   collapsed={collapsed}
-                  onClick={() => navigate(item.to)}
+                  onClick={() => item.to && navigate(item.to)}
                   disabled={item.disabled}
                 />
               );

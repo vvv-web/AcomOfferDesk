@@ -3,19 +3,14 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   Dialog,
   DialogContent,
-  Divider,
   MenuItem,
-  Paper,
   Stack,
   TextField,
   Tooltip,
   Typography
 } from '@mui/material';
-import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
-import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -28,6 +23,7 @@ import { updateManualContractor } from '@shared/api/users/updateManualContractor
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
+import { StatusPill as BaseStatusPill } from '@shared/ui/StatusPill';
 import {
   UserStatusPill,
   InfoRow,
@@ -82,6 +78,104 @@ type UserRow = {
   role: string;
   status: StatusFormValues['user_status'];
 };
+
+const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
+  review: 'На проверке',
+  approved: 'Одобрен',
+  disapproved: 'Не одобрен'
+};
+
+const userStatusValueByLabel: Record<string, StatusFormValues['user_status']> = {
+  'на проверке': 'review',
+  'активен': 'active',
+  'неактивен': 'inactive',
+  'в черном списке': 'blacklist',
+  'в чёрном списке': 'blacklist'
+};
+
+const tgStatusValueByLabel: Record<string, 'review' | 'approved' | 'disapproved'> = {
+  'на проверке': 'review',
+  'одобрен': 'approved',
+  'не одобрен': 'disapproved'
+};
+
+const normalizeAnyStatus = (value: string | null | undefined): string => {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized in userStatusLabelByValue) {
+    return normalized;
+  }
+  if (normalized in userStatusValueByLabel) {
+    return userStatusValueByLabel[normalized];
+  }
+  if (normalized in tgStatusValueByLabel) {
+    return tgStatusValueByLabel[normalized];
+  }
+  return normalized;
+};
+
+const toStatusLabel = (value: string | null | undefined): string => {
+  const normalized = normalizeAnyStatus(value);
+  if (normalized in userStatusLabelByValue) {
+    return userStatusLabelByValue[normalized as StatusFormValues['user_status']];
+  }
+  if (normalized in tgStatusLabelByValue) {
+    return tgStatusLabelByValue[normalized as 'review' | 'approved' | 'disapproved'];
+  }
+  return value ?? '—';
+};
+
+const contractorStatusToneByValue: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
+  review: 'warning',
+  active: 'success',
+  inactive: 'neutral',
+  blacklist: 'error',
+  approved: 'success',
+  disapproved: 'error'
+};
+
+const ContractorStatusPill = ({ value }: { value: string | null | undefined }) => (
+  <BaseStatusPill label={toStatusLabel(value)} tone={contractorStatusToneByValue[normalizeAnyStatus(value)] ?? 'info'} />
+);
+
+const ContractorMobileCard = ({
+  user,
+  onOpen,
+}: {
+  user: UserListItem;
+  onOpen: (user: UserListItem) => void;
+}) => (
+  <Box
+    onClick={() => onOpen(user)}
+    sx={{
+      p: 1.5,
+      borderRadius: 1,
+      border: '1px solid',
+      borderColor: 'divider',
+      backgroundColor: 'background.paper',
+      cursor: 'pointer'
+    }}
+  >
+    <Stack spacing={1}>
+      <Stack direction="row" justifyContent="space-between" gap={1}>
+        <Stack sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary' }}>
+            {user.full_name ?? user.user_id}
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+            {user.user_id}
+          </Typography>
+        </Stack>
+        <ContractorStatusPill value={user.status} />
+      </Stack>
+      <Typography variant="body2" color="text.secondary">
+        {user.mail ?? '—'}
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        {user.company_mail ?? '—'}
+      </Typography>
+    </Stack>
+  </Box>
+);
 
 
 const formatPhoneForView = (value: string | null | undefined) => {
@@ -677,33 +771,11 @@ export const UsersTable = ({
         filterOptions: contractorStatusFilterOptions,
         getFilterValue: (row) => toStatusLabel(row.status),
         getSearchValue: (row) => toStatusLabel(row.status),
-        renderCell: (row) => <StatusPill value={row.status} />
+        renderCell: (row) => <ContractorStatusPill value={row.status} />
       }
     ],
     [contractorStatusFilterOptions]
   );
-
-  const theme = useTheme();
-  const [expandedContractorCards, setExpandedContractorCards] = useState<Record<string, boolean>>({});
-
-  const areAllContractorCardsExpanded = useMemo(
-    () => users.length > 0 && users.every((u) => expandedContractorCards[u.user_id]),
-    [expandedContractorCards, users]
-  );
-
-  const handleToggleContractorCard = (userId: string) => {
-    setExpandedContractorCards((prev) => ({ ...prev, [userId]: !prev[userId] }));
-  };
-
-  const handleToggleAllContractorCards = (shouldExpand: boolean) => {
-    if (!shouldExpand) {
-      setExpandedContractorCards({});
-      return;
-    }
-    setExpandedContractorCards(
-      Object.fromEntries(users.map((u) => [u.user_id, true])) as Record<string, boolean>
-    );
-  };
 
   if (!isContractorsTab) {
     return (
