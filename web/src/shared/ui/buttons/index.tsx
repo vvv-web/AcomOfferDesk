@@ -1,5 +1,6 @@
 ﻿import type { ButtonProps } from '@mui/material/Button';
 import Button from '@mui/material/Button';
+import { alpha, useTheme } from '@mui/material/styles';
 import type { SxProps, Theme } from '@mui/material/styles';
 
 type ActionButtonKind = 'custom' | 'filled' | 'outlined';
@@ -16,18 +17,31 @@ export const ActionButton = ({
   sx,
   ...props
 }: ActionButtonProps) => {
+  const theme = useTheme();
   const variant: ButtonProps['variant'] = kind === 'filled' ? 'contained' : kind === 'outlined' ? 'outlined' : 'text';
+
+  const selectedSx: SxProps<Theme> | null = selected
+    ? kind === 'custom'
+      ? {
+          backgroundColor: theme.palette.primary.main,
+          borderColor: theme.palette.primary.main,
+          color: theme.palette.primary.contrastText,
+          '&:hover': {
+            backgroundColor: theme.palette.brand.primaryHover,
+            borderColor: theme.palette.brand.primaryHover,
+          },
+        }
+      : {
+          color: 'primary.main',
+          backgroundColor: alpha(theme.palette.primary.main, 0.08),
+        }
+    : null;
 
   const baseSx: SxProps<Theme> = {
     textTransform: 'none',
     fontWeight: 600,
     minWidth: 0,
-    ...(selected
-      ? {
-        color: 'primary.main',
-        backgroundColor: 'primary.50'
-      }
-      : null)
+    ...selectedSx,
   };
 
   const mergedSx = (Array.isArray(sx) ? [baseSx, ...sx] : [baseSx, sx].filter(Boolean)) as SxProps<Theme>;

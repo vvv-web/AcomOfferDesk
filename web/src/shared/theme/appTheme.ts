@@ -66,6 +66,7 @@ export const appTheme = createTheme({
       primaryHover: tokens.color.primary.hover,
       primaryPressed: tokens.color.primary.pressed
     },
+    statusTones: tokens.color.status.tones,
     dashboard: dashboardPalette
   },
   shape: {

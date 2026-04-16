@@ -21,7 +21,14 @@ export const themeTokens = {
       warning: "#F59E0B",
       error: "#EF4444",
       info: "#60A5FA",
-      mutedBadge: "#DDEAFE"
+      mutedBadge: "#DDEAFE",
+      tones: {
+        success: { text: "#1f6b43", bg: "#e8f7ee", border: "#b7e2c8" },
+        warning: { text: "#8a6d1f", bg: "#fff8e1", border: "#f2dd9b" },
+        error: { text: "#9a1f1f", bg: "#ffecec", border: "#f3bcbc" },
+        info: { text: "#1565c0", bg: "#e3f2fd", border: "#c1d9f9" },
+        neutral: { text: "#4d5563", bg: "#f3f4f8", border: "#d9dde8" },
+      },
     },
     chart: ["#3B82F6", "#60A5FA", "#93C5FD", "#2F6FE3", "#BFDBFE"],
     disabled: {

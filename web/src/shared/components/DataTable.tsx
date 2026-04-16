@@ -459,6 +459,7 @@ export function TableTemplate<T>({
   const [sortState, setSortState] = useState<{ columnId: string; direction: SortDirection } | null>(null);
   const [selectFilterAnchor, setSelectFilterAnchor] = useState<{ columnId: string; anchorEl: HTMLElement } | null>(null);
   const [viewMode, setViewMode] = useState<DataViewMode>(defaultViewMode ?? (isCompactViewport ? "cards" : "table"));
+  const hasUserToggledViewMode = useRef(false);
   const [rowsPerPage, setRowsPerPage] = useState(
     defaultRowsPerPage && safeRowsPerPageOptions.includes(defaultRowsPerPage) ? defaultRowsPerPage : safeRowsPerPageOptions[0]
   );
@@ -469,8 +470,17 @@ export function TableTemplate<T>({
       return;
     }
 
+    hasUserToggledViewMode.current = false;
     setViewMode(defaultViewMode);
   }, [defaultViewMode]);
+
+  useEffect(() => {
+    if (defaultViewMode || hasUserToggledViewMode.current) {
+      return;
+    }
+
+    setViewMode(isCompactViewport ? "cards" : "table");
+  }, [defaultViewMode, isCompactViewport]);
 
   useEffect(() => {
     setColumnFilters((currentFilters) => {
@@ -947,7 +957,7 @@ export function TableTemplate<T>({
                 selected={viewMode === "table"}
                 showNavigationIcons={false}
                 aria-label={"Режим таблицы"}
-                onClick={() => setViewMode("table")}
+                onClick={() => { hasUserToggledViewMode.current = true; setViewMode("table"); }}
                 sx={{
                   minHeight: searchHeight - 8,
                   minWidth: 0,
@@ -971,7 +981,7 @@ export function TableTemplate<T>({
                 selected={viewMode === "cards"}
                 showNavigationIcons={false}
                 aria-label={"Режим карточек"}
-                onClick={() => setViewMode("cards")}
+                onClick={() => { hasUserToggledViewMode.current = true; setViewMode("cards"); }}
                 sx={{
                   minHeight: searchHeight - 8,
                   minWidth: 0,
@@ -1044,6 +1054,7 @@ export function TableTemplate<T>({
                 kind="outlined"
                 showNavigationIcons={false}
                 onClick={handleSettingsButtonClick}
+                aria-label="Настройки таблицы"
                 sx={{
                   minHeight: searchHeight,
                   width: searchHeight,
@@ -1239,6 +1250,7 @@ export function TableTemplate<T>({
                               event.stopPropagation();
                               handleSortToggle(column.id);
                             }}
+                            aria-label={`Сортировать по ${column.header}`}
                             sx={{
                               width: 18,
                               height: 18,
@@ -1261,6 +1273,7 @@ export function TableTemplate<T>({
                         {column.filterKind === "select" && (
                           <ButtonBase
                             onClick={(event: ReactMouseEvent<HTMLButtonElement>) => handleOpenSelectFilter(column.id, event)}
+                            aria-label={`Фильтр: ${column.header}`}
                             sx={{
                               width: 18,
                               height: 18,
@@ -1666,6 +1679,8 @@ export function TableTemplate<T>({
 
           {visibleRows.length === 0 && (
             <Paper
+              role="status"
+              aria-live="polite"
               sx={{
                 minHeight: rowHeight * 1.1,
                 display: "flex",
@@ -1703,6 +1718,7 @@ export function TableTemplate<T>({
               showNavigationIcons={false}
               disabled={page <= 1}
               onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+              aria-label="Предыдущая страница"
               sx={{
                 minHeight: pagerButtonSize,
                 width: pagerButtonSize,
@@ -1747,6 +1763,7 @@ export function TableTemplate<T>({
               showNavigationIcons={false}
               disabled={page >= pageCount}
               onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))}
+              aria-label="Следующая страница"
               sx={{
                 minHeight: pagerButtonSize,
                 width: pagerButtonSize,
@@ -1767,6 +1784,7 @@ export function TableTemplate<T>({
               value={rowsPerPage}
               onChange={(event) => setRowsPerPage(Number(event.target.value))}
               IconComponent={KeyboardArrowDownRounded}
+              inputProps={{ 'aria-label': 'Количество строк на странице' }}
               sx={{
                 width: rowsPerPageWidth,
                 minHeight: pagerButtonSize,

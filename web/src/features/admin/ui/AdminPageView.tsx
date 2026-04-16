@@ -102,12 +102,12 @@ export const AdminPageView = () => {
   return (
     <Stack spacing={2}>
       {!isLeadLike && !isAdmin ? (
-        <Stack direction="row" gap={1.5} alignItems="center" flexWrap="nowrap" sx={{ width: '100%', overflowX: 'auto', pb: 0.5 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ width: '100%' }}>
           <Select
             size="small"
             value={activeTab}
             onChange={handleRoleSelectChange}
-            sx={{ minWidth: { xs: 220, sm: 300 }, flexShrink: 0 }}
+            sx={{ minWidth: { xs: '100%', sm: 300 }, flexShrink: 0 }}
           >
             {userTabs.map((tab) => (
               <MenuItem key={tab.value} value={tab.value}>{tab.label}</MenuItem>

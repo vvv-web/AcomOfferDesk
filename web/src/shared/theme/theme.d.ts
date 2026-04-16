@@ -23,6 +23,20 @@ declare module '@mui/material/styles' {
     };
   }
 
+  type StatusTone = {
+    text: string;
+    bg: string;
+    border: string;
+  };
+
+  type StatusTones = {
+    success: StatusTone;
+    warning: StatusTone;
+    error: StatusTone;
+    info: StatusTone;
+    neutral: StatusTone;
+  };
+
   interface Palette {
     brand: {
       accent: string;
@@ -35,6 +49,7 @@ declare module '@mui/material/styles' {
       primaryHover: string;
       primaryPressed: string;
     };
+    statusTones: StatusTones;
     dashboard: {
       status: {
         open: string;
@@ -56,6 +71,7 @@ declare module '@mui/material/styles' {
       primaryHover?: string;
       primaryPressed?: string;
     };
+    statusTones?: StatusTones;
     dashboard?: {
       status?: {
         open?: string;
