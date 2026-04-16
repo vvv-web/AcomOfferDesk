@@ -32,7 +32,6 @@ export const AppLayout = () => {
             flex: 1,
             minHeight: 0,
             display: 'grid',
-<<<<<<< HEAD
             gridTemplateColumns: {
               xs: '1fr',
               lg: isSidebarCollapsed ? '88px minmax(0, 1fr)' : '280px minmax(0, 1fr)',
@@ -60,15 +59,6 @@ export const AppLayout = () => {
             }}
           >
             {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
-=======
-            gridTemplateColumns: { xs: '1fr', lg: 'max-content minmax(0, 1fr)' },
-            alignItems: { lg: 'stretch' },
-            gap: { xs: 2, lg: 0 }
-          }}
-        >
-          <AppHeader config={headerConfig} onLogout={logout} />
-          <Stack component="section" spacing={2} sx={{ minWidth: 0, p: { xs: 1.5, md: 2 } }}>
->>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
             {headerConfig.actions.length ? (
               <Stack direction="row" justifyContent="flex-end">
                 <HeaderActions

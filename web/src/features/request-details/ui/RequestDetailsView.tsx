@@ -691,16 +691,6 @@ export const RequestDetailsView = () => {
                         ))}
                     </Select>
                 </Stack>
-<<<<<<< HEAD
-                <Button
-                    variant="contained"
-                    sx={{ paddingX: 4, boxShadow: 'none', whiteSpace: 'nowrap', '&:hover': { boxShadow: 'none' } }}
-                    onClick={() => void handleSave()}
-                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
-                >
-                    {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
-                </Button>
-=======
                 <Stack direction="row" gap={1.5} flexWrap="wrap">
                     <Button
                         variant="contained"
@@ -719,7 +709,6 @@ export const RequestDetailsView = () => {
                         </Button>
                     ) : null}
                 </Stack>
->>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
             </Stack>
             {hasPendingChanges && (
                 <Typography role="status" color="warning.main" sx={{ mb: 2 }}>

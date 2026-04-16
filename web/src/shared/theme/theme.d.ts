@@ -23,8 +23,6 @@ declare module '@mui/material/styles' {
     };
   }
 
-<<<<<<< HEAD
-=======
   type StatusTone = {
     text: string;
     bg: string;
@@ -39,7 +37,6 @@ declare module '@mui/material/styles' {
     neutral: StatusTone;
   };
 
->>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
   interface Palette {
     brand: {
       accent: string;
@@ -52,10 +49,7 @@ declare module '@mui/material/styles' {
       primaryHover: string;
       primaryPressed: string;
     };
-<<<<<<< HEAD
-=======
     statusTones: StatusTones;
->>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
     dashboard: {
       status: {
         open: string;
@@ -77,10 +71,7 @@ declare module '@mui/material/styles' {
       primaryHover?: string;
       primaryPressed?: string;
     };
-<<<<<<< HEAD
-=======
     statusTones?: StatusTones;
->>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
     dashboard?: {
       status?: {
         open?: string;
