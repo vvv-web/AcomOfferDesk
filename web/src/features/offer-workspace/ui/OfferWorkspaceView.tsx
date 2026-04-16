@@ -12,7 +12,11 @@ import {
   Typography
 } from '@mui/material';
 import { DataTable } from '@shared/components/DataTable';
+<<<<<<< HEAD
+import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
+=======
 import { formatDate, formatAmount } from '@shared/lib/formatters';
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
 import { downloadFile } from '@shared/api/fileDownload';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { ProfileButton } from '@shared/components/ProfileButton';
@@ -194,7 +198,27 @@ export const OfferWorkspaceView = () => {
         }}
       >
 
+<<<<<<< HEAD
+        {isEconomist ? (
+          <Box sx={{ mb: 1.25 }}>
+            <BreadcrumbsNav
+              items={[
+                { key: 'requests', label: 'Заявки', onClick: () => navigate('/requests') },
+                {
+                  key: `request-${workspace.request.request_id}`,
+                  label: `Заявка №${workspace.request.request_id}`,
+                  onClick: () => navigate(`/requests/${workspace.request.request_id}`)
+                },
+                { key: `offer-${selectedOffer.offer_id}`, label: `КП №${selectedOffer.offer_id}` }
+              ]}
+            />
+          </Box>
+        ) : null}
+
+        <Stack direction="row" justifyContent="space-between" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+=======
         <Stack direction="row" justifyContent="space-between" gap={1.5} alignItems="center" flexWrap="wrap" sx={{ mb: 2 }}>
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
           <Button
             variant="outlined"
             sx={{ borderColor: 'primary.main', color: 'primary.main', px: { xs: 2, sm: 4 } }}

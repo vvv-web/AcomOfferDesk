@@ -70,8 +70,7 @@ export const AdminPageView = () => {
     loadUsers,
     handleClose,
     onSubmit,
-    form,
-    addUserButtonSx
+    form
   } = useAdminPage();
 
   const {
@@ -113,15 +112,6 @@ export const AdminPageView = () => {
               <MenuItem key={tab.value} value={tab.value}>{tab.label}</MenuItem>
             ))}
           </Select>
-          {canCreateUser ? (
-            <Button variant="outlined" sx={{ ...addUserButtonSx, flexShrink: 0 }} onClick={() => setIsDialogOpen(true)}>
-              Добавить пользователя
-            </Button>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Нет доступных действий для создания пользователей.
-            </Typography>
-          )}
         </Stack>
       ) : null}
 
@@ -137,6 +127,7 @@ export const AdminPageView = () => {
         canUpdateRole={canUpdateRole}
         allowedRoleOptions={[ROLE.ADMIN, ROLE.ECONOMIST]}
         onStatusUpdated={loadUsers}
+        onAddClick={canCreateUser ? () => setIsDialogOpen(true) : undefined}
       />
 
       <Dialog

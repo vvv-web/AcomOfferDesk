@@ -662,7 +662,10 @@ async def mark_offer_messages_read(
             message_ids=payload.message_ids,
             up_to_message_id=payload.up_to_message_id,
         )
-        profile = await uow.profiles.get_by_id(current_user.user_id) if uow.profiles is not None else None
+        profile_full_name = None
+        if uow.profiles is not None:
+            profile_item = await uow.profiles.get_by_id(current_user.user_id)
+            profile_full_name = profile_item.full_name if profile_item is not None else None
 
     if ack.updated_message_ids:
         await get_chat_runtime().publish_chat_event(
@@ -672,7 +675,7 @@ async def mark_offer_messages_read(
                 data={
                     "chat_id": ack.chat_id,
                     "user_id": current_user.user_id,
-                    "user_full_name": profile.full_name if profile else None,
+                    "user_full_name": profile_full_name,
                     "message_ids": ack.updated_message_ids,
                     "last_read_message_id": ack.last_read_message_id,
                 },

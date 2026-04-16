@@ -1,15 +1,28 @@
 import { Box, Stack } from '@mui/material';
-import { Outlet } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { AppHeader, useHeaderConfig } from '@features/header';
 import { HeaderActions } from '@features/header/ui/HeaderActions';
 import { AppFooter } from '@shared/components/AppFooter';
+import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
 
 export const AppLayout = () => {
+  const navigate = useNavigate();
   const { logout } = useAuth();
   const headerConfig = useHeaderConfig();
   const isSidebarLayout = headerConfig.mode === 'sidebar';
   const isHiddenHeader = headerConfig.mode === 'hidden';
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const breadcrumbItems = useMemo(
+    () =>
+      (headerConfig.breadcrumbs ?? []).map((item) => ({
+        key: item.key,
+        label: item.label,
+        onClick: item.to ? () => navigate(item.to!) : undefined,
+      })),
+    [headerConfig.breadcrumbs, navigate]
+  );
 
   if (isSidebarLayout) {
     return (
@@ -19,6 +32,35 @@ export const AppLayout = () => {
             flex: 1,
             minHeight: 0,
             display: 'grid',
+<<<<<<< HEAD
+            gridTemplateColumns: {
+              xs: '1fr',
+              lg: isSidebarCollapsed ? '88px minmax(0, 1fr)' : '280px minmax(0, 1fr)',
+            },
+            alignItems: { lg: 'stretch' },
+            gap: 0,
+            p: 0,
+            transition: 'grid-template-columns 0.24s ease',
+          }}
+        >
+          <AppHeader
+            config={headerConfig}
+            onLogout={logout}
+            sidebarCollapsed={isSidebarCollapsed}
+            onToggleSidebarCollapse={() => setIsSidebarCollapsed((currentState) => !currentState)}
+          />
+          <Stack
+            component="section"
+            spacing={2}
+            sx={{
+              minWidth: 0,
+              minHeight: '100vh',
+              px: { xs: 1.5, md: 2 },
+              py: { xs: 1.5, md: 2 },
+            }}
+          >
+            {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+=======
             gridTemplateColumns: { xs: '1fr', lg: 'max-content minmax(0, 1fr)' },
             alignItems: { lg: 'stretch' },
             gap: { xs: 2, lg: 0 }
@@ -26,6 +68,7 @@ export const AppLayout = () => {
         >
           <AppHeader config={headerConfig} onLogout={logout} />
           <Stack component="section" spacing={2} sx={{ minWidth: 0, p: { xs: 1.5, md: 2 } }}>
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
             {headerConfig.actions.length ? (
               <Stack direction="row" justifyContent="flex-end">
                 <HeaderActions
@@ -57,6 +100,7 @@ export const AppLayout = () => {
         }}
       >
         {isHiddenHeader ? null : <AppHeader config={headerConfig} onLogout={logout} />}
+        {!isHiddenHeader && breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
 
         <Box component="main">
           <Outlet />

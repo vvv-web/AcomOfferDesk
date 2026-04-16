@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasPermission } from '@shared/auth/permissions';
+import { ROLE } from '@shared/constants/roles';
 import { buildHeaderConfig } from './buildHeaderConfig';
 
 export const useHeaderConfig = () => {
@@ -22,6 +23,40 @@ export const useHeaderConfig = () => {
   const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
   const canOpenUsersPage = hasPermission(session, 'users.read');
   const canRegisterUser = hasPermission(session, 'users.create');
+  const requestMatch = location.pathname.match(/^\/requests\/(\d+)$/);
+  const offerMatch = location.pathname.match(/^\/offers\/(\d+)\/workspace$/);
+  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
+
+  const breadcrumbs = useMemo(() => {
+    if (!isSuperadmin) {
+      return [];
+    }
+
+    if (location.pathname === '/admin') {
+      return [{ key: 'users', label: 'Пользователи' }];
+    }
+
+    if (location.pathname === '/requests') {
+      return [{ key: 'requests', label: 'Заявки' }];
+    }
+
+    if (requestMatch) {
+      return [
+        { key: 'requests', label: 'Заявки', to: '/requests' },
+        { key: `request-${requestMatch[1]}`, label: `Заявка №${requestMatch[1]}` },
+      ];
+    }
+
+    if (offerMatch) {
+      return [
+        { key: 'requests', label: 'Заявки', to: '/requests' },
+        { key: 'request-details', label: 'Заявка', to: '/requests' },
+        { key: `offer-${offerMatch[1]}`, label: `КП №${offerMatch[1]}` },
+      ];
+    }
+
+    return [];
+  }, [isSuperadmin, location.pathname, offerMatch, requestMatch]);
 
   return useMemo(
     () =>
@@ -33,6 +68,7 @@ export const useHeaderConfig = () => {
         canLoadOpenRequests,
         canLoadOfferedRequests,
         canOpenUsersPage,
+        breadcrumbs,
         contractorTab,
         adminUsersTab,
         onNavigateToDashboard: () => navigate('/pm-dashboard'),
@@ -72,6 +108,7 @@ export const useHeaderConfig = () => {
       canOpenUsersPage,
       canRegisterUser,
       contractorTab,
+      breadcrumbs,
       location,
       navigate,
       searchParams,

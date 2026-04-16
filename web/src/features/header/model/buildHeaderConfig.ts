@@ -9,6 +9,7 @@ type BuildHeaderConfigArgs = {
   canLoadOpenRequests: boolean;
   canLoadOfferedRequests: boolean;
   canOpenUsersPage: boolean;
+  breadcrumbs?: { key: string; label: string; to?: string }[];
   contractorTab: 'my' | 'open';
   adminUsersTab: 'contractors' | 'economists' | 'admins';
   onNavigateToDashboard: () => void;
@@ -25,9 +26,10 @@ type BuildHeaderConfigArgs = {
 const superadminItems: HeaderSidebarItem[] = [
   { key: 'users', label: 'Пользователи', to: '/admin' },
   { key: 'requests', label: 'Заявки', to: '/requests' },
-  { key: 'feedback', label: 'Фидбек', to: '/feedback' },
   { key: 'offers', label: 'КП', disabled: true },
-  { key: 'roles', label: 'Роли', disabled: true }
+  { key: 'roles', label: 'Роли', disabled: true },
+  { key: 'contact', label: 'Обратная связь', to: '/feedback', isBottomItem: true },
+  { key: 'logout', label: 'Выйти', isBottomItem: true },
 ];
 
 export const buildHeaderConfig = ({
@@ -38,6 +40,7 @@ export const buildHeaderConfig = ({
   canLoadOpenRequests,
   canLoadOfferedRequests,
   canOpenUsersPage,
+  breadcrumbs = [],
   contractorTab,
   adminUsersTab,
   onNavigateToDashboard,
@@ -93,14 +96,8 @@ export const buildHeaderConfig = ({
     return {
       mode: 'sidebar',
       tabs: [],
-      actions: isRequestsListPage && canCreateRequest
-        ? [{
-            key: 'create-request',
-            label: 'Создать заявку',
-            variant: 'contained',
-            onClick: onNavigateToRequestCreate
-          }]
-        : [],
+      actions: [],
+      breadcrumbs,
       sidebarItems: superadminItems,
       showFeedback: true,
       showRoleGuide: true,

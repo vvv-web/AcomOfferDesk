@@ -3,7 +3,11 @@ import {
   Alert,
   Box,
   Button,
+<<<<<<< HEAD
+  Chip,
+=======
   ButtonBase,
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
   Dialog,
   DialogContent,
   Divider,
@@ -26,7 +30,7 @@ import { updateUserManager } from '@shared/api/users/updateUserManager';
 import { updateUserRole } from '@shared/api/users/updateUserRole';
 import { updateManualContractor } from '@shared/api/users/updateManualContractor';
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
-import { DataTable } from '@shared/components/DataTable';
+import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
 import {
   UserStatusPill,
@@ -42,24 +46,6 @@ import {
   setSubordinateUnavailabilityPeriod,
   type SubordinateProfile
 } from '@shared/api/users/getSubordinateProfile';
-
-const contractorColumns = [
-  { key: 'login', label: 'Логин', minWidth: 170, fraction: 1.1 },
-  { key: 'full_name', label: 'ФИО', minWidth: 190, fraction: 1.3 },
-  { key: 'phone', label: 'Телефон', minWidth: 150, fraction: 1 },
-  { key: 'mail', label: 'E-mail', minWidth: 190, fraction: 1.2 },
-  { key: 'company_phone', label: 'Телефон компании', minWidth: 170, fraction: 1 },
-  { key: 'company_mail', label: 'E-mail компании', minWidth: 190, fraction: 1.2 },
-  { key: 'status', label: 'Статус', minWidth: 130, fraction: 0.9 }
-];
-
-const defaultColumns = [
-  { key: 'id', label: 'ID', minWidth: 120, fraction: 1 },
-  { key: 'password', label: 'Пароль', minWidth: 180, fraction: 1.4 },
-  { key: 'id_role', label: 'ID роли', minWidth: 120, fraction: 1 },
-  { key: 'role', label: 'Роль', minWidth: 180, fraction: 1.4 },
-  { key: 'status', label: 'Статус профиля', minWidth: 170, fraction: 1.2 }
-];
 
 const statusSchema = z.object({
   user_status: z.enum(['review', 'active', 'inactive', 'blacklist'])
@@ -84,6 +70,7 @@ type UsersTableProps = {
   users: UserListItem[];
   isLoading?: boolean;
   emptyMessage: string;
+  onAddClick?: () => void;
   getRoleLabel: (roleId: number) => string;
   isContractorsTab: boolean;
   canUpdateStatus: boolean;
@@ -101,6 +88,256 @@ type UserRow = {
 };
 
 
+<<<<<<< HEAD
+const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
+  review: 'На проверке',
+  approved: 'Одобрен',
+  disapproved: 'Не одобрен'
+};
+
+const userStatusValueByLabel: Record<string, StatusFormValues['user_status']> = {
+  'на проверке': 'review',
+  'активен': 'active',
+  'неактивен': 'inactive',
+  'в черном списке': 'blacklist',
+  'в чёрном списке': 'blacklist'
+};
+
+const tgStatusValueByLabel: Record<string, 'review' | 'approved' | 'disapproved'> = {
+  'на проверке': 'review',
+  'одобрен': 'approved',
+  'не одобрен': 'disapproved'
+};
+
+const normalizeUserStatus = (value: string | null | undefined): StatusFormValues['user_status'] => {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized in userStatusLabelByValue) {
+    return normalized as StatusFormValues['user_status'];
+  }
+  return userStatusValueByLabel[normalized] ?? 'review';
+};
+
+const normalizeAnyStatus = (value: string | null | undefined): string => {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized in statusColorByValue) {
+    return normalized;
+  }
+  if (normalized in userStatusValueByLabel) {
+    return userStatusValueByLabel[normalized];
+  }
+  if (normalized in tgStatusValueByLabel) {
+    return tgStatusValueByLabel[normalized];
+  }
+  return normalized;
+};
+
+const toStatusLabel = (value: string | null | undefined): string => {
+  const normalized = normalizeAnyStatus(value);
+  if (normalized in userStatusLabelByValue) {
+    return userStatusLabelByValue[normalized as StatusFormValues['user_status']];
+  }
+  if (normalized in tgStatusLabelByValue) {
+    return tgStatusLabelByValue[normalized as 'review' | 'approved' | 'disapproved'];
+  }
+  return value ?? '—';
+};
+
+const statusColorByValue: Record<string, { bg: string; text: string; border: string }> = {
+  review: { bg: '#fff8e1', text: '#8a6d1f', border: '#f2dd9b' },
+  active: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
+  inactive: { bg: '#f3f4f8', text: '#4d5563', border: '#d9dde8' },
+  blacklist: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' },
+  approved: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
+  disapproved: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' }
+};
+
+const StatusPill = ({ value }: { value: string | null | undefined }) => {
+  const normalized = normalizeAnyStatus(value);
+  const palette = statusColorByValue[normalized] ?? {
+    bg: '#edf3ff',
+    text: '#1f2a44',
+    border: '#d3dbe7'
+  };
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        px: 1.2,
+        py: 0.3,
+        borderRadius: 99,
+        border: `1px solid ${palette.border}`,
+        backgroundColor: palette.bg,
+        color: palette.text,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1.3,
+        width: 'fit-content',
+        display: 'inline-flex'
+      }}
+    >
+      {toStatusLabel(value)}
+    </Box>
+  );
+};
+
+const InfoRow = ({ label, value }: { label: string; value: string | number | null }) => (
+  <Stack spacing={0.2} sx={{ minWidth: 0 }}>
+    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      {label}
+    </Typography>
+    <Typography variant="body1" sx={{ fontWeight: 500, color: 'text.primary', overflowWrap: 'anywhere' }}>
+      {value ?? '—'}
+    </Typography>
+  </Stack>
+);
+
+const ContractorMobileCard = ({
+  user,
+  onOpen,
+}: {
+  user: UserListItem;
+  onOpen: (user: UserListItem) => void;
+}) => (
+  <Paper
+    onClick={() => onOpen(user)}
+    sx={(theme) => ({
+      p: 1.25,
+      borderRadius: `${theme.acomShape.controlRadius}px`,
+      border: '1px solid',
+      borderColor: 'divider',
+      bgcolor: 'background.paper',
+      cursor: 'pointer',
+      transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+      '&:hover': {
+        borderColor: 'primary.main',
+        boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.12)}`
+      }
+    })}
+  >
+    <Stack spacing={1.1}>
+      <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
+        <Typography
+          sx={{
+            minWidth: 0,
+            fontSize: 15,
+            fontWeight: 600,
+            color: 'text.primary',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {`${user.full_name ?? user.user_id} (${user.user_id})`}
+        </Typography>
+        <StatusPill value={user.status} />
+      </Stack>
+
+      <Stack spacing={0.85}>
+        <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
+          Для связи
+        </Typography>
+        <Stack direction="row" justifyContent="space-between" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+            Телефон
+          </Typography>
+          <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+            {formatPhoneForView(user.phone) ?? '—'}
+          </Typography>
+        </Stack>
+        <Stack direction="row" justifyContent="space-between" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+            Почта
+          </Typography>
+          <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+            {user.mail ?? '—'}
+          </Typography>
+        </Stack>
+      </Stack>
+
+      <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }} />
+
+      <Stack spacing={0.85}>
+        <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
+          Компания
+        </Typography>
+        <Stack direction="row" justifyContent="space-between" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+            Телефон
+          </Typography>
+          <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+            {formatPhoneForView(user.company_phone) ?? '—'}
+          </Typography>
+        </Stack>
+        <Stack direction="row" justifyContent="space-between" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+            Почта
+          </Typography>
+          <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+            {user.company_mail ?? '—'}
+          </Typography>
+        </Stack>
+      </Stack>
+
+      {user.company_name ? (
+        <Stack direction="row" justifyContent="space-between" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+            Компания
+          </Typography>
+          <Chip size="small" label={user.company_name} sx={{ maxWidth: '70%' }} />
+        </Stack>
+      ) : null}
+    </Stack>
+  </Paper>
+);
+
+const SourceSection = ({
+  title,
+  source,
+  children
+}: {
+  title: string;
+  source: string;
+  children: ReactNode;
+}) => (
+  <Box
+    sx={{
+      border: '1px solid',
+      borderColor: 'divider',
+      borderRadius: 1,
+      p: { xs: 1.4, sm: 1.8 },
+      backgroundColor: 'background.paper'
+    }}
+  >
+    <Stack spacing={1.2}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" rowGap={0.6}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+          {title}
+        </Typography>
+        <Box
+          component="span"
+          sx={{
+            px: 1,
+            py: 0.2,
+            borderRadius: 99,
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'background.default',
+            color: 'text.secondary',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.03em'
+          }}
+        >
+          {source}
+        </Box>
+      </Stack>
+      {children}
+    </Stack>
+  </Box>
+);
+=======
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
 
 const formatPhoneForView = (value: string | null | undefined) => {
   if (!value) {
@@ -287,6 +524,7 @@ export const UsersTable = ({
   users,
   isLoading,
   emptyMessage,
+  onAddClick,
   getRoleLabel,
   isContractorsTab,
   canUpdateStatus,
@@ -588,6 +826,117 @@ export const UsersTable = ({
   };
 
   const manualContractorFieldErrors = manualContractorValidation.fieldErrors;
+  const usersRoleFilterOptions = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.role))).map((role) => ({ label: role, value: role })),
+    [rows]
+  );
+  const usersStatusFilterOptions = useMemo(
+    () => inlineStatusOptions.map((status) => ({ label: userStatusLabelByValue[status], value: userStatusLabelByValue[status] })),
+    []
+  );
+  const usersColumns = useMemo<TableTemplateColumn<UserRow>[]>(
+    () => [
+      { id: 'id', header: 'ID', field: 'id', minWidth: 110, width: '120px' },
+      { id: 'password', header: 'Пароль', field: 'password', minWidth: 150, width: '160px' },
+      { id: 'id_role', header: 'ID роли', field: 'id_role', minWidth: 100, width: '110px' },
+      {
+        id: 'role',
+        header: 'Роль',
+        minWidth: 180,
+        filterKind: 'select',
+        filterOptions: usersRoleFilterOptions,
+        getFilterValue: (row) => row.role,
+        getSearchValue: (row) => row.role,
+        renderCell: (row) =>
+          allowedRoleOptions.includes(row.id_role) ? (
+            <TextField
+              select
+              size="small"
+              value={row.id_role}
+              disabled={!canUpdateRole || updatingUserId === row.id || !users.find((item) => item.user_id === row.id)?.actions.update_role}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                event.stopPropagation();
+                const nextRoleId = Number(event.target.value);
+                if (nextRoleId === row.id_role) {
+                  return;
+                }
+                void handleInlineRoleChange(row.id, nextRoleId);
+              }}
+              sx={{ minWidth: 140 }}
+            >
+              {allowedRoleOptions.map((roleId) => (
+                <MenuItem key={roleId} value={roleId}>
+                  {getRoleLabel(roleId)}
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : (
+            <Typography variant="body2">{row.role}</Typography>
+          )
+      },
+      {
+        id: 'status',
+        header: 'Статус профиля',
+        minWidth: 180,
+        filterKind: 'select',
+        filterOptions: usersStatusFilterOptions,
+        getFilterValue: (row) => userStatusLabelByValue[row.status],
+        getSearchValue: (row) => userStatusLabelByValue[row.status],
+        renderCell: (row) => (
+          <TextField
+            select
+            size="small"
+            value={row.status}
+            disabled={!canEditUserStatus(row.id) || updatingUserId === row.id}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              event.stopPropagation();
+              const nextStatus = event.target.value as StatusFormValues['user_status'];
+              if (nextStatus === row.status) {
+                return;
+              }
+              void handleInlineStatusChange(row.id, nextStatus);
+            }}
+            sx={{ minWidth: 140 }}
+          >
+            {inlineStatusOptions.map((status) => (
+              <MenuItem key={status} value={status}>
+                {userStatusLabelByValue[status]}
+              </MenuItem>
+            ))}
+          </TextField>
+        )
+      }
+    ],
+    [allowedRoleOptions, canUpdateRole, getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, updatingUserId, users, usersRoleFilterOptions, usersStatusFilterOptions]
+  );
+  const contractorStatusFilterOptions = useMemo(
+    () => Array.from(new Set(users.map((user) => toStatusLabel(user.status)))).map((status) => ({ label: status, value: status })),
+    [users]
+  );
+  const contractorColumnsTemplate = useMemo<TableTemplateColumn<UserListItem>[]>(
+    () => [
+      { id: 'login', header: 'Логин', field: 'user_id', minWidth: 170 },
+      { id: 'full_name', header: 'ФИО', field: 'full_name', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
+      { id: 'phone', header: 'Телефон', field: 'phone', minWidth: 150, renderValue: (value) => <Typography variant="body2">{formatPhoneForView(value as string | null | undefined) ?? '—'}</Typography> },
+      { id: 'mail', header: 'E-mail', field: 'mail', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
+      { id: 'company_phone', header: 'Телефон компании', field: 'company_phone', minWidth: 170, renderValue: (value) => <Typography variant="body2">{formatPhoneForView(value as string | null | undefined) ?? '—'}</Typography> },
+      { id: 'company_mail', header: 'E-mail компании', field: 'company_mail', minWidth: 190, renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography> },
+      {
+        id: 'status',
+        header: 'Статус',
+        field: 'status',
+        minWidth: 150,
+        filterKind: 'select',
+        filterOptions: contractorStatusFilterOptions,
+        getFilterValue: (row) => toStatusLabel(row.status),
+        getSearchValue: (row) => toStatusLabel(row.status),
+        renderCell: (row) => <StatusPill value={row.status} />
+      }
+    ],
+    [contractorStatusFilterOptions]
+  );
 
   const theme = useTheme();
   const [expandedContractorCards, setExpandedContractorCards] = useState<Record<string, boolean>>({});
@@ -617,11 +966,21 @@ export const UsersTable = ({
         <Stack spacing={1.2}>
           {inlineStatusError ? <Alert severity="error">{inlineStatusError}</Alert> : null}
           {inlineRoleError ? <Alert severity="error">{inlineRoleError}</Alert> : null}
-          <DataTable
-            columns={defaultColumns}
+          <TableTemplate
+            columns={usersColumns}
             rows={rows}
-            rowKey={(row) => row.id}
+            getRowId={(row) => row.id}
             isLoading={isLoading}
+<<<<<<< HEAD
+            noRowsLabel={emptyMessage}
+            searchPlaceholder="Найти пользователя"
+            addButtonLabel="Добавить пользователя"
+            onAddClick={onAddClick}
+            minTableWidth={840}
+            getCardPrimaryText={(row) => row.id}
+            getCardSecondaryText={(row) => row.role}
+            cardExcludedColumnIds={['id']}
+=======
             emptyMessage={emptyMessage}
             storageKey="users-table"
             renderCard={(row) => {
@@ -680,6 +1039,7 @@ export const UsersTable = ({
               </Paper>
               );
             }}
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
             onRowClick={(row) => {
               const clickedUser = users.find((item) => item.user_id === row.id);
               if (clickedUser) {
@@ -697,57 +1057,6 @@ export const UsersTable = ({
                   });
               }
             }}
-            renderRow={(row) => [
-              <Typography variant="body2">{row.id}</Typography>,
-              <Typography variant="body2">{row.password}</Typography>,
-              <Typography variant="body2">{row.id_role}</Typography>,
-              allowedRoleOptions.includes(row.id_role) ? (
-                <TextField
-                  select
-                  size="small"
-                  value={row.id_role}
-                  disabled={!canUpdateRole || updatingUserId === row.id || !users.find((item) => item.user_id === row.id)?.actions.update_role}
-                  onChange={(event) => {
-                    event.stopPropagation();
-                    const nextRoleId = Number(event.target.value);
-                    if (nextRoleId === row.id_role) {
-                      return;
-                    }
-                    void handleInlineRoleChange(row.id, nextRoleId);
-                  }}
-                  sx={{ minWidth: 140 }}
-                >
-                  {allowedRoleOptions.map((roleId) => (
-                    <MenuItem key={roleId} value={roleId}>
-                      {getRoleLabel(roleId)}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              ) : (
-                <Typography variant="body2">{row.role}</Typography>
-              ),
-              <TextField
-                select
-                size="small"
-                value={row.status}
-                disabled={!canEditUserStatus(row.id) || updatingUserId === row.id}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  const nextStatus = event.target.value as StatusFormValues['user_status'];
-                  if (nextStatus === row.status) {
-                    return;
-                  }
-                  void handleInlineStatusChange(row.id, nextStatus);
-                }}
-                sx={{ minWidth: 140 }}
-              >
-                {inlineStatusOptions.map((status) => (
-                  <MenuItem key={status} value={status}>
-                    {userStatusLabelByValue[status]}
-                  </MenuItem>
-                ))}
-              </TextField>
-            ]}
           />
         </Stack>
 
@@ -966,18 +1275,36 @@ export const UsersTable = ({
 
   return (
     <>
-      <DataTable
-        columns={contractorColumns}
+      <TableTemplate
+        columns={contractorColumnsTemplate}
         rows={users}
-        rowKey={(row) => row.user_id}
+        getRowId={(row) => row.user_id}
         isLoading={isLoading}
-        emptyMessage={emptyMessage}
-        storageKey="contractors-table"
+        noRowsLabel={emptyMessage}
+        searchPlaceholder="Найти контрагента"
+        addButtonLabel="Добавить контрагента"
+        onAddClick={onAddClick}
+        minTableWidth={980}
+        renderCard={(row) => (
+          <ContractorMobileCard
+            user={row}
+            onOpen={(user) => {
+              setSelectedUser(user);
+              setSubmitError(null);
+              setSubmitSuccess(null);
+            }}
+          />
+        )}
+        getCardPrimaryText={(row) => row.company_name ?? row.full_name ?? row.user_id}
+        getCardSecondaryText={(row) => row.user_id}
+        cardExcludedColumnIds={['login']}
         onRowClick={(row) => {
           setSelectedUser(row);
           setSubmitError(null);
           setSubmitSuccess(null);
         }}
+<<<<<<< HEAD
+=======
         cardExpansionControl={{
           checked: areAllContractorCardsExpanded,
           onChange: handleToggleAllContractorCards,
@@ -1089,6 +1416,7 @@ export const UsersTable = ({
           <Typography variant="body2">{row.company_mail ?? '—'}</Typography>,
           <UserStatusPill value={row.status} />
         ]}
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
       />
 
       <Dialog

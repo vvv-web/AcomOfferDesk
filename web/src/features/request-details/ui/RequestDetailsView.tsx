@@ -639,13 +639,6 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
-            <Button
-                variant="outlined"
-                onClick={() => navigate('/requests')}
-                sx={{ mb: 2, alignSelf: 'flex-start' }}
-            >
-                Назад
-            </Button>
             <Stack
                 direction={{ xs: 'column', sm: 'row' }}
                 gap={1.5}
@@ -698,6 +691,16 @@ export const RequestDetailsView = () => {
                         ))}
                     </Select>
                 </Stack>
+<<<<<<< HEAD
+                <Button
+                    variant="contained"
+                    sx={{ paddingX: 4, boxShadow: 'none', whiteSpace: 'nowrap', '&:hover': { boxShadow: 'none' } }}
+                    onClick={() => void handleSave()}
+                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
+                >
+                    {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
+                </Button>
+=======
                 <Stack direction="row" gap={1.5} flexWrap="wrap">
                     <Button
                         variant="contained"
@@ -716,6 +719,7 @@ export const RequestDetailsView = () => {
                         </Button>
                     ) : null}
                 </Stack>
+>>>>>>> 180f2411c68601989a269ce3ce348fad8f05d810
             </Stack>
             {hasPendingChanges && (
                 <Typography role="status" color="warning.main" sx={{ mb: 2 }}>
@@ -893,6 +897,7 @@ export const RequestDetailsView = () => {
                     onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace`)}
                     onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
                     canChangeStatus={canChangeOfferStatus}
+                    onAddClick={canCreateManualOffer ? () => setIsManualOfferDialogOpen(true) : undefined}
                 />
             </Box>
             <CreateManualOfferDialog

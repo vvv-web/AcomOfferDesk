@@ -1,10 +1,11 @@
 import { Box, Typography } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useRequestsPage } from '@features/requests/model/useRequestsPage';
 import { RequestsTable } from '@features/requests/ui/RequestsTable';
 
 export const RequestsPageView = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     canEditOwner,
     chatAlertsMap,
@@ -37,6 +38,7 @@ export const RequestsPageView = () => {
         canEditOwner={canEditOwner}
         onOwnerChange={(request, ownerUserId) => void handleOwnerChange(request, ownerUserId)}
         isContractor={isContractor}
+        onAddClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
       />
     </Box>
   );

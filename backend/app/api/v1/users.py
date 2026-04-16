@@ -544,6 +544,8 @@ async def update_user_status(
         data=UserStatusUpdateData(
             user_id=result.user_id,
             user_status=_ru_user_status(result.user_status),
+            tg_user_id=result.tg_user_id,
+            tg_status=result.tg_status,
         ),
         _links=LinkSet(
             self=Link(href=f"/api/v1/users/{result.user_id}/status", method="PATCH"),
