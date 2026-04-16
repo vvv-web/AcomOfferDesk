@@ -1,10 +1,5 @@
 import { fetchEmpty, fetchJson } from '../client';
 
-export type LoginWebUserPayload = {
-  login: string;
-  password: string;
-};
-
 export type AuthLink = {
   href: string;
   method: string;
@@ -28,17 +23,6 @@ export type AuthSessionResponse = {
     self: AuthLink;
   };
 };
-
-export const loginWebUser = async (payload: LoginWebUserPayload): Promise<AuthSessionResponse> =>
-  fetchJson<AuthSessionResponse>(
-    '/api/v1/auth/login',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    },
-    'Ошибка авторизации',
-    false
-  );
 
 export const refreshWebSession = async (): Promise<AuthSessionResponse> =>
   fetchJson<AuthSessionResponse>(

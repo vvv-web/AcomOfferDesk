@@ -12,6 +12,14 @@ from app.repositories.telegram_compat import build_tg_user, telegram_subject_val
 
 
 class TgUserRepository:
+    """
+    Legacy Telegram compatibility repository.
+    Works as a logical projection over:
+    - user_auth_accounts(provider='telegram')
+    - user_contact_channels(channel_type='telegram')
+    and intentionally does not read/write any standalone tg_users table.
+    """
+
     def __init__(self, session: AsyncSession):
         self._session = session
 

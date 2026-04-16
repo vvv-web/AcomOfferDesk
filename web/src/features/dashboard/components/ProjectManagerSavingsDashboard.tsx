@@ -18,23 +18,7 @@ import {
   type ResponsibilitySavingsItem,
   type ResponsibilitySavingsSummary,
 } from '@shared/api/users/getResponsibilityDashboard';
-
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(value));
-
-const formatAmount = (value: number) =>
-  new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-
-const formatSignedAmount = (value: number) => `${value > 0 ? '+' : ''}${formatAmount(value)}`;
+import { formatDate, formatAmount, formatSignedAmount } from '@shared/lib/formatters';
 
 const emptySavings: ResponsibilitySavingsSummary = {
   total_closed_requests: 0,

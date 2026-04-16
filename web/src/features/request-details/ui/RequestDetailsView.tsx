@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { OffersTable } from './OffersTable';
 import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
+import { formatDate } from '@shared/lib/formatters';
 import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
 import type { RequestDetails, RequestDetailsFile, RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
 import { getRequestEconomists } from '@shared/api/requests/getRequestEconomists';
@@ -27,104 +28,23 @@ import { ToggleSection } from '@shared/components/ToggleSection';
 import { getFileKey } from '@shared/lib/files';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { useRequestDetails } from '../model/useRequestDetails';
+import {
+    type RequestStatus,
+    statusOptions,
+    detailsColumns,
+    toDateInputValue,
+    toAmountInputValue,
+    parseAmountInput,
+    normalizeOfferStatus,
+    buildRequestDetailsSignature,
+    toDeadlineIso,
+} from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
-
-type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
-
-const statusOptions = [
-    { value: 'open', label: 'Открыта', color: '#2e7d32' },
-    { value: 'review', label: 'На рассмотрении', color: '#ed6c02' },
-    { value: 'closed', label: 'Закрыта', color: '#787878ff' },
-    { value: 'cancelled', label: 'Отменена', color: '#d32f2f' }
-] as const;
 
 const offerStatusOptions: OfferStatusOption[] = [
     { value: 'accepted', label: 'Принято' },
     { value: 'rejected', label: 'Отказано' }
 ];
-
-const detailsColumns = [
-    { key: 'label', label: 'Параметр' },
-    { key: 'value', label: 'Значение' }
-];
-
-const formatDate = (value: string | null) => {
-    if (!value) {
-        return '-';
-    }
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-
-    return new Intl.DateTimeFormat('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-    }).format(date);
-};
-
-const toDateInputValue = (value: string | null) => {
-    if (!value) return '';
-    const [datePart] = value.split('T');
-    return datePart ?? '';
-};
-
-const toAmountInputValue = (value: number | null | undefined) => {
-    if (value === null || value === undefined || Number.isNaN(value)) {
-        return '';
-    }
-
-    return String(value);
-};
-
-const parseAmountInput = (value: string) => {
-    const normalized = value.trim().replace(',', '.');
-    if (!normalized) {
-        return null;
-    }
-
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
-const normalizeOfferStatus = (value: string | null): OfferDecisionStatus => {
-    if (value === 'accepted' || value === 'rejected') {
-        return value;
-    }
-
-    return '';
-};
-
-const buildRequestDetailsSignature = (request: RequestDetails | null) => {
-    if (!request) {
-        return '';
-    }
-
-    return JSON.stringify({
-        id: request.id,
-        id_user: request.id_user,
-        status: request.status,
-        deadline_at: request.deadline_at,
-        updated_at: request.updated_at,
-        initial_amount: request.initial_amount,
-        final_amount: request.final_amount,
-        id_offer: request.id_offer,
-        count_deleted_alert: request.count_deleted_alert,
-        offers: request.offers.map((offer) => ({
-            id: offer.offer_id,
-            status: offer.status,
-            updated_at: offer.updated_at,
-            amount: offer.offer_amount,
-            unread_messages_count: offer.unread_messages_count ?? 0,
-            files: offer.files.map((file) => [file.id, file.name])
-        })),
-        files: request.files.map((file) => [file.id, file.name])
-    });
-};
-
-const toDeadlineIso = (date: string) => `${date}T23:59:59`;
 
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
@@ -727,22 +647,23 @@ export const RequestDetailsView = () => {
                 Назад
             </Button>
             <Stack
-                direction="row"
-                spacing={2}
-                alignItems="center"
+                direction={{ xs: 'column', sm: 'row' }}
+                gap={1.5}
+                alignItems={{ sm: 'center' }}
                 flexWrap="wrap"
                 sx={{ mb: 3 }}
             >
-                <Typography variant="h6" fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
+                <Typography variant="h6" fontWeight={600}>
                     Номер заявки: {requestDetails.id}
                 </Typography>
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'nowrap' }}>
+                <Stack direction="row" alignItems="center" spacing={1}>
                     <Box
                         sx={{
                             width: 22,
                             height: 22,
                             borderRadius: '50%',
-                            backgroundColor: statusConfig.color
+                            backgroundColor: statusConfig.color,
+                            flexShrink: 0,
                         }}
                     />
                     <Select
@@ -765,7 +686,7 @@ export const RequestDetailsView = () => {
                         }}
                         disabled={!canEditRequest}
                         sx={{
-                            minWidth: 200,
+                            minWidth: { xs: 160, sm: 200 },
                             borderRadius: 999,
                             backgroundColor: 'background.paper'
                         }}
@@ -777,26 +698,27 @@ export const RequestDetailsView = () => {
                         ))}
                     </Select>
                 </Stack>
-                <Button
-                    variant="contained"
-                    sx={{ paddingX: 4, boxShadow: 'none', whiteSpace: 'nowrap', '&:hover': { boxShadow: 'none' } }}
-                    onClick={() => void handleSave()}
-                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
-                >
-                    {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
-                </Button>
-                {canCreateManualOffer ? (
+                <Stack direction="row" gap={1.5} flexWrap="wrap">
                     <Button
-                        variant="outlined"
-                        onClick={() => setIsManualOfferDialogOpen(true)}
-                        sx={{ whiteSpace: 'nowrap' }}
+                        variant="contained"
+                        sx={{ px: { xs: 2, sm: 4 }, boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
+                        onClick={() => void handleSave()}
+                        disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
                     >
-                        Внести КП вручную
+                        {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
                     </Button>
-                ) : null}
+                    {canCreateManualOffer ? (
+                        <Button
+                            variant="outlined"
+                            onClick={() => setIsManualOfferDialogOpen(true)}
+                        >
+                            Внести КП вручную
+                        </Button>
+                    ) : null}
+                </Stack>
             </Stack>
             {hasPendingChanges && (
-                <Typography color="warning.main" sx={{ mb: 2 }}>
+                <Typography role="status" color="warning.main" sx={{ mb: 2 }}>
                     Есть несохраненные изменения. При уходе со страницы они будут потеряны.
                 </Typography>
             )}

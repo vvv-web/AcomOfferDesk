@@ -3,16 +3,20 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Dialog,
   DialogContent,
+  Divider,
   MenuItem,
+  Paper,
   Stack,
   TextField,
   Tooltip,
   Typography
 } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import { alpha, useTheme } from '@mui/material/styles';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { UserListItem } from '@entities/user';
@@ -24,6 +28,15 @@ import { updateManualContractor } from '@shared/api/users/updateManualContractor
 import { getManagerCandidates } from '@shared/api/users/getManagerCandidates';
 import { DataTable } from '@shared/components/DataTable';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
+import {
+  UserStatusPill,
+  InfoRow,
+  SourceSection,
+  dialogPaperSx,
+  dialogContentSx,
+  normalizeUserStatus,
+  userStatusLabelByValue,
+} from './UserCardPrimitives';
 import {
   getSubordinateProfile,
   setSubordinateUnavailabilityPeriod,
@@ -87,161 +100,7 @@ type UserRow = {
   status: StatusFormValues['user_status'];
 };
 
-const userStatusLabelByValue: Record<StatusFormValues['user_status'], string> = {
-  review: 'На проверке',
-  active: 'Активен',
-  inactive: 'Неактивен',
-  blacklist: 'В черном списке'
-};
 
-const tgStatusLabelByValue: Record<'review' | 'approved' | 'disapproved', string> = {
-  review: 'На проверке',
-  approved: 'Одобрен',
-  disapproved: 'Не одобрен'
-};
-
-const userStatusValueByLabel: Record<string, StatusFormValues['user_status']> = {
-  'на проверке': 'review',
-  'активен': 'active',
-  'неактивен': 'inactive',
-  'в черном списке': 'blacklist',
-  'в чёрном списке': 'blacklist'
-};
-
-const tgStatusValueByLabel: Record<string, 'review' | 'approved' | 'disapproved'> = {
-  'на проверке': 'review',
-  'одобрен': 'approved',
-  'не одобрен': 'disapproved'
-};
-
-const normalizeUserStatus = (value: string | null | undefined): StatusFormValues['user_status'] => {
-  const normalized = (value ?? '').toLowerCase();
-  if (normalized in userStatusLabelByValue) {
-    return normalized as StatusFormValues['user_status'];
-  }
-  return userStatusValueByLabel[normalized] ?? 'review';
-};
-
-const normalizeAnyStatus = (value: string | null | undefined): string => {
-  const normalized = (value ?? '').toLowerCase();
-  if (normalized in statusColorByValue) {
-    return normalized;
-  }
-  if (normalized in userStatusValueByLabel) {
-    return userStatusValueByLabel[normalized];
-  }
-  if (normalized in tgStatusValueByLabel) {
-    return tgStatusValueByLabel[normalized];
-  }
-  return normalized;
-};
-
-const toStatusLabel = (value: string | null | undefined): string => {
-  const normalized = normalizeAnyStatus(value);
-  if (normalized in userStatusLabelByValue) {
-    return userStatusLabelByValue[normalized as StatusFormValues['user_status']];
-  }
-  if (normalized in tgStatusLabelByValue) {
-    return tgStatusLabelByValue[normalized as 'review' | 'approved' | 'disapproved'];
-  }
-  return value ?? '—';
-};
-
-const statusColorByValue: Record<string, { bg: string; text: string; border: string }> = {
-  review: { bg: '#fff8e1', text: '#8a6d1f', border: '#f2dd9b' },
-  active: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
-  inactive: { bg: '#f3f4f8', text: '#4d5563', border: '#d9dde8' },
-  blacklist: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' },
-  approved: { bg: '#e8f7ee', text: '#1f6b43', border: '#b7e2c8' },
-  disapproved: { bg: '#ffecec', text: '#9a1f1f', border: '#f3bcbc' }
-};
-
-const StatusPill = ({ value }: { value: string | null | undefined }) => {
-  const normalized = normalizeAnyStatus(value);
-  const palette = statusColorByValue[normalized] ?? {
-    bg: '#edf3ff',
-    text: '#1f2a44',
-    border: '#d3dbe7'
-  };
-
-  return (
-    <Box
-      component="span"
-      sx={{
-        px: 1.2,
-        py: 0.3,
-        borderRadius: 99,
-        border: `1px solid ${palette.border}`,
-        backgroundColor: palette.bg,
-        color: palette.text,
-        fontSize: 12,
-        fontWeight: 700,
-        lineHeight: 1.3,
-        width: 'fit-content',
-        display: 'inline-flex'
-      }}
-    >
-      {toStatusLabel(value)}
-    </Box>
-  );
-};
-
-const InfoRow = ({ label, value }: { label: string; value: string | number | null }) => (
-  <Stack spacing={0.2} sx={{ minWidth: 0 }}>
-    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-      {label}
-    </Typography>
-    <Typography variant="body1" sx={{ fontWeight: 500, color: 'text.primary', overflowWrap: 'anywhere' }}>
-      {value ?? '—'}
-    </Typography>
-  </Stack>
-);
-
-const SourceSection = ({
-  title,
-  source,
-  children
-}: {
-  title: string;
-  source: string;
-  children: ReactNode;
-}) => (
-  <Box
-    sx={{
-      border: '1px solid',
-      borderColor: 'divider',
-      borderRadius: 1,
-      p: { xs: 1.4, sm: 1.8 },
-      backgroundColor: 'background.paper'
-    }}
-  >
-    <Stack spacing={1.2}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" rowGap={0.6}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }}>
-          {title}
-        </Typography>
-        <Box
-          component="span"
-          sx={{
-            px: 1,
-            py: 0.2,
-            borderRadius: 99,
-            border: '1px solid',
-            borderColor: 'divider',
-            backgroundColor: 'background.default',
-            color: 'text.secondary',
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: '0.03em'
-          }}
-        >
-          {source}
-        </Box>
-      </Stack>
-      {children}
-    </Stack>
-  </Box>
-);
 
 const formatPhoneForView = (value: string | null | undefined) => {
   if (!value) {
@@ -406,58 +265,23 @@ const validateManualContractorPayload = (
   return { fieldErrors, firstError };
 };
 
-const mapUserStatusToTgStatus = (status: StatusFormValues['user_status']) => {
-  if (status === 'review') return 'review';
-  if (status === 'active') return 'approved';
-  return 'disapproved';
-};
-
-const resolveTgStatusForUpdate = (
-  user: UserListItem,
-  status: StatusFormValues['user_status']
-): 'review' | 'approved' | 'disapproved' | undefined => {
-  if (user.tg_user_id === null) {
-    return undefined;
-  }
-  return mapUserStatusToTgStatus(status);
-};
-
 const inlineStatusOptions: Array<StatusFormValues['user_status']> = ['review', 'active', 'inactive', 'blacklist'];
 
 
-const statusMemoText = `Связь статусов users и tg_users:
+const statusMemoText = `Статусы users:
 
-1) users: review  → tg_users: review
+1) review
    Пользователь на проверке, доступ не выдан.
 
-2) users: active  → tg_users: approved
+2) active
    Пользователь активен, доступ разрешён.
 
-3) users: inactive → tg_users: disapproved
+3) inactive
    Пользователь деактивирован, доступ запрещён.
 
-4) users: blacklist → tg_users: disapproved
+4) blacklist
    Пользователь в чёрном списке, доступ запрещён.`;
 
-const dialogPaperSx = (theme: Theme) => ({
-  borderRadius: 2,
-  px: { xs: 2.5, sm: 3.5 },
-  py: { xs: 3, sm: 3.5 },
-  backgroundColor: theme.palette.background.default,
-  maxHeight: 'min(760px, calc(100vh - 32px))',
-  overflow: 'hidden',
-  boxShadow: `0 24px 80px ${alpha(theme.palette.common.black, 0.18)}`
-});
-
-const dialogContentSx = {
-  p: 0,
-  overflowX: 'hidden',
-  overflowY: 'auto',
-  scrollbarWidth: 'none',
-  '&::-webkit-scrollbar': {
-    display: 'none'
-  }
-};
 
 export const UsersTable = ({
   users,
@@ -662,8 +486,7 @@ export const UsersTable = ({
 
     try {
       await updateUserStatus(selectedUser.user_id, {
-        user_status: values.user_status,
-        tg_status: resolveTgStatusForUpdate(selectedUser, values.user_status)
+        user_status: values.user_status
       });
       setSubmitSuccess('Статус успешно обновлён.');
       await onStatusUpdated();
@@ -677,10 +500,8 @@ export const UsersTable = ({
     setUpdatingUserId(userId);
 
     try {
-      const user = users.find((item) => item.user_id === userId);
       await updateUserStatus(userId, {
-        user_status: nextStatus,
-        tg_status: user ? resolveTgStatusForUpdate(user, nextStatus) : undefined
+        user_status: nextStatus
       });
       await onStatusUpdated();
     } catch (error) {
@@ -768,6 +589,28 @@ export const UsersTable = ({
 
   const manualContractorFieldErrors = manualContractorValidation.fieldErrors;
 
+  const theme = useTheme();
+  const [expandedContractorCards, setExpandedContractorCards] = useState<Record<string, boolean>>({});
+
+  const areAllContractorCardsExpanded = useMemo(
+    () => users.length > 0 && users.every((u) => expandedContractorCards[u.user_id]),
+    [expandedContractorCards, users]
+  );
+
+  const handleToggleContractorCard = (userId: string) => {
+    setExpandedContractorCards((prev) => ({ ...prev, [userId]: !prev[userId] }));
+  };
+
+  const handleToggleAllContractorCards = (shouldExpand: boolean) => {
+    if (!shouldExpand) {
+      setExpandedContractorCards({});
+      return;
+    }
+    setExpandedContractorCards(
+      Object.fromEntries(users.map((u) => [u.user_id, true])) as Record<string, boolean>
+    );
+  };
+
   if (!isContractorsTab) {
     return (
       <>
@@ -781,6 +624,62 @@ export const UsersTable = ({
             isLoading={isLoading}
             emptyMessage={emptyMessage}
             storageKey="users-table"
+            renderCard={(row) => {
+              const openUserCard = () => {
+                const clickedUser = users.find((item) => item.user_id === row.id);
+                if (clickedUser) {
+                  setSelectedUser(clickedUser);
+                  setSubordinateProfile(null);
+                  setSubordinateError(null);
+                  setManagerOptions([]);
+                  setManagerError(null);
+                  setManagerUserId(clickedUser.id_parent ?? '');
+                  setOpenSubordinateUnavailability(false);
+                  void getSubordinateProfile(clickedUser.user_id)
+                    .then((profile) => setSubordinateProfile(profile))
+                    .catch((error) => {
+                      setSubordinateError(error instanceof Error ? error.message : 'Не удалось загрузить нерабочие статусы');
+                    });
+                }
+              };
+              return (
+              <Paper
+                role="button"
+                tabIndex={0}
+                aria-label={`Открыть карточку: ${row.id}`}
+                onClick={openUserCard}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUserCard(); } }}
+                sx={{
+                  p: { xs: 1.25, sm: 1.5 },
+                  borderRadius: `${theme.acomShape.controlRadius}px`,
+                  bgcolor: 'background.paper',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                  boxShadow: `0 2px 8px ${alpha(theme.palette.common.black, 0.04)}`,
+                  '&:hover': {
+                    borderColor: 'primary.main',
+                    boxShadow: `0 6px 14px ${alpha(theme.palette.common.black, 0.08)}`,
+                  },
+                }}
+              >
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                    <Stack sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary' }}>
+                        {row.id}
+                      </Typography>
+                      <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                        {row.role}
+                      </Typography>
+                    </Stack>
+                    <UserStatusPill value={row.status} />
+                  </Stack>
+                </Stack>
+              </Paper>
+              );
+            }}
             onRowClick={(row) => {
               const clickedUser = users.find((item) => item.user_id === row.id);
               if (clickedUser) {
@@ -860,6 +759,7 @@ export const UsersTable = ({
           }}
           maxWidth="sm"
           fullWidth
+          aria-labelledby="user-card-dialog-title"
           PaperProps={{
             sx: dialogPaperSx
           }}
@@ -867,7 +767,7 @@ export const UsersTable = ({
           <DialogContent sx={dialogContentSx}>
             {selectedUser ? (
               <Stack spacing={2}>
-                <Typography variant="h5" fontWeight={600} lineHeight={1}>
+                <Typography id="user-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
                   Карточка пользователя
                 </Typography>
 
@@ -894,7 +794,7 @@ export const UsersTable = ({
                           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                             Статус users
                           </Typography>
-                          <StatusPill value={selectedUser.status} />
+                          <UserStatusPill value={selectedUser.status} />
                         </Stack>
                       </Box>
                     </SourceSection>
@@ -1078,6 +978,108 @@ export const UsersTable = ({
           setSubmitError(null);
           setSubmitSuccess(null);
         }}
+        cardExpansionControl={{
+          checked: areAllContractorCardsExpanded,
+          onChange: handleToggleAllContractorCards,
+          openLabel: 'Раскрыть все',
+          closeLabel: 'Свернуть все',
+        }}
+        renderCard={(row) => {
+          const isExpanded = Boolean(expandedContractorCards[row.user_id]);
+          const handleToggle = (event: React.MouseEvent) => {
+            event.stopPropagation();
+            handleToggleContractorCard(row.user_id);
+          };
+
+          const openContractorCard = () => {
+            setSelectedUser(row);
+            setSubmitError(null);
+            setSubmitSuccess(null);
+          };
+          return (
+            <Paper
+              role="button"
+              tabIndex={0}
+              aria-label={`Открыть карточку: ${row.full_name ?? row.user_id}`}
+              onClick={openContractorCard}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openContractorCard(); } }}
+              sx={{
+                p: { xs: 1.25, sm: 1.5 },
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                cursor: 'pointer',
+                transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                boxShadow: `0 2px 8px ${alpha(theme.palette.common.black, 0.04)}`,
+                '&:hover': {
+                  borderColor: 'primary.main',
+                  boxShadow: `0 6px 14px ${alpha(theme.palette.common.black, 0.08)}`,
+                },
+              }}
+            >
+              <Stack spacing={1.15}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                  <Stack sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {row.full_name ?? row.user_id}
+                    </Typography>
+                    <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                      {row.user_id}
+                    </Typography>
+                  </Stack>
+                  <UserStatusPill value={row.status} />
+                </Stack>
+
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography sx={{ fontSize: 14, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.mail ?? '—'}
+                  </Typography>
+                  <ButtonBase
+                    onClick={handleToggle}
+                    sx={{
+                      px: 0.5,
+                      py: 0.25,
+                      borderRadius: `${theme.acomShape.controlRadius}px`,
+                      color: 'text.secondary',
+                      '&:hover': { color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.06) },
+                    }}
+                  >
+                    <Stack direction="row" alignItems="center" gap={0.25}>
+                      <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
+                        {isExpanded ? 'свернуть' : 'подробнее'}
+                      </Typography>
+                      <ExpandMoreRounded
+                        sx={{
+                          fontSize: 20,
+                          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.28s ease',
+                        }}
+                      />
+                    </Stack>
+                  </ButtonBase>
+                </Stack>
+
+                {isExpanded && (
+                  <>
+                    <Divider />
+                    <Stack spacing={0.75}>
+                      <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>
+                        {`Телефон: ${formatPhoneForView(row.phone) ?? '—'}`}
+                      </Typography>
+                      <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>
+                        {`Телефон компании: ${formatPhoneForView(row.company_phone) ?? '—'}`}
+                      </Typography>
+                      <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>
+                        {`E-mail компании: ${row.company_mail ?? '—'}`}
+                      </Typography>
+                    </Stack>
+                  </>
+                )}
+              </Stack>
+            </Paper>
+          );
+        }}
         renderRow={(row) => [
           <Typography variant="body2">{row.user_id}</Typography>,
           <Typography variant="body2">{row.full_name ?? '—'}</Typography>,
@@ -1085,7 +1087,7 @@ export const UsersTable = ({
           <Typography variant="body2">{row.mail ?? '—'}</Typography>,
           <Typography variant="body2">{formatPhoneForView(row.company_phone) ?? '—'}</Typography>,
           <Typography variant="body2">{row.company_mail ?? '—'}</Typography>,
-          <StatusPill value={row.status} />
+          <UserStatusPill value={row.status} />
         ]}
       />
 
@@ -1094,6 +1096,7 @@ export const UsersTable = ({
         onClose={() => setSelectedUser(null)}
         maxWidth="md"
         fullWidth
+        aria-labelledby="contractor-card-dialog-title"
         PaperProps={{
           sx: dialogPaperSx
         }}
@@ -1101,7 +1104,7 @@ export const UsersTable = ({
         <DialogContent sx={dialogContentSx}>
           {selectedUser ? (
             <Stack spacing={2}>
-              <Typography variant="h5" fontWeight={600} lineHeight={1}>
+              <Typography id="contractor-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
 
@@ -1128,7 +1131,7 @@ export const UsersTable = ({
                         <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Статус users
                         </Typography>
-                        <StatusPill value={selectedUser.status} />
+                        <UserStatusPill value={selectedUser.status} />
                       </Stack>
                     </Box>
                   </SourceSection>
@@ -1177,23 +1180,6 @@ export const UsersTable = ({
                     </Stack>
                   </SourceSection>
 
-                  <SourceSection title="Telegram данные" source="tg_users">
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                        gap: 1.5
-                      }}
-                    >
-                      <InfoRow label="Telegram ID" value={selectedUser.tg_user_id} />
-                      <Stack spacing={0.2} sx={{ alignItems: 'flex-start' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          Telegram статус
-                        </Typography>
-                        <StatusPill value={selectedUser.tg_status} />
-                      </Stack>
-                    </Box>
-                  </SourceSection>
                 </Stack>
               </Box>
 

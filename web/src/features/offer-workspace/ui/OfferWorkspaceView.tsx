@@ -12,6 +12,7 @@ import {
   Typography
 } from '@mui/material';
 import { DataTable } from '@shared/components/DataTable';
+import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { downloadFile } from '@shared/api/fileDownload';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { ProfileButton } from '@shared/components/ProfileButton';
@@ -90,36 +91,6 @@ const getOfferStatusBadgeStyle = (status: string | null) => {
   };
 };
 
-const formatDate = (value: string | null, withTime = false) => {
-  if (!value) {
-    return '-';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {})
-  }).format(date);
-};
-
-const formatAmount = (value: number | null | undefined) => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return '-';
-  }
-
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value);
-};
 
 export const OfferWorkspaceView = () => {
   const {
@@ -213,7 +184,7 @@ export const OfferWorkspaceView = () => {
       <Box
         sx={{
           flex: 1,
-          p: 2.5,
+          p: { xs: 1.5, sm: 2, md: 2.5 },
           backgroundColor: 'rgba(16, 63, 133, 0.06)',
           overflowY: { xs: 'visible', lg: 'auto' },
           scrollbarWidth: 'none',
@@ -223,15 +194,15 @@ export const OfferWorkspaceView = () => {
         }}
       >
 
-        <Stack direction="row" justifyContent="space-between" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+        <Stack direction="row" justifyContent="space-between" gap={1.5} alignItems="center" flexWrap="wrap" sx={{ mb: 2 }}>
           <Button
             variant="outlined"
-            sx={{ px: 4, borderColor: 'primary.main', color: 'primary.main', whiteSpace: 'nowrap' }}
+            sx={{ borderColor: 'primary.main', color: 'primary.main', px: { xs: 2, sm: 4 } }}
             onClick={() => (isEconomist ? navigate(-1) : navigate('/requests'))}
           >
             {isEconomist ? 'Назад' : 'К списку заявок'}
           </Button>
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center">
             <ProfileButton />
             <Button variant="outlined" onClick={logout}>
               Выйти
@@ -239,24 +210,25 @@ export const OfferWorkspaceView = () => {
           </Stack>
         </Stack>
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 2 }}>
-          <Typography variant="h6" fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ mb: 2 }}>
+          <Typography variant="h6" fontWeight={600}>
             Номер заявки: {workspace.request.request_id}
           </Typography>
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'nowrap' }}>
+          <Stack direction="row" alignItems="center" spacing={1}>
             <Box
               sx={{
                 width: 22,
                 height: 22,
                 borderRadius: '50%',
-                backgroundColor: statusConfig.color
+                backgroundColor: statusConfig.color,
+                flexShrink: 0,
               }}
             />
             <Select
               size="small"
               value={statusConfig.value}
               disabled
-              sx={{ minWidth: 200, borderRadius: 999, backgroundColor: 'background.paper' }}
+              sx={{ minWidth: { xs: 160, sm: 200 }, borderRadius: 999, backgroundColor: 'background.paper' }}
             >
               {statusOptions.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -497,7 +469,7 @@ export const OfferWorkspaceView = () => {
               ) : null}
 
               {isCurrent && errorMessage ? (
-                <Typography color="error" sx={{ mt: 1 }}>
+                <Typography role="alert" color="error" sx={{ mt: 1 }}>
                   {errorMessage}
                 </Typography>
               ) : null}

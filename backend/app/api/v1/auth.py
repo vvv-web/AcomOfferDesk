@@ -13,10 +13,8 @@ from app.api.dependencies import get_current_user, get_uow
 from app.core.auth_cookies import (
     clear_keycloak_refresh_cookie,
     clear_keycloak_state_cookie,
-    clear_refresh_cookie,
     set_keycloak_refresh_cookie,
     set_keycloak_state_cookie,
-    set_refresh_cookie,
 )
 from app.core.config import settings
 from app.core.oidc_state_tokens import (
@@ -29,7 +27,6 @@ from app.core.registration_invite_tokens import (
     RegistrationInviteTokenExpiredError,
     RegistrationInviteTokenInvalidError,
 )
-from app.core.session_tokens import build_refresh_fingerprint, decode_refresh_token
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import CurrentUser, build_current_user
 from app.domain.exceptions import Conflict, Forbidden, Unauthorized
@@ -37,13 +34,11 @@ from app.domain.policies import UserPolicy
 from app.models.auth_models import UserAuthAccount
 from app.repositories.telegram_compat import telegram_subject_value
 from app.schemas.auth import (
-    LoginRequest,
     LoginResponse,
     RegisterUserRequest,
     RegisterUserResponse,
 )
 from app.schemas.links import Link, LinkSet
-from app.services.auth_session import AuthSessionBundle, AuthSessionService
 from app.services.email_verification import EmailVerificationService
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import (
@@ -171,6 +166,7 @@ async def _link_telegram_registration_context(
     telegram_account = await uow.user_auth_accounts.get_by_user_provider(
         user_id=user_id,
         provider="telegram",
+        include_inactive=True,
     )
     if telegram_account is None:
         await uow.user_auth_accounts.add(
@@ -226,18 +222,6 @@ def _build_auth_response(
             "permissions": serialize_permissions(current_user),
         },
         _links=_build_auth_links(self_href=self_href),
-    )
-
-
-def _build_legacy_auth_response(*, session: AuthSessionBundle, self_href: str) -> LoginResponse:
-    return _build_auth_response(
-        access_token=session.access_token,
-        access_token_expires_at=session.access_token_expires_at,
-        user_id=session.user_id,
-        role_id=session.role_id,
-        status_value=session.status,
-        auth_provider="legacy",
-        self_href=self_href,
     )
 
 
@@ -307,6 +291,7 @@ async def verify_email(
 async def begin_keycloak_login(
     request: Request,
     next_path: str | None = Query(default="/"),
+    force_prompt: bool = Query(default=False),
 ) -> RedirectResponse:
     if not settings.keycloak_enabled:
         raise Forbidden("Keycloak authentication is disabled")
@@ -318,6 +303,7 @@ async def begin_keycloak_login(
             state=start.state,
             code_challenge=start.code_challenge,
             redirect_uri=start.redirect_uri,
+            prompt="login" if force_prompt else None,
         ),
         status_code=status.HTTP_302_FOUND,
     )
@@ -352,6 +338,11 @@ async def begin_keycloak_registration(
         )
 
     if tg_token:
+        if not settings.telegram_legacy_enabled:
+            return RedirectResponse(
+                url=_build_registration_link_status_url(web_base, reason="invalid"),
+                status_code=status.HTTP_302_FOUND,
+            )
         try:
             tg_registration_id = await resolve_tg_registration_token(tg_token)
         except TgRegistrationLinkExpiredError:
@@ -488,6 +479,8 @@ async def keycloak_callback(
                 allow_user_creation=claims.flow == "register",
             )
             if claims.tg_registration_id is not None:
+                if not settings.telegram_legacy_enabled:
+                    raise Forbidden("Telegram legacy authentication is disabled")
                 await _link_telegram_registration_context(
                     uow=uow,
                     user_id=synced.user.id,
@@ -509,28 +502,8 @@ async def keycloak_callback(
     redirect_target = f"{web_base}/auth/callback?next={quote(claims.next_path, safe='/%?=&')}"
     response = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
     clear_keycloak_state_cookie(response)
-    clear_refresh_cookie(response)
     set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
     return response
-
-
-@router.post("/auth/login", response_model=LoginResponse)
-async def login(
-    payload: LoginRequest,
-    response: Response,
-    uow: UnitOfWork = Depends(get_uow),
-) -> LoginResponse:
-    if not settings.auth_enable_legacy_password_login:
-        raise Forbidden("Legacy authentication is disabled")
-
-    async with uow:
-        service = AuthSessionService(uow.users)
-        session = await service.login(login=payload.login.strip(), password=payload.password.strip())
-
-    clear_keycloak_refresh_cookie(response)
-    clear_keycloak_state_cookie(response)
-    set_refresh_cookie(response, session.refresh_token, max_age=max(0, session.refresh_token_expires_at - int(time.time())))
-    return _build_legacy_auth_response(session=session, self_href="/api/v1/auth/login")
 
 
 @router.post("/auth/refresh", response_model=LoginResponse)
@@ -539,40 +512,25 @@ async def refresh_session(
     response: Response,
     uow: UnitOfWork = Depends(get_uow),
 ) -> LoginResponse:
+    if not settings.keycloak_enabled:
+        raise Unauthorized("Missing credentials")
+
     keycloak_refresh_token = (request.cookies.get(settings.keycloak_refresh_cookie_name) or "").strip()
-    if settings.keycloak_enabled and keycloak_refresh_token:
-        try:
-            bundle = await refresh_tokens(refresh_token=keycloak_refresh_token)
-        except Unauthorized:
-            clear_keycloak_refresh_cookie(response)
-        else:
-            clear_refresh_cookie(response)
-            set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
-            async with uow:
-                return await _build_keycloak_auth_response(
-                    access_token=bundle.access_token,
-                    self_href="/api/v1/auth/refresh",
-                    uow=uow,
-                )
-
-    legacy_refresh_token = (request.cookies.get(settings.refresh_cookie_name) or "").strip()
-    if not legacy_refresh_token:
+    if not keycloak_refresh_token:
         raise Unauthorized("Missing credentials")
-    if not settings.auth_enable_legacy_password_login:
+    try:
+        bundle = await refresh_tokens(refresh_token=keycloak_refresh_token)
+    except Unauthorized:
+        clear_keycloak_refresh_cookie(response)
         raise Unauthorized("Missing credentials")
 
-    claims = await decode_refresh_token(legacy_refresh_token)
+    set_keycloak_refresh_cookie(response, bundle.refresh_token, max_age=max(0, bundle.refresh_expires_in))
     async with uow:
-        service = AuthSessionService(uow.users)
-        user = await service.get_user_for_refresh(user_id=claims.subject)
-        refresh_fingerprint_source = getattr(user, "password_hash", None) or f"user:{user.id}"
-        if claims.fingerprint != build_refresh_fingerprint(refresh_fingerprint_source):
-            raise Unauthorized("Invalid token")
-        session = await service.build_session_bundle(user=user, refresh_max_expires_at=claims.max_expires_at)
-
-    clear_keycloak_refresh_cookie(response)
-    set_refresh_cookie(response, session.refresh_token, max_age=max(0, session.refresh_token_expires_at - int(time.time())))
-    return _build_legacy_auth_response(session=session, self_href="/api/v1/auth/refresh")
+        return await _build_keycloak_auth_response(
+            access_token=bundle.access_token,
+            self_href="/api/v1/auth/refresh",
+            uow=uow,
+        )
 
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -587,14 +545,13 @@ async def logout(request: Request, response: Response) -> Response:
 
     clear_keycloak_state_cookie(response)
     clear_keycloak_refresh_cookie(response)
-    clear_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
 
-@router.post("/auth/tg/exchange")
+@router.post("/auth/tg/exchange", deprecated=True)
 async def tg_exchange_disabled() -> dict[str, str]:
-    raise Forbidden("Прямой вход из Telegram отключен")
+    raise Forbidden("Telegram legacy authentication is disabled")
 
 
 @router.post("/users/register", response_model=RegisterUserResponse)
@@ -626,3 +583,4 @@ async def register_user(
             self=Link(href=f"/api/v1/users/{user.id}", method="GET"),
         ),
     )
+

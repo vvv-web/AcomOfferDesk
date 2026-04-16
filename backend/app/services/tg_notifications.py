@@ -151,6 +151,11 @@ async def _notify(
     button_text: str | None = None,
     button_url: str | None = None,
 ) -> None:
+    # LEGACY: Telegram transport is disabled in production by default.
+    # Keep the publisher intact so the flow can be restored via LEGACY_TELEGRAM_ENABLED=true.
+    if not settings.telegram_legacy_enabled:
+        return
+
     await publish_notification(
         RK_TG,
         {

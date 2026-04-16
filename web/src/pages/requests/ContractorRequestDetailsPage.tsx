@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataTable } from '@shared/components/DataTable';
+import { formatDate } from '@shared/lib/formatters';
 import { getContractorRequestView } from '@shared/api/requests/getContractorRequestView';
 import type { ContractorRequestView } from '@shared/api/requests/getContractorRequestView';
 import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
@@ -28,22 +29,6 @@ const detailsColumns = [
   { key: 'value', label: 'Значение' }
 ];
 
-const formatDate = (value: string | null) => {
-  if (!value) {
-    return '-';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  }).format(date);
-};
 
 const parseAmountInput = (value: string) => {
   const normalized = value.trim().replace(',', '.');

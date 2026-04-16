@@ -8,10 +8,12 @@ export const AuthPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { beginLogin, isAuthenticated, session, status } = useAuth();
+  const isLoggedOut = searchParams.get('logged_out') === '1';
   const nextPath = useMemo(() => {
     const raw = searchParams.get('next')?.trim();
     return raw && raw.startsWith('/') ? raw : '/';
   }, [searchParams]);
+
   const authErrorMessage = useMemo(() => {
     const reason = (searchParams.get('auth_error') ?? '').trim();
     if (!reason) {
@@ -21,12 +23,15 @@ export const AuthPage = () => {
       return 'Сессия входа истекла. Нажмите «Войти снова».';
     }
     if (reason === 'access_denied') {
-      return 'Вход отменён. Нажмите «Войти снова».';
+      return 'Вход отменен. Нажмите «Войти снова».';
+    }
+    if (reason === 'not_linked') {
+      return 'Не удалось завершить вход. Обратитесь к администратору, чтобы проверить доступ.';
     }
     if (reason === 'login_failed') {
       return 'Не удалось завершить вход. Нажмите «Войти снова».';
     }
-    return 'Не удалось завершить вход. Попробуйте ещё раз.';
+    return 'Не удалось завершить вход. Попробуйте еще раз.';
   }, [searchParams]);
 
   useEffect(() => {
@@ -44,11 +49,14 @@ export const AuthPage = () => {
     if (status !== 'anonymous') {
       return;
     }
+    if (isLoggedOut) {
+      return;
+    }
     if (authErrorMessage) {
       return;
     }
     beginLogin(nextPath);
-  }, [authErrorMessage, beginLogin, nextPath, status]);
+  }, [authErrorMessage, beginLogin, isLoggedOut, nextPath, status]);
 
   return (
     <Box
@@ -81,10 +89,23 @@ export const AuthPage = () => {
               </Alert>
               <Button
                 variant="contained"
-                onClick={() => beginLogin(nextPath)}
+                onClick={() => beginLogin(nextPath, { forcePrompt: true })}
                 sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
               >
                 Войти снова
+              </Button>
+            </>
+          ) : isLoggedOut ? (
+            <>
+              <Alert severity="info" sx={{ width: '100%' }}>
+                Вы вышли из системы.
+              </Alert>
+              <Button
+                variant="contained"
+                onClick={() => beginLogin(nextPath)}
+                sx={{ borderRadius: 999, textTransform: 'none', px: 3 }}
+              >
+                Войти
               </Button>
             </>
           ) : (

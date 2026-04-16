@@ -36,7 +36,7 @@ type AuthContextValue = {
   status: AuthStatus;
   session: AuthSession | null;
   isAuthenticated: boolean;
-  beginLogin: (nextPath?: string) => void;
+  beginLogin: (nextPath?: string, options?: { forcePrompt?: boolean }) => void;
   refresh: (reason: RefreshReason) => Promise<boolean>;
   logout: () => void;
 };
@@ -54,13 +54,19 @@ const mapSession = (response: AuthSessionResponse): AuthSession => ({
   roleId: response.data.role_id,
   role: roleById[response.data.role_id] ?? `role_${response.data.role_id}`,
   status: response.data.status,
-  authProvider: response.data.auth_provider ?? 'legacy',
+  authProvider: response.data.auth_provider ?? 'keycloak',
   businessAccess: Boolean(response.data.business_access),
   onboardingState: response.data.onboarding_state ?? null,
   permissions: response.data.permissions ?? []
 });
 
-const buildLoginUrl = (nextPath: string) => `/api/v1/auth/oidc/login?next_path=${encodeURIComponent(nextPath)}`;
+const buildLoginUrl = (nextPath: string, forcePrompt: boolean) => {
+  const query = new URLSearchParams({ next_path: nextPath });
+  if (forcePrompt) {
+    query.set('force_prompt', '1');
+  }
+  return `/api/v1/auth/oidc/login?${query.toString()}`;
+};
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -113,7 +119,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     if (redirectToLogin && location.pathname !== '/login' && location.pathname !== '/auth/login') {
-      navigate('/login', { replace: true });
+      navigate('/login?logged_out=1', { replace: true });
     }
   }, [applySession, location.pathname, navigate]);
 
@@ -156,9 +162,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return refreshPromiseRef.current;
   }, [applySession, canAttemptSilentRefresh, trackActivity]);
 
-  const beginLogin = useCallback((nextPath?: string) => {
+  const beginLogin = useCallback((nextPath?: string, options?: { forcePrompt?: boolean }) => {
     const target = nextPath ?? location.pathname ?? '/';
-    window.location.assign(buildLoginUrl(target));
+    window.location.assign(buildLoginUrl(target, Boolean(options?.forcePrompt)));
   }, [location.pathname]);
 
   const logout = useCallback(() => {

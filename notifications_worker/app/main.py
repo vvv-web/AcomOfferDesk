@@ -14,6 +14,10 @@ from shared.broker import EXCHANGE, QUEUE_EMAIL, QUEUE_TG, RK_EMAIL, RK_TG
 logger = logging.getLogger(__name__)
 
 
+def _is_telegram_legacy_enabled() -> bool:
+    return os.getenv("LEGACY_TELEGRAM_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:
     delay_seconds = 2
     max_delay_seconds = 15
@@ -35,6 +39,7 @@ async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:
 async def run_worker() -> None:
     logging.basicConfig(level=logging.INFO)
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+    telegram_legacy_enabled = _is_telegram_legacy_enabled()
     connection = await _connect_with_retry(rabbitmq_url)
 
     channel = await connection.channel()
@@ -43,14 +48,16 @@ async def run_worker() -> None:
     exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
 
     email_queue = await channel.declare_queue(QUEUE_EMAIL, durable=True)
-    tg_queue = await channel.declare_queue(QUEUE_TG, durable=True)
-
     await email_queue.bind(exchange, routing_key=RK_EMAIL)
-    await tg_queue.bind(exchange, routing_key=RK_TG)
-
     await email_queue.consume(handle_message)
-    await tg_queue.consume(handle_message)
-    logger.info("Notifications worker is consuming queues")
+    if telegram_legacy_enabled:
+        # LEGACY: Telegram queue is disabled by default in production.
+        tg_queue = await channel.declare_queue(QUEUE_TG, durable=True)
+        await tg_queue.bind(exchange, routing_key=RK_TG)
+        await tg_queue.consume(handle_message)
+        logger.info("Notifications worker is consuming email and legacy Telegram queues")
+    else:
+        logger.info("Notifications worker is consuming email queue only (legacy Telegram disabled)")
 
     try:
         await asyncio.Future()

@@ -7,14 +7,13 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.websockets import WebSocketState
 
-from app.core.session_tokens import AccessTokenClaims, decode_access_token
+from app.core.session_tokens import AccessTokenClaims
 from app.core.uow import UnitOfWork
 from app.domain.auth_context import build_current_user
 from app.domain.exceptions import Conflict, Forbidden, NotFound, Unauthorized
 from app.domain.policies import CurrentUser, UserPolicy
 from app.realtime.contracts import OutboundEnvelope, client_event_adapter
 from app.realtime.runtime import get_chat_runtime
-from app.repositories.users import UserRepository
 from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import decode_keycloak_access_token, looks_like_keycloak_token
 
@@ -26,26 +25,24 @@ async def _get_current_user_from_websocket(websocket: WebSocket) -> tuple[Curren
     if not token:
         raise Unauthorized("Missing credentials")
 
+    if not looks_like_keycloak_token(token):
+        raise Unauthorized("Missing credentials")
+
     async with UnitOfWork() as uow:
-        if looks_like_keycloak_token(token):
-            keycloak_claims = await decode_keycloak_access_token(token)
-            sync_service = IdentitySyncService(
-                users=uow.users,
-                user_auth_accounts=uow.user_auth_accounts,
-                user_contact_channels=uow.user_contact_channels,
-                profiles=uow.profiles,
-            )
-            synced = await sync_service.sync_keycloak_identity(keycloak_claims, allow_user_creation=False)
-            user = synced.user
-            claims = AccessTokenClaims(
-                subject=user.id,
-                issued_at=keycloak_claims.issued_at,
-                expires_at=keycloak_claims.expires_at,
-            )
-        else:
-            claims = await decode_access_token(token)
-            repo = UserRepository(uow.session)
-            user = await repo.get_by_id(claims.subject)
+        keycloak_claims = await decode_keycloak_access_token(token)
+        sync_service = IdentitySyncService(
+            users=uow.users,
+            user_auth_accounts=uow.user_auth_accounts,
+            user_contact_channels=uow.user_contact_channels,
+            profiles=uow.profiles,
+        )
+        synced = await sync_service.sync_keycloak_identity(keycloak_claims, allow_user_creation=False)
+        user = synced.user
+        claims = AccessTokenClaims(
+            subject=user.id,
+            issued_at=keycloak_claims.issued_at,
+            expires_at=keycloak_claims.expires_at,
+        )
         if user is None:
             raise Unauthorized("Invalid credentials")
         UserPolicy.ensure_can_login(user.status)

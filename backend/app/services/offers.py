@@ -852,7 +852,7 @@ class OfferService:
         status_changed = offer.status != status
         await self._offers.update_status(offer=offer, status=status)
 
-        if status_changed and status in {"accepted", "rejected"}:
+        if status_changed and status in {"accepted", "rejected"} and settings.telegram_legacy_enabled:
             tg_id = await self._users.get_active_approved_contractor_tg_id(
                 user_id=offer.id_user,
                 contractor_role_id=settings.contractor_role_id,
@@ -1020,7 +1020,7 @@ class OfferService:
                 raise NotFound("File not found")
             await self._messages.attach_file(message_id=message.id, file_id=db_file.id)
 
-        if current_user.user_id != offer.id_user:
+        if current_user.user_id != offer.id_user and settings.telegram_legacy_enabled:
             tg_id = await self._users.get_active_approved_contractor_tg_id(
                 user_id=offer.id_user,
                 contractor_role_id=settings.contractor_role_id,

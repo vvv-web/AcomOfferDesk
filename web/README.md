@@ -55,6 +55,6 @@ npm run dev
 ## Важные замечания по auth
 
 - Текущий Web UI использует вход через Keycloak redirect flow.
-- Прямой Telegram login не используется.
+- Прямой вход по внешним legacy-ссылкам не используется.
 - Сессия восстанавливается через `POST /api/v1/auth/refresh`.
 

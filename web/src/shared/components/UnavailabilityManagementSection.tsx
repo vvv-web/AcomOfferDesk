@@ -54,9 +54,9 @@ export const UnavailabilityManagementSection = ({
   isSubmitting = false,
   editor,
   dialogNotice,
-  triggerLabel = 'РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РЅРµСЂР°Р±РѕС‡РёР№ РїРµСЂРёРѕРґ',
-  dialogTitle = 'РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РЅРµСЂР°Р±РѕС‡РёР№ РїРµСЂРёРѕРґ',
-  submitLabel = 'РЎРѕС…СЂР°РЅРёС‚СЊ'
+  triggerLabel = 'Установить нерабочий период',
+  dialogTitle = 'Установить нерабочий период',
+  submitLabel = 'Сохранить'
 }: UnavailabilityManagementSectionProps) => {
   const handleOpenDialog = () => {
     blurActiveElement();
