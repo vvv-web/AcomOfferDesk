@@ -1,4 +1,4 @@
-import { ChangeEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { ChangeEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import AddRounded from '@mui/icons-material/AddRounded';
 import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded';
@@ -1686,117 +1686,131 @@ export function TableTemplate<T>({
                 })}
             </Stack>
           )}
+
+          {visibleRows.length === 0 && (
+            <Paper
+              sx={{
+                minHeight: rowHeight * 1.1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+                bgcolor: 'background.paper'
+              }}
+            >
+              <Typography sx={{ fontSize, color: 'text.secondary' }}>
+                {isLoading ? 'Загрузка...' : showEmptySearchState ? noSearchResultsLabel : noRowsLabel}
+              </Typography>
+            </Paper>
+          )}
         </Stack>
 
+        <Divider />
+
         <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
-          justifyContent="space-between"
-          gap={1}
           sx={{
             minHeight: footerHeight,
-            pt: 0.5
+            display: { xs: 'flex', md: 'grid' },
+            gridTemplateColumns: { md: 'minmax(280px, 1fr) auto minmax(220px, 1fr)' },
+            alignItems: 'center',
+            gap: 1.5
           }}
         >
-          <Typography sx={{ fontSize: fontSize - 1, color: 'text.secondary' }}>
-            {sortedRows.length > 0
-              ? `Показаны строки ${firstVisibleRow}-${lastVisibleRow} из ${sortedRows.length}`
-              : `Показаны строки 0-0 из ${sortedRows.length}`}
+          <Typography sx={{ fontSize, color: 'text.secondary', justifySelf: { md: 'start' } }}>
+            {'Показаны строки'} {firstVisibleRow}-{lastVisibleRow} {'из'} {filteredRows.length}
           </Typography>
 
-          <Stack direction="row" alignItems="center" gap={1}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ justifySelf: { md: 'center' } }}>
+            <ActionButton
+              kind="outlined"
+              showNavigationIcons={false}
+              disabled={page <= 1}
+              onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+              sx={{
+                minHeight: pagerButtonSize,
+                width: pagerButtonSize,
+                minWidth: pagerButtonSize,
+                px: 0,
+                borderRadius: `${controlRadius}px`,
+                borderColor: 'divider',
+                color: 'text.secondary'
+              }}
+            >
+              <NavigateBeforeRounded />
+            </ActionButton>
+            {paginationItems.map((item) =>
+              typeof item === 'number' ? (
+                <ActionButton
+                  key={item}
+                  kind={item === page ? 'filled' : 'outlined'}
+                  showNavigationIcons={false}
+                  onClick={() => setPage(item)}
+                  disabled={filteredRows.length === 0}
+                  sx={{
+                    minHeight: pagerButtonSize,
+                    width: pagerButtonSize,
+                    minWidth: pagerButtonSize,
+                    px: 0,
+                    borderRadius: `${controlRadius}px`,
+                    fontSize,
+                    borderColor: item === page ? undefined : 'divider',
+                    color: item === page ? undefined : 'text.secondary'
+                  }}
+                >
+                  {item}
+                </ActionButton>
+              ) : (
+                <Stack key={item} sx={{ minWidth: pagerButtonSize, alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography sx={{ color: 'text.secondary', fontSize }}>...</Typography>
+                </Stack>
+              )
+            )}
+            <ActionButton
+              kind="outlined"
+              showNavigationIcons={false}
+              disabled={page >= pageCount}
+              onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))}
+              sx={{
+                minHeight: pagerButtonSize,
+                width: pagerButtonSize,
+                minWidth: pagerButtonSize,
+                px: 0,
+                borderRadius: `${controlRadius}px`,
+                borderColor: 'divider',
+                color: 'text.secondary'
+              }}
+            >
+              <NavigateNextRounded />
+            </ActionButton>
+          </Stack>
+
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary', justifySelf: { md: 'end' } }}>
+            <Typography sx={{ fontSize, color: 'inherit' }}>{'Показать'}</Typography>
             <Select
-              size="small"
               value={rowsPerPage}
               onChange={(event) => setRowsPerPage(Number(event.target.value))}
               IconComponent={KeyboardArrowDownRounded}
               sx={{
                 width: rowsPerPageWidth,
-                height: pagerButtonSize,
+                minHeight: pagerButtonSize,
                 borderRadius: `${controlRadius}px`,
                 bgcolor: 'background.paper',
-                '& .MuiSelect-select': {
-                  py: 0.6,
-                  px: 1,
-                  fontSize: fontSize - 1
+                color: 'text.secondary',
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'divider'
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'divider'
                 }
               }}
             >
               {safeRowsPerPageOptions.map((option) => (
-                <MenuItem key={`rows-${option}`} value={option}>
+                <MenuItem key={option} value={option}>
                   {option}
                 </MenuItem>
               ))}
             </Select>
-
-            <Stack direction="row" alignItems="center" gap={0.5}>
-              <ActionButton
-                kind="outlined"
-                showNavigationIcons={false}
-                disabled={page <= 1}
-                onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
-                sx={{
-                  minWidth: pagerButtonSize,
-                  width: pagerButtonSize,
-                  height: pagerButtonSize,
-                  px: 0,
-                  borderRadius: `${controlRadius}px`,
-                  borderColor: 'divider'
-                }}
-              >
-                <NavigateBeforeRounded />
-              </ActionButton>
-
-              <Stack direction="row" alignItems="center" gap={0.5}>
-                {paginationItems.map((item, index) => {
-                  if (item === 'ellipsis-left' || item === 'ellipsis-right') {
-                    return (
-                      <Typography key={`ellipsis-${index}`} sx={{ px: 0.7, color: 'text.secondary' }}>
-                        ...
-                      </Typography>
-                    );
-                  }
-
-                  const isActive = item === page;
-                  return (
-                    <ActionButton
-                      key={`page-${item}`}
-                      kind="custom"
-                      selected={isActive}
-                      showNavigationIcons={false}
-                      onClick={() => setPage(item)}
-                      sx={{
-                        minWidth: pagerButtonSize,
-                        width: pagerButtonSize,
-                        height: pagerButtonSize,
-                        px: 0,
-                        borderRadius: `${controlRadius}px`,
-                        fontSize: fontSize - 1
-                      }}
-                    >
-                      {item}
-                    </ActionButton>
-                  );
-                })}
-              </Stack>
-
-              <ActionButton
-                kind="outlined"
-                showNavigationIcons={false}
-                disabled={page >= pageCount}
-                onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))}
-                sx={{
-                  minWidth: pagerButtonSize,
-                  width: pagerButtonSize,
-                  height: pagerButtonSize,
-                  px: 0,
-                  borderRadius: `${controlRadius}px`,
-                  borderColor: 'divider'
-                }}
-              >
-                <NavigateNextRounded />
-              </ActionButton>
-            </Stack>
+            <Typography sx={{ fontSize, color: 'inherit' }}>{'строк'}</Typography>
           </Stack>
         </Stack>
       </Stack>

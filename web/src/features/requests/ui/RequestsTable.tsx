@@ -205,8 +205,8 @@ const RequestMobileCard = ({
                 }
             }}
         >
-            <Stack spacing={1.2}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+            <Stack spacing={1.25}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1.25}>
                     <Typography
                         sx={{
                             minWidth: 0,
@@ -230,7 +230,7 @@ const RequestMobileCard = ({
                     <Typography
                         sx={{
                             minHeight: 'calc(1.35em * 2)',
-                            fontSize: 15,
+                            fontSize: 16,
                             lineHeight: 1.35,
                             color: 'text.secondary',
                             display: '-webkit-box',
@@ -262,7 +262,7 @@ const RequestMobileCard = ({
                         }}
                     >
                         <Stack direction="row" alignItems="center" gap={0.25}>
-                            <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
+                            <Typography sx={{ fontSize: 16, fontWeight: 500 }}>
                                 {isExpanded ? 'Свернуть' : 'Подробнее'}
                             </Typography>
                             <ExpandMoreRounded
@@ -348,7 +348,7 @@ const RequestMobileCard = ({
                     </Stack>
                 </Collapse>
 
-                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.25}>
                     <Box
                         sx={{
                             width: 34,
@@ -372,7 +372,7 @@ const RequestMobileCard = ({
                     <Typography
                         sx={{
                             minWidth: 0,
-                            fontSize: 14,
+                            fontSize: 15,
                             color: 'text.secondary',
                             textAlign: 'right',
                             whiteSpace: 'nowrap',

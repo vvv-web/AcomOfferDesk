@@ -1,8 +1,7 @@
-import Box from '@mui/material/Box';
-import { useTheme } from '@mui/material/styles';
-import type { StatusTones } from '@mui/material/styles';
+import { Stack, Typography } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 
-export type StatusPillTone = keyof StatusTones;
+export type StatusPillTone = 'success' | 'warning' | 'error' | 'info' | 'neutral';
 
 type StatusPillProps = {
   label: string;
@@ -10,31 +9,54 @@ type StatusPillProps = {
 };
 
 export const StatusPill = ({ label, tone }: StatusPillProps) => {
-  const { palette } = useTheme();
-  const { text, bg, border } = palette.statusTones[tone];
+  const theme = useTheme();
+  const color =
+    tone === 'success'
+      ? theme.palette.success.main
+      : tone === 'warning'
+      ? theme.palette.warning.main
+      : tone === 'error'
+      ? theme.palette.error.main
+      : tone === 'info'
+      ? theme.palette.info.main
+      : theme.palette.text.secondary;
 
   return (
-    <Box
+    <Stack
       component="span"
       sx={{
         display: 'inline-flex',
         alignItems: 'center',
-        px: 1.2,
-        py: 0.3,
-        borderRadius: 99,
-        border: `1px solid ${border}`,
-        backgroundColor: bg,
-        color: text,
-        fontSize: 12,
-        fontWeight: 700,
-        lineHeight: 1.3,
-        width: 'fit-content',
+        justifyContent: 'center',
+        minWidth: 0,
+        maxWidth: '100%',
+        px: 1.4,
+        minHeight: 30,
+        borderRadius: '999px',
+        border: '2px solid',
+        borderColor: color,
+        bgcolor: alpha(color, 0.12),
         whiteSpace: 'nowrap',
         overflow: 'hidden',
-        textOverflow: 'ellipsis',
       }}
     >
-      {label}
-    </Box>
+      <Typography
+        component="span"
+        sx={{
+          minWidth: 0,
+          maxWidth: '100%',
+          display: 'block',
+          fontSize: 14,
+          fontWeight: 600,
+          color,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {label}
+      </Typography>
+    </Stack>
   );
 };

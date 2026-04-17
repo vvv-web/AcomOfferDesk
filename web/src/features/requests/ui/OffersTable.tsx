@@ -265,8 +265,8 @@ const OfferMobileCard = ({
         }
       }}
     >
-      <Stack spacing={1.15}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+      <Stack spacing={1.1}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1.25}>
           <Stack sx={{ minWidth: 0, gap: 0.2 }}>
             <Typography
               sx={{
@@ -370,7 +370,7 @@ const OfferMobileCard = ({
             }}
           >
             <Stack direction="row" alignItems="center" gap={0.25}>
-              <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
+              <Typography sx={{ fontSize: 16, fontWeight: 500 }}>
                 {isExpanded ? 'Свернуть' : 'Подробнее'}
               </Typography>
               <ExpandMoreRounded
