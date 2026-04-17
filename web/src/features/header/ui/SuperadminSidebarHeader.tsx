@@ -1,6 +1,6 @@
 import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
-import KeyboardDoubleArrowLeftRounded from '@mui/icons-material/KeyboardDoubleArrowLeftRounded';
-import KeyboardDoubleArrowRightRounded from '@mui/icons-material/KeyboardDoubleArrowRightRounded';
+import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
+import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import ModeEditOutline from '@mui/icons-material/ModeEditOutline';
 import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
@@ -9,6 +9,7 @@ import { IconButton, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
 import type { HeaderConfig } from '../model/types';
 
@@ -93,11 +94,9 @@ export const SuperadminSidebarHeader = ({
     >
       <Stack sx={{ height: '100%' }}>
         <Stack direction="row" alignItems="center" justifyContent={collapsed ? 'center' : 'space-between'} sx={{ minHeight: 44, mb: 1.8 }}>
-          {!collapsed ? (
-            <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>
-              AcomOfferDesk
-            </Typography>
-          ) : null}
+          <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>
+            {collapsed ? 'A' : 'AcomOfferDesk'}
+          </Typography>
         </Stack>
 
         <Stack spacing={1.25} sx={{ overflowY: { lg: 'auto' }, pr: { lg: 0.5 } }}>
@@ -140,6 +139,13 @@ export const SuperadminSidebarHeader = ({
             borderColor: 'divider'
           }}
         >
+          <Stack
+            direction="row"
+            justifyContent={collapsed ? 'center' : 'flex-start'}
+            sx={{ px: collapsed ? 0 : 0.2 }}
+          >
+            <RoleGuideButton />
+          </Stack>
           {bottomItems.map((item) => {
             const icon = item.icon ?? iconByKey[item.key as keyof typeof iconByKey];
             if (item.key === 'logout') {
@@ -214,7 +220,7 @@ export const SuperadminSidebarHeader = ({
                 }
               })}
             >
-              {collapsed ? <KeyboardDoubleArrowRightRounded fontSize="small" /> : <KeyboardDoubleArrowLeftRounded fontSize="small" />}
+              {collapsed ? <KeyboardArrowRightRounded fontSize="small" /> : <KeyboardArrowLeftRounded fontSize="small" />}
             </IconButton>
           </>
         ) : null}

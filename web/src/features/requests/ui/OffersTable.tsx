@@ -1,8 +1,10 @@
 import { MouseEvent as ReactMouseEvent, useState, type ReactNode } from 'react';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
 import { Box, ButtonBase, Chip, Collapse, Divider, MenuItem, Paper, Select, Stack, SvgIcon, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
+import { StatusPill } from '@shared/components/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 
@@ -340,16 +342,11 @@ const OfferMobileCard = ({
             </Typography>
           </Stack>
           {unreadLabel ? (
-            <Chip
-              label={unreadLabel}
-              size="small"
-              variant="outlined"
-              sx={{
-                borderColor: theme.palette.primary.main,
-                color: theme.palette.primary.main,
-                fontWeight: 600,
-                backgroundColor: 'transparent'
-              }}
+            <StatusPill
+              label=""
+              tone="info"
+              icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
+              iconOnly
             />
           ) : null}
         </Stack>
@@ -649,16 +646,11 @@ export const OffersTable = ({
           );
         }
         return (
-          <Chip
-            label={unreadLabel}
-            size="small"
-            variant="outlined"
-            sx={(currentTheme) => ({
-              borderColor: currentTheme.palette.primary.main,
-              color: currentTheme.palette.primary.main,
-              fontWeight: 600,
-              backgroundColor: 'transparent'
-            })}
+          <StatusPill
+            label=""
+            tone="info"
+            icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
+            iconOnly
           />
         );
       }

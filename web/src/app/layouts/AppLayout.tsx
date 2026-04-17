@@ -34,7 +34,7 @@ export const AppLayout = () => {
             display: 'grid',
             gridTemplateColumns: {
               xs: '1fr',
-              lg: isSidebarCollapsed ? '88px minmax(0, 1fr)' : '280px minmax(0, 1fr)',
+              lg: isSidebarCollapsed ? '88px minmax(0, 1fr)' : '248px minmax(0, 1fr)',
             },
             alignItems: { lg: 'stretch' },
             gap: 0,

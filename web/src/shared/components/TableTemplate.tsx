@@ -1687,7 +1687,7 @@ export function TableTemplate<T>({
             </Stack>
           )}
 
-          {visibleRows.length === 0 && (
+          {isCardsView && visibleRows.length === 0 && (
             <Paper
               sx={{
                 minHeight: rowHeight * 1.1,

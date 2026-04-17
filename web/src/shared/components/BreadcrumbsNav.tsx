@@ -22,11 +22,11 @@ export const BreadcrumbsNav = ({ items }: BreadcrumbsNavProps) => {
   return (
     <Stack
       sx={{
-        px: 0.5,
-        py: 0.25,
+        px: 0,
+        py: 0.75,
       }}
     >
-      <Breadcrumbs separator={<NavigateNextRounded sx={{ fontSize: 16 }} />} aria-label="breadcrumb">
+      <Breadcrumbs separator={<NavigateNextRounded sx={{ fontSize: 20 }} />} aria-label="breadcrumb">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           if (!item.onClick || isLast) {
@@ -36,7 +36,8 @@ export const BreadcrumbsNav = ({ items }: BreadcrumbsNavProps) => {
                 sx={{
                   color: isLast ? 'text.primary' : 'text.secondary',
                   fontWeight: isLast ? 600 : 500,
-                  fontSize: 14,
+                  fontSize: 20,
+                  lineHeight: 1.25,
                   maxWidth: 320,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -56,15 +57,16 @@ export const BreadcrumbsNav = ({ items }: BreadcrumbsNavProps) => {
                 borderRadius: 1,
                 px: 0.4,
                 py: 0.1,
-                color: 'primary.main',
-                fontSize: 14,
+                color: 'text.secondary',
+                fontSize: 20,
+                lineHeight: 1.25,
                 fontWeight: 500,
                 maxWidth: 320,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 '&:hover': {
-                  textDecoration: 'underline',
+                  textDecoration: 'none',
                 },
               }}
             >

@@ -73,12 +73,15 @@ const getCustomBaseSx = (theme: Theme, selected: boolean, isDisabled: boolean): 
       borderColor: primary.main,
       color: primary.contrastText,
       '&:hover': {
-        backgroundColor: brand.primaryHover,
-        borderColor: brand.primaryHover,
+        backgroundColor: theme.palette.background.paper,
+        borderColor: primary.main,
+        color: primary.main,
+        transition: 'background-color 0.28s ease, border-color 0.28s ease, color 0.28s ease',
       },
       '&:active': {
         backgroundColor: brand.primaryPressed,
         borderColor: brand.primaryPressed,
+        color: primary.contrastText,
       },
     };
   }
@@ -148,7 +151,8 @@ const getCustomForcedStateSx = (
       color: primary.contrastText,
       '&:hover': {
         borderColor: primary.main,
-        backgroundColor: primary.main,
+        backgroundColor: theme.palette.background.paper,
+        color: primary.main,
       },
     };
   }

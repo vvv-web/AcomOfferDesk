@@ -1,12 +1,12 @@
 import { MouseEvent as ReactMouseEvent, useState } from 'react';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
-import { Box, ButtonBase, Chip, Collapse, Divider, Paper, Select, Stack, SvgIcon, Tooltip, Typography } from '@mui/material';
+import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
+import { Box, ButtonBase, Collapse, Divider, Paper, Select, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestWithOfferStats } from '@shared/api/requests/getRequests';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { StatusPill } from '@shared/components/StatusPill';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
-import { NotificationBadge } from '@shared/ui/NotificationBadge';
 import type { UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 
 type OwnerOption = {
@@ -28,15 +28,24 @@ type RequestsTableProps = {
 };
 
 const requestStatusToneByValue: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
-    open: 'info',
+    open: 'success',
     review: 'warning',
-    closed: 'success',
-    canceled: 'neutral'
+    closed: 'neutral',
+    canceled: 'neutral',
+    cancelled: 'neutral'
 };
 
 type RequestTableRow = RequestWithOfferStats & {
     __notificationLabel: string;
     __statusLabel: string;
+};
+
+const capitalizeFirst = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return '';
+    }
+    return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 };
 
 const formatDate = (value: string | null, withTime = false) => {
@@ -86,32 +95,26 @@ const offerStatusToneKey: Record<string, keyof import('@mui/material/styles').St
 };
 
 const offerStatusLabelMap: Record<string, string> = {
-    submitted: 'на рассмотрении',
-    accepted: 'принято',
-    rejected: 'отклонено',
-    deleted: 'удалено',
+    submitted: 'На рассмотрении',
+    accepted: 'Принято',
+    rejected: 'Отклонено',
+    deleted: 'Удалено',
 };
 
-const getContractorOfferStatusMeta = (status: string, tones: import('@mui/material/styles').StatusTones) => {
-    const toneKey = offerStatusToneKey[status] ?? 'neutral';
-    const tone = tones[toneKey];
-    return { label: offerStatusLabelMap[status] ?? status, color: tone.text, background: tone.bg };
-};
+const getContractorOfferStatusMeta = (status: string) => ({
+    label: offerStatusLabelMap[status] ?? status
+});
 
 const NotificationContent = ({
     countSubmitted,
     countDeleted,
     countChatAlerts,
-    unreadMessagesCount,
-    submittedColor,
-    deletedColor
+    unreadMessagesCount
 }: {
     countSubmitted: number;
     countDeleted: number;
     countChatAlerts: number;
     unreadMessagesCount: number;
-    submittedColor: string;
-    deletedColor: string;
 }) => {
     const hasUnreadMessages = unreadMessagesCount > 0;
 
@@ -122,31 +125,30 @@ const NotificationContent = ({
     return (
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             {countSubmitted > 0 ? (
-                <Chip
-                    label={countSubmitted === 1 ? 'Новое предложение' : `${countSubmitted} новых предложения`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ borderColor: submittedColor, color: submittedColor, fontWeight: 600 }}
+                <StatusPill
+                    label={countSubmitted === 1 ? 'Новое КП' : `${countSubmitted} новых КП`}
+                    tone="success"
                 />
             ) : null}
             {countDeleted > 0 ? (
-                <Chip
+                <StatusPill
                     label={countDeleted === 1 ? 'Отмена сделки' : `${countDeleted} отмены сделки`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ borderColor: deletedColor, color: deletedColor, fontWeight: 600 }}
+                    tone="error"
                 />
             ) : null}
             {countChatAlerts > 0 ? (
-                <Chip
+                <StatusPill
                     label="Новый ответ"
-                    size="small"
-                    variant="outlined"
-                    sx={{ borderColor: 'error.main', color: 'error.main', fontWeight: 600 }}
+                    tone="error"
                 />
             ) : null}
             {hasUnreadMessages ? (
-                <NotificationBadge title={getUnreadMessagesLabel(unreadMessagesCount) ?? undefined} />
+                <StatusPill
+                    label=""
+                    tone="info"
+                    icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
+                    iconOnly
+                />
             ) : null}
         </Stack>
     );
@@ -349,24 +351,14 @@ const RequestMobileCard = ({
                 </Collapse>
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.25}>
-                    <Box
-                        sx={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: '50%',
-                            border: row.__notificationLabel === 'Есть уведомление' ? '1px solid' : '1px solid transparent',
-                            borderColor: row.__notificationLabel === 'Есть уведомление' ? 'primary.main' : 'transparent',
-                            color: row.__notificationLabel === 'Есть уведомление' ? 'primary.main' : 'transparent',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                        }}
-                    >
+                    <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         {row.__notificationLabel === 'Есть уведомление' ? (
-                            <SvgIcon sx={{ fontSize: 18 }}>
-                                <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" />
-                            </SvgIcon>
+                            <StatusPill
+                                label=""
+                                tone="info"
+                                icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
+                                iconOnly
+                            />
                         ) : null}
                     </Box>
                     <Typography
@@ -399,14 +391,11 @@ export const RequestsTable = ({
     onOwnerChange,
     isContractor = false
 }: RequestsTableProps) => {
-    const theme = useTheme();
-    const submittedColor = theme.palette.success.main;
-    const deletedColor = theme.palette.error.main;
     const [expandedCardsById, setExpandedCardsById] = useState<Record<number, boolean>>({});
     const rows = requests.map((request) => ({
         ...request,
         __notificationLabel: request.unread_messages_count && request.unread_messages_count > 0 ? 'Есть уведомление' : 'Нет уведомления',
-        __statusLabel: request.status_label ?? request.status ?? '-'
+        __statusLabel: capitalizeFirst(request.status_label ?? request.status ?? '-')
     }));
     const areAllCardsExpanded = rows.length > 0 && rows.every((row) => Boolean(expandedCardsById[row.id]));
 
@@ -486,21 +475,24 @@ export const RequestsTable = ({
             id: 'deadline',
             header: 'Прием КП до',
             field: 'deadline_at',
-            minWidth: 120,
+            minWidth: 96,
+            width: '104px',
             renderValue: (value) => <Typography variant="body2">{formatDate(value as string | null)}</Typography>
         },
         {
             id: 'created',
             header: 'Открыта',
             field: 'created_at',
-            minWidth: 120,
+            minWidth: 96,
+            width: '104px',
             renderValue: (value) => <Typography variant="body2">{formatDate(value as string | null)}</Typography>
         },
         {
             id: 'closed',
             header: 'Закрыта',
             field: 'closed_at',
-            minWidth: 120,
+            minWidth: 96,
+            width: '104px',
             renderValue: (value) => <Typography variant="body2">{formatDate(value as string | null)}</Typography>
         },
         {
@@ -509,13 +501,14 @@ export const RequestsTable = ({
             field: 'id_offer',
             minWidth: 90,
             width: '96px',
-            align: 'center',
+            align: 'right',
             renderValue: (value) => <Typography variant="body2">{String(value ?? '-')}</Typography>
         },
         {
             id: 'owner',
             header: 'Ответственный',
-            minWidth: 170,
+            minWidth: 240,
+            width: '1.35fr',
             field: 'id_user',
             filterKind: 'select',
             filterOptions: ownerFilterOptions,
@@ -569,22 +562,13 @@ export const RequestsTable = ({
                 return (
                     <Stack spacing={0.75} alignItems="flex-start">
                         {contractorOffers.map((offer) => {
-                            const statusMeta = getContractorOfferStatusMeta(offer.status, theme.palette.statusTones);
+                            const statusMeta = getContractorOfferStatusMeta(offer.status);
+                            const statusTone = offerStatusToneKey[offer.status] ?? 'neutral';
                             return (
-                                <Chip
+                                <StatusPill
                                     key={offer.id}
-                                    size="small"
                                     label={`КП № ${offer.id} ${statusMeta.label}`}
-                                    sx={{
-                                        borderRadius: 999,
-                                        border: `1px solid ${statusMeta.color}`,
-                                        color: statusMeta.color,
-                                        backgroundColor: statusMeta.background,
-                                        fontWeight: 500,
-                                        '& .MuiChip-label': {
-                                            px: 1.25
-                                        }
-                                    }}
+                                    tone={statusTone}
                                 />
                             );
                         })}
@@ -611,11 +595,11 @@ export const RequestsTable = ({
                 const unreadCount = contractorOffers.reduce((acc, offer) => acc + (offer.unread_messages_count ?? 0), 0);
                 const unreadLabel = getUnreadMessagesLabel(unreadCount);
                 return unreadLabel ? (
-                    <Chip
-                        label={unreadLabel}
-                        size="small"
-                        variant="outlined"
-                        sx={{ borderColor: theme.palette.primary.main, color: theme.palette.primary.main, fontWeight: 600 }}
+                    <StatusPill
+                        label=""
+                        tone="info"
+                        icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
+                        iconOnly
                     />
                 ) : (
                     <Typography variant="body2" color="text.secondary">-</Typography>
@@ -627,8 +611,6 @@ export const RequestsTable = ({
                     countDeleted={row.count_deleted_alert ?? 0}
                     countChatAlerts={chatAlertsMap?.[row.id] ?? row.count_chat_alert ?? 0}
                     unreadMessagesCount={row.unread_messages_count ?? 0}
-                    submittedColor={submittedColor}
-                    deletedColor={deletedColor}
                 />
             );
         }
