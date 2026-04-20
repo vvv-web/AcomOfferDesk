@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import {
   Box,
   Button,
@@ -11,7 +11,6 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { DataTable } from '@shared/components/DataTable';
 import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { downloadFile } from '@shared/api/fileDownload';
@@ -25,11 +24,6 @@ const statusOptions = [
   { value: 'closed', label: 'Закрыта', color: '#787878ff' },
   { value: 'cancelled', label: 'Отменена', color: '#d32f2f' }
 ] as const;
-
-const detailsColumns = [
-  { key: 'label', label: 'Параметр' },
-  { key: 'value', label: 'Значение' }
-];
 
 const offerDecisionOptions = [
   { value: 'accepted', label: 'Принято' },
@@ -92,6 +86,41 @@ const getOfferStatusBadgeStyle = (status: string | null) => {
   };
 };
 
+type DetailRowProps = {
+  label: string;
+  value: ReactNode;
+  divider?: boolean;
+};
+
+const DetailRow = ({ label, value, divider = true }: DetailRowProps) => (
+  <Box
+    sx={(theme) => ({
+      display: 'grid',
+      gridTemplateColumns: { xs: '1fr', sm: '1fr auto' },
+      alignItems: 'center',
+      gap: 1,
+      px: 1.25,
+      py: 0.8,
+      borderBottom: divider ? `1px solid ${theme.palette.divider}` : 'none'
+    })}
+  >
+    <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
+      {label}
+    </Typography>
+    <Typography
+      sx={{
+        justifySelf: { xs: 'stretch', sm: 'end' },
+        textAlign: { xs: 'left', sm: 'right' },
+        fontWeight: 500,
+        fontSize: 14,
+        lineHeight: 1.3
+      }}
+    >
+      {value}
+    </Typography>
+  </Box>
+);
+
 
 export const OfferWorkspaceView = () => {
   const {
@@ -146,21 +175,6 @@ export const OfferWorkspaceView = () => {
     [workspace?.request.status]
   );
   const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
-
-  const detailsRows = [
-    ...(canViewRequestAmounts
-      ? [
-          { id: 'initialAmount', label: 'Сумма по ТЗ', value: formatAmount(workspace?.request.initial_amount ?? null) },
-          { id: 'finalAmount', label: 'Итоговая сумма', value: formatAmount(workspace?.request.final_amount ?? null) }
-        ]
-      : []),
-    { id: 'owner', label: 'Ответственный', value: workspace?.request.owner_full_name ?? '-' },
-    { id: 'created', label: 'Создана', value: formatDate(workspace?.request.created_at ?? null) },
-    { id: 'closed', label: 'Закрыта', value: formatDate(workspace?.request.closed_at ?? null) },
-    { id: 'offer', label: 'Номер КП', value: workspace?.request.id_offer ?? workspace?.request.chosen_offer_id ?? '-' },
-    { id: 'deadline', label: 'Дедлайн', value: formatDate(workspace?.request.deadline_at ?? null) },
-    { id: 'updated', label: 'Последнее изменение', value: formatDate(workspace?.request.updated_at ?? null) }
-  ];
 
   const canCreateNewOffer = Boolean(workspace?.request.actions.create_offer);
 
@@ -258,13 +272,13 @@ export const OfferWorkspaceView = () => {
 
         <Box
           sx={(theme) => ({
-            borderRadius: 2,
+            borderRadius: `${theme.acomShape.panelRadius}px`,
             border: `1px solid ${theme.palette.divider}`,
             backgroundColor: theme.palette.background.paper,
             padding: { xs: 2, md: 2.5 },
             display: 'grid',
             gap: 2,
-            gridTemplateColumns: { xs: '1fr', md: '1.4fr 1fr' }
+            gridTemplateColumns: { xs: '1fr', md: '1.6fr 1fr' }
           })}
         >
           <Stack spacing={2}>
@@ -297,17 +311,62 @@ export const OfferWorkspaceView = () => {
             </Stack>
           </Stack>
 
-          <DataTable
-            columns={detailsColumns}
-            rows={detailsRows}
-            rowKey={(row) => row.id}
-            showHeader={false}
-            enableColumnControls={false}
-            renderRow={(row) => [
-              <Typography variant="body2">{row.label}</Typography>,
-              <Typography variant="body2">{row.value}</Typography>
-            ]}
-          />
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 1.5,
+              gridTemplateColumns: { xs: '1fr', md: canViewRequestAmounts ? '1fr 1fr' : '1fr' }
+            }}
+          >
+            <Box
+              sx={(theme) => ({
+                border: `1px solid ${theme.palette.divider}`,
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+                overflow: 'hidden',
+                backgroundColor: theme.palette.background.paper,
+                p: 0.8,
+                boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)'
+              })}
+            >
+              <DetailRow label="Ответственный" value={workspace.request.owner_full_name ?? '-'} />
+              <DetailRow label="Создана" value={formatDate(workspace.request.created_at ?? null)} />
+              <DetailRow label="Закрыта" value={formatDate(workspace.request.closed_at ?? null)} />
+              <DetailRow label="Дедлайн" value={formatDate(workspace.request.deadline_at ?? null)} />
+              <DetailRow
+                label="Последнее изменение"
+                value={formatDate(workspace.request.updated_at ?? null, true)}
+                divider={!canViewRequestAmounts}
+              />
+              {!canViewRequestAmounts ? (
+                <DetailRow
+                  label="Номер КП"
+                  value={workspace.request.id_offer ?? workspace.request.chosen_offer_id ?? '-'}
+                  divider={false}
+                />
+              ) : null}
+            </Box>
+
+            {canViewRequestAmounts ? (
+              <Box
+                sx={(theme) => ({
+                  border: `1px solid ${theme.palette.divider}`,
+                  borderRadius: `${theme.acomShape.controlRadius}px`,
+                  overflow: 'hidden',
+                  backgroundColor: theme.palette.background.paper,
+                  p: 0.8,
+                  boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)'
+                })}
+              >
+                <DetailRow label="Сумма по ТЗ" value={formatAmount(workspace.request.initial_amount ?? null)} />
+                <DetailRow label="Итоговая сумма" value={formatAmount(workspace.request.final_amount ?? null)} />
+                <DetailRow
+                  label="Номер КП"
+                  value={workspace.request.id_offer ?? workspace.request.chosen_offer_id ?? '-'}
+                  divider={false}
+                />
+              </Box>
+            ) : null}
+          </Box>
         </Box>
 
         <Paper sx={{ mt: 2.5, p: 2, borderRadius: 3 }}>

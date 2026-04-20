@@ -490,8 +490,8 @@ export const OffersTable = ({
       id: 'offerId',
       header: 'Номер КП',
       field: 'offer_id',
-      minWidth: 96,
-      width: '110px',
+      minWidth: 82,
+      width: '90px',
       renderValue: (value) => <Typography variant="body2" fontWeight={600}>{String(value ?? '-')}</Typography>
     },
     {
@@ -536,14 +536,16 @@ export const OffersTable = ({
       id: 'createdAt',
       header: 'Дата создания',
       field: 'created_at',
-      minWidth: 120,
+      minWidth: 96,
+      width: '108px',
       renderValue: (value) => <Typography variant="body2">{formatDate(value as string | null)}</Typography>
     },
     {
       id: 'updatedAt',
       header: 'Дата изменения',
       field: 'updated_at',
-      minWidth: 120,
+      minWidth: 96,
+      width: '108px',
       renderValue: (value) => <Typography variant="body2">{formatDate(value as string | null)}</Typography>
     },
     {
@@ -587,7 +589,8 @@ export const OffersTable = ({
     {
       id: 'statusSelect',
       header: 'Статус',
-      minWidth: 150,
+      minWidth: 214,
+      width: '220px',
       filterKind: 'select',
       filterOptions: statusFilterOptions,
       getFilterValue: (offer) => {
@@ -608,7 +611,7 @@ export const OffersTable = ({
             onChange={(event) => onStatusChange(offer.offer_id, event.target.value as OfferDecisionStatus)}
             onClick={(event) => event.stopPropagation()}
             disabled={!canChangeStatus || offer.status === 'deleted' || (!offer.actions.accept && !offer.actions.reject)}
-            sx={{ minWidth: 140 }}
+            sx={{ width: '100%', minWidth: 198 }}
           >
             <MenuItem value="">
               <Typography variant="body2" color="text.secondary">
@@ -633,15 +636,15 @@ export const OffersTable = ({
     {
       id: 'communication',
       header: 'Общение',
-      minWidth: 170,
-      width: '1fr',
+      minWidth: 118,
+      width: '128px',
       renderCell: (offer) => {
         const unreadCount = offer.unread_messages_count ?? 0;
         const unreadLabel = getUnreadMessagesLabel(unreadCount);
         if (!unreadLabel) {
           return (
             <Typography variant="body2" color="text.secondary">
-              Откройте КП нажатием на строку
+              Откройте КП
             </Typography>
           );
         }

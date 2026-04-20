@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
     Alert,
     Box,
     Button,
     Chip,
+    IconButton,
     MenuItem,
     Select,
     Stack,
     TextField,
     Typography
 } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import EditOutlined from '@mui/icons-material/EditOutlined';
 import { OffersTable } from './OffersTable';
 import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
 import { formatDate } from '@shared/lib/formatters';
@@ -22,8 +26,8 @@ import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
 import { downloadFile } from '@shared/api/fileDownload';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
+import { DatePickerField } from '@shared/components/DatePickerField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
-import { DataTable } from '@shared/components/DataTable';
 import { ToggleSection } from '@shared/components/ToggleSection';
 import { getFileKey } from '@shared/lib/files';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
@@ -31,7 +35,6 @@ import { useRequestDetails } from '../model/useRequestDetails';
 import {
     type RequestStatus,
     statusOptions,
-    detailsColumns,
     toDateInputValue,
     toAmountInputValue,
     parseAmountInput,
@@ -46,8 +49,62 @@ const offerStatusOptions: OfferStatusOption[] = [
     { value: 'rejected', label: 'Отказано' }
 ];
 
+const requestStatusToneByValue: Record<RequestStatus, 'success' | 'warning' | 'neutral'> = {
+    open: 'success',
+    review: 'warning',
+    closed: 'neutral',
+    cancelled: 'neutral'
+};
+
+const detailFieldSx = {
+    width: { xs: '100%', sm: 142 },
+    '& .MuiOutlinedInput-root': {
+        borderRadius: 999,
+        minHeight: 34
+    },
+    '& .MuiOutlinedInput-input': {
+        px: 1.1,
+        py: 0.6,
+        fontSize: 14
+    }
+} as const;
+
+type DetailRowProps = {
+    label: string;
+    children: ReactNode;
+    divider?: boolean;
+};
+
+const DetailRow = ({ label, children, divider = true }: DetailRowProps) => (
+    <Box
+        sx={(theme) => ({
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: '1fr auto' },
+            alignItems: 'center',
+            gap: 1,
+            px: 1.25,
+            py: 0.8,
+            borderBottom: divider ? `1px solid ${theme.palette.divider}` : 'none',
+        })}
+    >
+        <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
+            {label}
+        </Typography>
+        <Box sx={{ justifySelf: { xs: 'stretch', sm: 'end' }, display: 'flex' }}>{children}</Box>
+    </Box>
+);
+
+const detailValueTextSx = {
+    justifySelf: { xs: 'stretch', sm: 'end' },
+    textAlign: { xs: 'left', sm: 'right' },
+    fontWeight: 500,
+    fontSize: 14,
+    lineHeight: 1.3
+} as const;
+
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
+    const theme = useTheme();
 
     const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
     const [status, setStatus] = useState<RequestStatus>('open');
@@ -64,9 +121,13 @@ export const RequestDetailsView = () => {
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
     const [newFile, setNewFile] = useState<File | null>(null);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const [isDescriptionOverflowing, setIsDescriptionOverflowing] = useState(false);
     const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
     const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
     const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+    const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
     const requestSignatureRef = useRef('');
     const hasPendingChangesRef = useRef(false);
 
@@ -83,10 +144,6 @@ export const RequestDetailsView = () => {
     const [isManualOfferDialogOpen, setIsManualOfferDialogOpen] = useState(false);
     const pollIntervalMs = 10000;
 
-    const statusConfig = useMemo(
-        () => statusOptions.find((option) => option.value === status) ?? statusOptions[0],
-        [status]
-    );
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
     const hasFileChanges = deletedFileIds.length > 0 || Boolean(newFile);
     const canViewRequestAmounts = useMemo(
@@ -135,6 +192,13 @@ export const RequestDetailsView = () => {
         || (hasOwnerChange && canEditOwner)
         || (deletedFileIds.length > 0 && canDeleteRequestFiles)
         || (Boolean(newFile) && canUploadRequestFiles);
+    const canEnterEditMode = canEditRequest || canEditOwner || canUploadRequestFiles || canDeleteRequestFiles;
+    const statusTone = requestStatusToneByValue[status] ?? 'neutral';
+    const statusColor = statusTone === 'success'
+        ? theme.palette.success.main
+        : statusTone === 'warning'
+            ? theme.palette.warning.main
+            : theme.palette.text.secondary;
 
     const todayDate = useMemo(() => {
         const now = new Date();
@@ -173,10 +237,6 @@ export const RequestDetailsView = () => {
             setFinalAmount(nextFinalAmount);
             setBaselineFinalAmount(nextFinalAmount);
             setExistingFiles(nextRequest.files ?? []);
-            setAdditionalEmails([]);
-            setAdditionalEmailsEnabled(false);
-            setDeletedFileIds([]);
-            setNewFile(null);
         }
     }, []);
 
@@ -379,6 +439,9 @@ export const RequestDetailsView = () => {
 
             const refreshed = await getRequestDetails(currentRequest.id);
             syncRequestState(refreshed, true);
+            setIsEditMode(false);
+            setDeletedFileIds([]);
+            setNewFile(null);
             setSuccessMessage('Изменения сохранены');
         } catch (error) {
             setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить изменения');
@@ -533,82 +596,69 @@ export const RequestDetailsView = () => {
         }
     };
 
+    const handleCancelEditing = () => {
+        setStatus(baselineStatus);
+        setDeadline(baselineDeadline);
+        setOwnerUserId(baselineOwnerUserId);
+        setInitialAmount(baselineInitialAmount);
+        setFinalAmount(baselineFinalAmount);
+        setDeletedFileIds([]);
+        setNewFile(null);
+        setIsEditMode(false);
+        setErrorMessage(null);
+        setSuccessMessage(null);
+    };
 
-    const detailsRows = [
-        {
-            id: 'owner',
-            label: 'Ответственный',
-            value: canEditOwner ? (
-                <Select
-                    size="small"
-                    value={ownerUserId}
-                    renderValue={(selected) => ownerOptions.find((option) => option.id === selected)?.label ?? requestDetails?.owner_full_name ?? String(selected ?? '')}
-                    onChange={(event) => setOwnerUserId(event.target.value)}
-                    sx={{ minWidth: 200 }}
-                >
-                    {ownerOptions.map((option) => (
-                        <UnavailableAwareMenuItem
-                            key={option.id}
-                            value={option.id}
-                            label={option.label}
-                            unavailablePeriod={option.unavailablePeriod}
-                        />
-                    ))}
-                </Select>
-            ) : (requestDetails?.owner_full_name ?? requestDetails?.id_user ?? '-')
-        },
-        { id: 'created', label: 'Создана', value: formatDate(requestDetails?.created_at ?? null) },
-        { id: 'closed', label: 'Закрыта', value: formatDate(requestDetails?.closed_at ?? null) },
-        { id: 'offer', label: 'Номер КП', value: requestDetails?.id_offer ?? '-' },
-        ...(canViewRequestAmounts
-            ? [
-                {
-                    id: 'initialAmount',
-                    label: 'Сумма по ТЗ, руб.',
-                    value: (
-                        <TextField
-                            size="small"
-                            value={initialAmount}
-                            onChange={(event) => setInitialAmount(event.target.value)}
-                            disabled={!canEditRequest}
-                            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                            sx={{ minWidth: 150 }}
-                        />
-                    )
-                },
-                {
-                    id: 'finalAmount',
-                    label: 'Итоговая сумма, руб.',
-                    value: (
-                        <TextField
-                            size="small"
-                            value={finalAmount}
-                            onChange={(event) => setFinalAmount(event.target.value)}
-                            disabled={!canEditRequest}
-                            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                            sx={{ minWidth: 150 }}
-                        />
-                    )
-                }
-            ]
-            : []),
-        {
-            id: 'deadline',
-            label: 'Дедлайн сбора КП',
-            value: (
-                <TextField
-                    type="date"
-                    size="small"
-                    value={deadline}
-                    onChange={(event) => setDeadline(event.target.value)}
-                    inputProps={{ min: todayDate }}
-                    disabled={!canEditRequest}
-                    sx={{ minWidth: 150 }}
+    const ownerField = canEditOwner && isEditMode ? (
+        <Select
+            size="small"
+            value={ownerUserId}
+            fullWidth
+            renderValue={(selected) =>
+                ownerOptions.find((option) => option.id === selected)?.label
+                ?? requestDetails?.owner_full_name
+                ?? String(selected ?? '')
+            }
+            onChange={(event) => setOwnerUserId(event.target.value)}
+        >
+            {ownerOptions.map((option) => (
+                <UnavailableAwareMenuItem
+                    key={option.id}
+                    value={option.id}
+                    label={option.label}
+                    unavailablePeriod={option.unavailablePeriod}
                 />
-            )
-        },
-        { id: 'updated', label: 'Последнее изменение', value: formatDate(requestDetails?.updated_at ?? null) }
-    ];
+            ))}
+        </Select>
+    ) : (
+        <TextField
+            size="small"
+            value={requestDetails?.owner_full_name ?? requestDetails?.id_user ?? '-'}
+            fullWidth
+            InputProps={{ readOnly: true }}
+        />
+    );
+    const descriptionText = requestDetails?.description?.trim() ?? '';
+    const canExpandDescription = isDescriptionOverflowing;
+
+    useEffect(() => {
+        const element = descriptionTextRef.current;
+        if (!element) {
+            setIsDescriptionOverflowing(false);
+            return;
+        }
+        if (isDescriptionExpanded) {
+            return;
+        }
+
+        const checkOverflow = () => {
+            setIsDescriptionOverflowing(element.scrollHeight - element.clientHeight > 1);
+        };
+
+        checkOverflow();
+        window.addEventListener('resize', checkOverflow);
+        return () => window.removeEventListener('resize', checkOverflow);
+    }, [descriptionText, isDescriptionExpanded]);
 
     useEffect(() => {
         if (!hasPendingChanges) {
@@ -639,77 +689,6 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
-            <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                gap={1.5}
-                alignItems={{ sm: 'center' }}
-                flexWrap="wrap"
-                sx={{ mb: 3 }}
-            >
-                <Typography variant="h6" fontWeight={600}>
-                    Номер заявки: {requestDetails.id}
-                </Typography>
-                <Stack direction="row" alignItems="center" spacing={1}>
-                    <Box
-                        sx={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: '50%',
-                            backgroundColor: statusConfig.color,
-                            flexShrink: 0,
-                        }}
-                    />
-                    <Select
-                        size="small"
-                        value={status}
-                        onChange={(event) => {
-                            const nextStatus = event.target.value as RequestStatus;
-                            if (nextStatus !== status) {
-                                const isConfirmed = window.confirm(
-                                    `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
-                                );
-                                if (!isConfirmed) {
-                                    return;
-                                }
-                            }
-                            setStatus(nextStatus);
-                            if (nextStatus === 'review') {
-                                setDeadline(todayDate);
-                            }
-                        }}
-                        disabled={!canEditRequest}
-                        sx={{
-                            minWidth: { xs: 160, sm: 200 },
-                            borderRadius: 999,
-                            backgroundColor: 'background.paper'
-                        }}
-                    >
-                        {statusOptions.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                                {option.label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </Stack>
-                <Stack direction="row" gap={1.5} flexWrap="wrap">
-                    <Button
-                        variant="contained"
-                        sx={{ px: { xs: 2, sm: 4 }, boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
-                        onClick={() => void handleSave()}
-                        disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
-                    >
-                        {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
-                    </Button>
-                    {canCreateManualOffer ? (
-                        <Button
-                            variant="outlined"
-                            onClick={() => setIsManualOfferDialogOpen(true)}
-                        >
-                            Внести КП вручную
-                        </Button>
-                    ) : null}
-                </Stack>
-            </Stack>
             {hasPendingChanges && (
                 <Typography role="status" color="warning.main" sx={{ mb: 2 }}>
                     Есть несохраненные изменения. При уходе со страницы они будут потеряны.
@@ -733,147 +712,399 @@ export const RequestDetailsView = () => {
 
             <Box
                 sx={(theme) => ({
-                    borderRadius: 2,
+                    borderRadius: `${theme.acomShape.panelRadius}px`,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
-                    padding: { xs: 2, md: 3 },
+                    px: { xs: 2, md: 3 },
+                    py: { xs: 2, md: 2.5 },
                     display: 'grid',
-                    gap: 3,
-                    gridTemplateColumns: { xs: '1fr', md: '1.4fr 1fr' }
+                    gap: 2.5,
                 })}
             >
-                <Stack spacing={2}>
-                    <TextField
-                        value={requestDetails.description ?? ''}
-                        placeholder="Описание заявки"
-                        multiline
-                        minRows={6}
-                        InputProps={{ readOnly: true }}
-                        sx={{ borderRadius: 3 }}
-                    />
-                    <Stack spacing={1}>
-                        <Typography variant="subtitle2" color="text.secondary">
-                            Файлы заявки
+                <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    alignItems={{ xs: 'flex-start', md: 'center' }}
+                    justifyContent="space-between"
+                    spacing={1.5}
+                >
+                    <Typography variant="h5" fontWeight={700}>
+                        Заявка №{requestDetails.id}
+                    </Typography>
+                    <Select
+                        size="small"
+                        value={status}
+                        onChange={(event) => {
+                            const nextStatus = event.target.value as RequestStatus;
+                            if (nextStatus !== status) {
+                                const isConfirmed = window.confirm(
+                                    `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
+                                );
+                                if (!isConfirmed) {
+                                    return;
+                                }
+                            }
+                            setStatus(nextStatus);
+                            if (nextStatus === 'review') {
+                                setDeadline(todayDate);
+                            }
+                        }}
+                        disabled={!canEditRequest || !isEditMode}
+                        sx={{
+                            minWidth: { xs: '100%', sm: 170, md: 190 },
+                            borderRadius: 999,
+                            color: statusColor,
+                            fontWeight: 600,
+                            backgroundColor: alpha(statusColor, 0.1),
+                            '& .MuiOutlinedInput-notchedOutline': { borderColor: statusColor },
+                            '& .MuiSelect-icon': { color: statusColor },
+                            '&.Mui-disabled': {
+                                opacity: 1,
+                                color: statusColor,
+                                WebkitTextFillColor: statusColor,
+                                backgroundColor: alpha(statusColor, 0.1)
+                            },
+                            '&.Mui-disabled .MuiOutlinedInput-notchedOutline': {
+                                borderColor: statusColor
+                            },
+                            '&.Mui-disabled .MuiSelect-icon': {
+                                color: statusColor,
+                                opacity: 1
+                            }
+                        }}
+                    >
+                        {statusOptions.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                                {option.label}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </Stack>
+
+                <Box
+                    sx={{
+                        display: 'grid',
+                        gap: 2,
+                        gridTemplateColumns: { xs: '1fr', md: '1.6fr 1fr' },
+                        alignItems: 'stretch',
+                    }}
+                >
+                    <Box
+                        onClick={() => {
+                            if (canExpandDescription) {
+                                setIsDescriptionExpanded((prev) => !prev);
+                            }
+                        }}
+                        sx={(themeValue) => ({
+                            border: `1px solid ${themeValue.palette.divider}`,
+                            borderRadius: `${themeValue.acomShape.controlRadius}px`,
+                            px: 1.5,
+                            py: 1,
+                            minHeight: 74,
+                            height: '100%',
+                            cursor: canExpandDescription ? 'pointer' : 'default',
+                            position: 'relative',
+                            display: 'grid',
+                            alignItems: 'center',
+                        })}
+                    >
+                        <Typography
+                            ref={descriptionTextRef}
+                            component="p"
+                            sx={{
+                                pr: canExpandDescription ? 12 : 0,
+                                whiteSpace: 'pre-wrap',
+                                ...(isDescriptionExpanded
+                                    ? {}
+                                    : {
+                                        display: '-webkit-box',
+                                        WebkitBoxOrient: 'vertical',
+                                        WebkitLineClamp: 2,
+                                        overflow: 'hidden',
+                                    })
+                            }}
+                        >
+                            {descriptionText || 'Описание заявки отсутствует'}
                         </Typography>
+                        {canExpandDescription ? (
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    position: 'absolute',
+                                    right: 12,
+                                    bottom: 8,
+                                    color: 'primary.main',
+                                    fontWeight: 600
+                                }}
+                            >
+                                {isDescriptionExpanded ? 'Свернуть' : 'Развернуть'}
+                            </Typography>
+                        ) : null}
+                    </Box>
+                    <Stack spacing={0.6} sx={{ minHeight: 74, height: '100%', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" color="text.secondary">
+                            Ответственный по заявке
+                        </Typography>
+                        {ownerField}
+                    </Stack>
+                </Box>
+
+                <Stack spacing={0.75}>
+                    <Typography variant="body2" color="text.secondary">
+                        Файлы заявки
+                    </Typography>
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
                         {existingFiles.length > 0 ? (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                {existingFiles.map((file) => (
-                                    <Chip
-                                        key={file.id}
-                                        label={file.name}
-                                        variant="outlined"
-                                        onClick={() => void handleDownload(file.download_url, file.name)}
-                                        onDelete={canDeleteRequestFiles ? () => handleRemoveExistingFile(file.id) : undefined}
-                                    />
-                                ))}
-                            </Box>
+                            existingFiles.map((file) => (
+                                <Chip
+                                    key={file.id}
+                                    label={file.name}
+                                    variant="outlined"
+                                    onClick={() => void handleDownload(file.download_url, file.name)}
+                                    onDelete={isEditMode && canDeleteRequestFiles ? () => handleRemoveExistingFile(file.id) : undefined}
+                                    sx={{ borderRadius: 999 }}
+                                />
+                            ))
                         ) : (
                             <Typography variant="body2">Файлы не прикреплены</Typography>
                         )}
-
-                        {canUploadRequestFiles && (
-                            <>
-                                <Button variant="outlined" component="label" sx={{ width: 'fit-content' }}>
-                                    Прикрепить новые файлы
-                                    <input
-                                        hidden
-                                        type="file"
-                                        onChange={(event) => {
-                                            setNewFile(event.target.files?.[0] ?? null);
-                                            event.target.value = '';
-                                        }}
-                                    />
-                                </Button>
-                                {newFile && (
-                                    <Chip
-                                        key={getFileKey(newFile)}
-                                        label={newFile.name}
-                                        variant="outlined"
-                                        onDelete={() => setNewFile(null)}
-                                    />
-                                )}
-                            </>
+                        {newFile && (
+                            <Chip
+                                key={getFileKey(newFile)}
+                                label={newFile.name}
+                                variant="outlined"
+                                color="primary"
+                                onDelete={() => setNewFile(null)}
+                                sx={{ borderRadius: 999 }}
+                            />
                         )}
-                    </Stack>
-                    {status === 'open' && (
-                        <ToggleSection
-                            title="Дополнительная рассылка на электронную почту"
-                            checked={additionalEmailsEnabled}
-                            disabled={isAdditionalEmailsFieldUnavailable}
-                            onChange={(_event, checked) => {
-                                setAdditionalEmailsEnabled(checked);
-                                if (!checked) {
-                                    setAdditionalEmails([]);
-                                }
-                            }}
-                            description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
-                        >
-                            <Stack spacing={1.5}>
-                                <AdditionalEmailsField
-                                    ref={additionalEmailsFieldRef}
-                                    emails={additionalEmails}
-                                    onChange={setAdditionalEmails}
-                                    hideHeader
-                                    addButtonVariant="icon"
-                                    disabled={isAdditionalEmailsFieldUnavailable}
-                                    helperText="Можно добавить несколько адресов через запятую."
-                                    containerSx={{
-                                        mt: 0,
-                                        opacity: isAdditionalEmailsFieldUnavailable ? 0.5 : 1,
-                                        transition: 'opacity 0.2s ease'
+                        {isEditMode && canUploadRequestFiles && (
+                            <IconButton
+                                component="label"
+                                size="small"
+                                aria-label="Добавить файл"
+                                sx={{
+                                    alignSelf: 'center',
+                                    color: 'primary.main',
+                                    width: 32,
+                                    height: 32,
+                                    p: 0,
+                                    '&:hover': {
+                                        backgroundColor: 'transparent'
+                                    }
+                                }}
+                            >
+                                <AddCircleOutlineIcon sx={{ fontSize: 32 }} />
+                                <input
+                                    hidden
+                                    type="file"
+                                    onChange={(event) => {
+                                        setNewFile(event.target.files?.[0] ?? null);
+                                        event.target.value = '';
                                     }}
                                 />
+                            </IconButton>
+                        )}
+                    </Stack>
+                </Stack>
+
+                <Box
+                    sx={{
+                        display: 'grid',
+                        gap: 1.5,
+                        gridTemplateColumns: { xs: '1fr', md: canViewRequestAmounts ? '1fr 1fr' : '1fr' },
+                    }}
+                >
+                    <Box
+                        sx={(themeValue) => ({
+                            border: `1px solid ${themeValue.palette.divider}`,
+                            borderRadius: `${themeValue.acomShape.controlRadius}px`,
+                            overflow: 'hidden',
+                            backgroundColor: themeValue.palette.background.paper,
+                            p: 0.8,
+                            boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)',
+                        })}
+                    >
+                        <DetailRow label="Создана">
+                            <Typography sx={detailValueTextSx}>{formatDate(requestDetails.created_at)}</Typography>
+                        </DetailRow>
+                        <DetailRow label="Закрыта">
+                            <Typography sx={detailValueTextSx}>{formatDate(requestDetails.closed_at)}</Typography>
+                        </DetailRow>
+                        <DetailRow label="Дедлайн сбора КП" divider={!canViewRequestAmounts}>
+                            {isEditMode && canEditRequest ? (
+                                <DatePickerField
+                                    value={deadline}
+                                    onChange={setDeadline}
+                                    showDropdownIcon={false}
+                                    allowClear={false}
+                                    minWidth={detailFieldSx.width}
+                                    sx={{
+                                        '& .MuiInputBase-root': {
+                                            borderRadius: 999,
+                                            minHeight: 34
+                                        },
+                                        '& .MuiInputBase-input': {
+                                            px: 1.1,
+                                            py: 0.6,
+                                            fontSize: 14
+                                        }
+                                    }}
+                                />
+                            ) : (
+                                <Typography sx={detailValueTextSx}>{formatDate(requestDetails.deadline_at)}</Typography>
+                            )}
+                        </DetailRow>
+                        {!canViewRequestAmounts && (
+                            <DetailRow label="Номер КП" divider={false}>
+                                <Typography sx={detailValueTextSx}>{requestDetails.id_offer ?? '-'}</Typography>
+                            </DetailRow>
+                        )}
+                    </Box>
+
+                    {canViewRequestAmounts && (
+                        <Box
+                            sx={(themeValue) => ({
+                                border: `1px solid ${themeValue.palette.divider}`,
+                                borderRadius: `${themeValue.acomShape.controlRadius}px`,
+                                overflow: 'hidden',
+                                backgroundColor: themeValue.palette.background.paper,
+                                p: 0.8,
+                                boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)',
+                            })}
+                        >
+                            <DetailRow label="Сумма по ТЗ, руб.">
+                                {isEditMode && canEditRequest ? (
+                                    <TextField
+                                        size="small"
+                                        value={initialAmount}
+                                        onChange={(event) => setInitialAmount(event.target.value)}
+                                        inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                                        sx={detailFieldSx}
+                                    />
+                                ) : (
+                                    <Typography sx={detailValueTextSx}>{initialAmount || '-'}</Typography>
+                                )}
+                            </DetailRow>
+                            <DetailRow label="Итоговая сумма, руб.">
+                                {isEditMode && canEditRequest ? (
+                                    <TextField
+                                        size="small"
+                                        value={finalAmount}
+                                        onChange={(event) => setFinalAmount(event.target.value)}
+                                        inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+                                        sx={detailFieldSx}
+                                    />
+                                ) : (
+                                    <Typography sx={detailValueTextSx}>{finalAmount || '-'}</Typography>
+                                )}
+                            </DetailRow>
+                            <DetailRow label="Номер КП" divider={false}>
+                                <Typography sx={detailValueTextSx}>{requestDetails.id_offer ?? '-'}</Typography>
+                            </DetailRow>
+                        </Box>
+                    )}
+                </Box>
+
+                <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                >
+                    <Typography variant="body1">Обновлено {formatDate(requestDetails.updated_at, true)}</Typography>
+                    <Stack direction="row" spacing={1}>
+                        {isEditMode ? (
+                            <>
+                                <Button variant="outlined" onClick={handleCancelEditing} disabled={isSaving}>
+                                    Отмена
+                                </Button>
                                 <Button
                                     variant="outlined"
-                                    sx={{ width: 'fit-content' }}
-                                    onClick={() => void handleSendAdditionalEmails()}
-                                    disabled={isAdditionalEmailsFieldUnavailable}
+                                    onClick={() => void handleSave()}
+                                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
                                 >
-                                    {isSendingEmails ? 'Отправка...' : 'Отправить'}
+                                    {isSaving ? 'Сохранение...' : 'Сохранить'}
                                 </Button>
-                            </Stack>
-                        </ToggleSection>
-                    )}
-                    {hasDeletedAlert && canMarkDeletedAlertViewed && (
-                        <Button
-                            variant="contained"
-                            sx={(theme) => ({
-                                paddingX: 3,
-                                width: 'fit-content',
-                                backgroundColor: theme.palette.error.main,
-                                color: theme.palette.error.contrastText,
-                                boxShadow: 'none',
-                                '&:hover': { backgroundColor: theme.palette.error.dark, boxShadow: 'none' },
-                                '&:disabled': {
-                                    backgroundColor: theme.palette.error.light,
-                                    color: theme.palette.error.contrastText
-                                }
-                            })}
-                            onClick={() => void handleDeletedAlertViewed()}
-                            disabled={isClearingDeletedAlert}
-                        >
-                            {isClearingDeletedAlert ? 'Отмечаем...' : 'Уведомлен об отмене сделки'}
-                        </Button>
-
-                    )}
-                </Stack>
-                <DataTable
-                    columns={detailsColumns}
-                    rows={detailsRows}
-                    rowKey={(row) => row.id}
-                    showHeader={false}
-                    enableColumnControls={false}
-                    renderRow={(row) => [
-                        <Typography variant="body2">{row.label}</Typography>,
-                        typeof row.value === 'string' || typeof row.value === 'number' ? (
-                            <Typography variant="body2">{row.value}</Typography>
+                            </>
                         ) : (
-                            row.value
-                        )
-                    ]}
-                />
-
+                            <Button
+                                variant="outlined"
+                                startIcon={<EditOutlined />}
+                                onClick={() => setIsEditMode(true)}
+                                disabled={!canEnterEditMode}
+                            >
+                                Изменить
+                            </Button>
+                        )}
+                    </Stack>
+                </Stack>
             </Box>
+
+            {status === 'open' && (
+                <Box sx={{ mt: 2.5 }}>
+                    <ToggleSection
+                        title="Дополнительная рассылка на электронную почту"
+                        checked={additionalEmailsEnabled}
+                        disabled={isAdditionalEmailsFieldUnavailable}
+                        onChange={(_event, checked) => {
+                            setAdditionalEmailsEnabled(checked);
+                            if (!checked) {
+                                setAdditionalEmails([]);
+                            }
+                        }}
+                        description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
+                    >
+                        <Stack spacing={1.5}>
+                            <AdditionalEmailsField
+                                ref={additionalEmailsFieldRef}
+                                emails={additionalEmails}
+                                onChange={setAdditionalEmails}
+                                hideHeader
+                                addButtonVariant="icon"
+                                disabled={isAdditionalEmailsFieldUnavailable}
+                                helperText="Можно добавить несколько адресов через запятую."
+                                containerSx={{
+                                    mt: 0,
+                                    opacity: isAdditionalEmailsFieldUnavailable ? 0.5 : 1,
+                                    transition: 'opacity 0.2s ease'
+                                }}
+                            />
+                            <Button
+                                variant="outlined"
+                                sx={{ width: 'fit-content' }}
+                                onClick={() => void handleSendAdditionalEmails()}
+                                disabled={isAdditionalEmailsFieldUnavailable}
+                            >
+                                {isSendingEmails ? 'Отправка...' : 'Отправить'}
+                            </Button>
+                        </Stack>
+                    </ToggleSection>
+                </Box>
+            )}
+
+            {hasDeletedAlert && canMarkDeletedAlertViewed && (
+                <Button
+                    variant="contained"
+                    sx={(theme) => ({
+                        mt: 2,
+                        paddingX: 3,
+                        width: 'fit-content',
+                        backgroundColor: theme.palette.error.main,
+                        color: theme.palette.error.contrastText,
+                        boxShadow: 'none',
+                        '&:hover': { backgroundColor: theme.palette.error.dark, boxShadow: 'none' },
+                        '&:disabled': {
+                            backgroundColor: theme.palette.error.light,
+                            color: theme.palette.error.contrastText
+                        }
+                    })}
+                    onClick={() => void handleDeletedAlertViewed()}
+                    disabled={isClearingDeletedAlert}
+                >
+                    {isClearingDeletedAlert ? 'Отмечаем...' : 'Уведомлен об отмене сделки'}
+                </Button>
+            )}
+
             <Box sx={{ marginTop: 4 }}>
                 <OffersTable
                     offers={offers}
