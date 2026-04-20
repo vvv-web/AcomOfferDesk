@@ -1,4 +1,3 @@
-﻿import { alpha } from '@mui/material/styles';
 import { Box, Link, Stack, Typography } from '@mui/material';
 import bitrixLogo from '@shared/assets/bitrix24-logo.png';
 import maxLogo from '@shared/assets/max-logo-2025.png';
@@ -33,30 +32,31 @@ const iconImageSx = {
   borderRadius: 2
 };
 
+const CREATED_BY_LABEL = 'Created by «Цифровизация проектных задач»';
+const SUPPORT_LABEL = 'По вопросам системы писать сюда';
+const BITRIX_ARIA_LABEL = 'Перейти в Битрикс';
+const MAX_ARIA_LABEL = 'Открыть MAX';
+
 export const AppFooter = () => (
   <Box
     component="footer"
-    sx={(theme) => ({
+    sx={{
       width: '100%',
-      px: { xs: 1.25, md: 2.5 },
-      pt: { xs: 0.8, md: 1.1 },
-      pb: { xs: 1.1, md: 1.5 },
-      borderTop: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-      background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0)} 0%, ${alpha(theme.palette.background.paper, 0.9)} 22%, ${theme.palette.background.paper} 100%)`
-    })}
+      px: { xs: 0.5, md: 1.2 },
+      pt: { xs: 0.4, md: 0.6 },
+      pb: { xs: 0.9, md: 1.1 },
+    }}
   >
     <Box
-      sx={(theme) => ({
+      sx={{
         maxWidth: 1200,
         mx: 'auto',
         px: { xs: 1.1, md: 1.75 },
         py: { xs: 0.8, md: 0.95 },
         borderRadius: 4,
-        border: `1px solid ${alpha(theme.palette.divider, 0.95)}`,
-        background: `linear-gradient(135deg, ${alpha('#ffffff', 0.95)} 0%, ${alpha(theme.palette.primary.light, 0.22)} 100%)`,
-        boxShadow: '0 10px 24px rgba(15, 35, 75, 0.1)',
-        backdropFilter: 'blur(6px)'
-      })}
+        backgroundColor: 'rgba(255, 255, 255, 0.82)',
+        boxShadow: '0 8px 24px rgba(15, 35, 75, 0.08)'
+      }}
     >
       <Stack
         direction={{ xs: 'column', md: 'row' }}
@@ -67,9 +67,9 @@ export const AppFooter = () => (
         <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', md: 'flex-start' } }}>
           <Stack direction="row" alignItems="center" spacing={1.1}>
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              Created by «Цифровизация проектных задач»
+              {CREATED_BY_LABEL}
             </Typography>
-            <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label="Перейти в Битрикс" sx={iconLinkSx}>
+            <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={iconLinkSx}>
               <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={iconImageSx} />
             </Link>
           </Stack>
@@ -92,9 +92,9 @@ export const AppFooter = () => (
         <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', md: 'flex-end' } }}>
           <Stack direction="row" alignItems="center" spacing={1.1}>
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              По вопросам системы писать сюда
+              {SUPPORT_LABEL}
             </Typography>
-            <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label="Открыть MAX" sx={iconLinkSx}>
+            <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={iconLinkSx}>
               <Box component="img" src={maxLogo} alt="MAX" sx={iconImageSx} />
             </Link>
           </Stack>

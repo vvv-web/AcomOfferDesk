@@ -108,18 +108,8 @@ export const buildHeaderConfig = ({
 
   if (canUseProjectManagerTabs) {
     return {
-      mode: 'topbar',
-      title: isProjectManager
-        ? isResponsibilityDashboard
-          ? 'Дашборд Руководителя проекта'
-          : isResponsibilitySavings
-            ? 'Экономия по закрытым заявкам'
-            : undefined
-        : isResponsibilityDashboard
-          ? 'Дашборд Ведущего экономиста'
-          : isResponsibilitySavings
-            ? 'Экономия по закрытым заявкам'
-            : undefined,
+      mode: 'sidebar',
+      breadcrumbs,
       tabs: [
         { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
         { key: 'savings', value: 'savings', label: 'Экономия' },
@@ -148,24 +138,7 @@ export const buildHeaderConfig = ({
         }
         onNavigateToRequests();
       },
-      actions: [
-        ...(isResponsibilityRequestsPage && canCreateRequest
-          ? [{
-              key: 'create-request',
-              label: 'Создать заявку',
-              variant: 'outlined' as const,
-              onClick: onNavigateToRequestCreate
-            }]
-          : []),
-        ...(isResponsibilityEmployeesPage && canRegisterUser
-          ? [{
-              key: 'create-economist',
-              label: 'Добавить экономиста',
-              variant: 'outlined' as const,
-              onClick: onNavigateToAdminCreate
-            }]
-          : [])
-      ],
+      actions: [],
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
@@ -175,7 +148,8 @@ export const buildHeaderConfig = ({
 
   if (isRequestDetailsPage) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
       tabs: [],
       actions: [],
       backAction: {
@@ -191,7 +165,8 @@ export const buildHeaderConfig = ({
 
   if (canUseContractorTabs) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
       tabs: [
         { key: 'my', value: 'my', label: 'Мои заявки' },
         { key: 'open', value: 'open', label: 'Актуальные заявки' }
@@ -208,7 +183,8 @@ export const buildHeaderConfig = ({
 
   if (canUseLeadTabs) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
       tabs: [
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'economists', value: 'economists', label: 'Экономисты' }
@@ -221,14 +197,7 @@ export const buildHeaderConfig = ({
         }
         onNavigateToRequests();
       },
-      actions: (isLeadRequestsTab ? canCreateRequest : canRegisterUser)
-        ? [{
-            key: 'lead-context-action',
-            label: isLeadRequestsTab ? 'Создать заявку' : 'Добавить экономиста',
-            variant: 'outlined',
-            onClick: isLeadRequestsTab ? onNavigateToRequestCreate : onNavigateToAdminCreate
-          }]
-        : [],
+      actions: [],
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
@@ -238,7 +207,8 @@ export const buildHeaderConfig = ({
 
   if (isAdminUsersPage) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
       tabs: [
         { key: 'contractors', value: 'contractors', label: 'Контрагенты' },
         { key: 'economists', value: 'economists', label: 'Экономисты' },
@@ -262,7 +232,8 @@ export const buildHeaderConfig = ({
   }
 
   return {
-    mode: 'topbar',
+    mode: 'sidebar',
+    breadcrumbs,
     tabs: [],
     actions: isRequestsListPage && canCreateRequest
       ? [{

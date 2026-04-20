@@ -1,15 +1,26 @@
+import AddRounded from '@mui/icons-material/AddRounded';
+import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
+import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import GroupRounded from '@mui/icons-material/GroupRounded';
 import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
 import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
 import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import ModeEditOutline from '@mui/icons-material/ModeEditOutline';
 import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
-import SentimentSatisfiedAltRounded from '@mui/icons-material/SentimentSatisfiedAltRounded';
-import { IconButton, Stack, Typography } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import SpaceDashboardRounded from '@mui/icons-material/SpaceDashboardRounded';
+import FeedbackOutlined from '@mui/icons-material/FeedbackOutlined';
+import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
+import { ActionButton } from '@shared/components/ActionButton';
+import { useAuth } from '@app/providers/AuthProvider';
+import { FeedbackButton } from '@shared/components/FeedbackButton';
+import { NormativeFileButton } from '@shared/components/NormativeFileButton';
+import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
+import { ROLE } from '@shared/constants/roles';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
 import type { HeaderConfig } from '../model/types';
 
@@ -28,7 +39,8 @@ export const SuperadminSidebarHeader = ({
   collapsed,
   onToggleCollapse,
 }: SuperadminSidebarHeaderProps) => {
-  const navigate = useNavigate();
+  const theme = useTheme();
+  const { session } = useAuth();
   const [isCompactHeight, setIsCompactHeight] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerHeight <= 760 : false
   );
@@ -62,17 +74,25 @@ export const SuperadminSidebarHeader = ({
     () => ({
       users: <PersonOutlineRounded fontSize="small" />,
       requests: <InsertDriveFileOutlined fontSize="small" />,
-      feedback: <SentimentSatisfiedAltRounded fontSize="small" />,
+      feedback: <FeedbackOutlined fontSize="small" />,
       offers: <InsertDriveFileOutlined fontSize="small" />,
-      roles: <PersonOutlineRounded fontSize="small" />,
+      roles: <GroupRounded fontSize="small" />,
       contact: <ModeEditOutline fontSize="small" />,
       logout: <LogoutRounded fontSize="small" />,
+      dashboard: <SpaceDashboardRounded fontSize="small" />,
+      savings: <AttachMoneyRounded fontSize="small" />,
+      employees: <GroupRounded fontSize="small" />,
+      economists: <GroupRounded fontSize="small" />,
+      contractors: <GroupRounded fontSize="small" />,
+      admins: <PersonOutlineRounded fontSize="small" />,
+      my: <InsertDriveFileOutlined fontSize="small" />,
+      open: <InsertDriveFileOutlined fontSize="small" />,
     }),
     []
   );
 
   const topItems = (config.sidebarItems ?? []).filter((item) => !item.isBottomItem && item.key !== 'logout');
-  const bottomItems = (config.sidebarItems ?? []).filter((item) => item.isBottomItem || item.key === 'logout');
+  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
 
   return (
     <Stack
@@ -80,9 +100,10 @@ export const SuperadminSidebarHeader = ({
       justifyContent="space-between"
       sx={{
         width: '100%',
-        position: 'relative',
-        minHeight: { xs: 'auto', lg: '100vh' },
-        height: { xs: 'auto', lg: '100vh' },
+        position: 'sticky',
+        top: 0,
+        minHeight: '100vh',
+        height: '100vh',
         bgcolor: 'background.paper',
         borderRight: '1px solid',
         borderColor: 'divider',
@@ -100,6 +121,12 @@ export const SuperadminSidebarHeader = ({
         </Stack>
 
         <Stack spacing={1.25} sx={{ overflowY: { lg: 'auto' }, pr: { lg: 0.5 } }}>
+          {config.title && !collapsed ? (
+            <Typography variant="body2" color="text.secondary" sx={{ px: 0.4, pb: 0.25, fontWeight: 600 }}>
+              {config.title}
+            </Typography>
+          ) : null}
+
           {topItems.map((item) => {
             const icon = item.icon ?? iconByKey[item.key as keyof typeof iconByKey];
             if (!item.to) {
@@ -128,6 +155,38 @@ export const SuperadminSidebarHeader = ({
               </NavLink>
             );
           })}
+
+          {config.tabs.map((tab) => (
+            <SidebarMenuButton
+              key={tab.key}
+              label={tab.label}
+              icon={iconByKey[tab.key as keyof typeof iconByKey] ?? <InsertDriveFileOutlined fontSize="small" />}
+              collapsed={collapsed}
+              active={config.activeTab === tab.value}
+              onClick={() => config.onTabChange?.(tab.value)}
+            />
+          ))}
+
+          {config.backAction ? (
+            <SidebarMenuButton
+              label={config.backAction.label}
+              icon={<ArrowBackRounded fontSize="small" />}
+              collapsed={collapsed}
+              onClick={config.backAction.onClick}
+            />
+          ) : null}
+
+          {config.actions.map((action) => (
+            <SidebarMenuButton
+              key={action.key}
+              label={action.label}
+              icon={<AddRounded fontSize="small" />}
+              collapsed={collapsed}
+              onClick={action.onClick}
+            />
+          ))}
+
+          {isSuperadmin ? null : <NormativeFileButton iconOnly={collapsed} sidebar />}
         </Stack>
 
         <Stack
@@ -139,50 +198,53 @@ export const SuperadminSidebarHeader = ({
             borderColor: 'divider'
           }}
         >
-          <Stack
-            direction="row"
-            justifyContent={collapsed ? 'center' : 'flex-start'}
-            sx={{ px: collapsed ? 0 : 0.2 }}
-          >
-            <RoleGuideButton />
-          </Stack>
-          {bottomItems.map((item) => {
-            const icon = item.icon ?? iconByKey[item.key as keyof typeof iconByKey];
-            if (item.key === 'logout') {
-              return (
+          {config.showRoleGuide ? <RoleGuideButton iconOnly={collapsed} sidebar /> : null}
+          {config.showFeedback ? <FeedbackButton iconOnly={collapsed} sidebar /> : null}
+
+          {config.showProfile ? (
+            collapsed ? (
+              <>
+                <ProfileButton iconOnly sidebar />
                 <SidebarMenuButton
-                  key={item.key}
-                  label={item.label}
-                  icon={icon}
-                  collapsed={collapsed}
+                  label="Выйти"
+                  icon={<LogoutRounded fontSize="small" />}
+                  collapsed
                   onClick={onLogout}
                 />
-              );
-            }
-
-            if (item.to) {
-              return (
-                <SidebarMenuButton
-                  key={item.key}
-                  label={item.label}
-                  icon={icon}
-                  collapsed={collapsed}
-                  onClick={() => item.to && navigate(item.to)}
-                  disabled={item.disabled}
-                />
-              );
-            }
-
-            return (
-              <SidebarMenuButton
-                key={item.key}
-                label={item.label}
-                icon={icon}
-                collapsed={collapsed}
-                disabled={item.disabled}
-              />
-            );
-          })}
+              </>
+            ) : (
+              <Stack direction="row" spacing={1}>
+                <Stack sx={{ flex: 1, minWidth: 0 }}>
+                  <ProfileButton sidebar />
+                </Stack>
+                <Tooltip title="Выйти" placement="right" enterDelay={150}>
+                  <Box component="span" sx={{ display: 'inline-flex' }}>
+                    <ActionButton
+                      kind="custom"
+                      showNavigationIcons={false}
+                      onClick={onLogout}
+                      aria-label="Выйти"
+                      sx={{
+                        minWidth: 56,
+                        width: 56,
+                        minHeight: 42,
+                        borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                      }}
+                    >
+                      <LogoutRounded fontSize="small" />
+                    </ActionButton>
+                  </Box>
+                </Tooltip>
+              </Stack>
+            )
+          ) : config.showLogout ? (
+            <SidebarMenuButton
+              label="Выйти"
+              icon={<LogoutRounded fontSize="small" />}
+              collapsed={collapsed}
+              onClick={onLogout}
+            />
+          ) : null}
         </Stack>
 
         {onToggleCollapse ? (
@@ -228,3 +290,5 @@ export const SuperadminSidebarHeader = ({
     </Stack>
   );
 };
+
+

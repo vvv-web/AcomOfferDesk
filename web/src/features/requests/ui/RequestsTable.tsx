@@ -501,7 +501,7 @@ export const RequestsTable = ({
             field: 'id_offer',
             minWidth: 90,
             width: '96px',
-            align: 'right',
+            align: 'left',
             renderValue: (value) => <Typography variant="body2">{String(value ?? '-')}</Typography>
         },
         {

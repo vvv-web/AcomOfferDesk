@@ -9,10 +9,13 @@ import {
     Dialog,
     DialogContent,
     Stack,
-    SvgIcon,
+    Tooltip,
     Typography
 } from '@mui/material';
+import HelpOutlineRounded from '@mui/icons-material/HelpOutlineRounded';
+import { useTheme } from '@mui/material/styles';
 import { useAuth } from '@app/providers/AuthProvider';
+import { ActionButton } from '@shared/components/ActionButton';
 import { ROLE } from '@shared/constants/roles';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
@@ -976,23 +979,13 @@ const roleGuides: Record<number, GuideRole> = {
         ]
     }
 };
-const HelpIcon = () => (
-    <SvgIcon viewBox="0 0 24 24" fontSize="small">
-        <defs>
-            <linearGradient id="guideHelpGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#7C4DFF" />
-                <stop offset="100%" stopColor="#00BCD4" />
-            </linearGradient>
-        </defs>
-        <circle cx="12" cy="12" r="10" fill="url(#guideHelpGradient)" />
-        <path
-            d="M12 17.25a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm.14-11.2c-2.18 0-3.66 1.27-3.72 3.2h1.9c.08-1.02.83-1.6 1.82-1.6 1.03 0 1.73.61 1.73 1.49 0 .76-.39 1.17-1.17 1.67-.96.61-1.84 1.34-1.84 2.93v.32h1.87v-.26c0-1.04.53-1.47 1.39-2.01.86-.55 1.67-1.25 1.67-2.76 0-1.84-1.5-2.98-3.65-2.98Z"
-            fill="#fff"
-        />
-    </SvgIcon>
-);
+type RoleGuideButtonProps = {
+    iconOnly?: boolean;
+    sidebar?: boolean;
+};
 
-export const RoleGuideButton = () => {
+export const RoleGuideButton = ({ iconOnly = false, sidebar = false }: RoleGuideButtonProps) => {
+    const theme = useTheme();
     const { session } = useAuth();
     const [open, setOpen] = useState(false);
     const roleGuide = useMemo(() => roleGuides[session?.roleId ?? 0], [session?.roleId]);
@@ -1008,28 +1001,91 @@ export const RoleGuideButton = () => {
 
     return (
         <>
+            {sidebar ? (
+                <Tooltip title="Памятка по роли" placement="right" enterDelay={150} disableHoverListener={!iconOnly}>
+                    <Box component="span" sx={{ display: 'block', width: '100%' }}>
+                        <ActionButton
+                            kind="custom"
+                            showNavigationIcons={false}
+                            onClick={handleOpen}
+                            aria-label="Открыть памятку по роли"
+                            sx={{
+                                width: '100%',
+                                minWidth: 0,
+                                minHeight: 42,
+                                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                                justifyContent: iconOnly ? 'center' : 'flex-start',
+                                px: iconOnly ? 0 : 1.75,
+                                gap: iconOnly ? 0 : 1.25,
+                                transition: 'padding 0.32s ease, gap 0.32s ease'
+                            }}
+                        >
+                            <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                                <HelpOutlineRounded fontSize="small" />
+                            </Box>
+                            <Typography
+                                sx={{
+                                    maxWidth: iconOnly ? 0 : 160,
+                                    opacity: iconOnly ? 0 : 1,
+                                    transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                                    overflow: 'hidden',
+                                    textOverflow: 'clip',
+                                    whiteSpace: 'nowrap',
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    lineHeight: 1.2,
+                                    transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                                }}
+                            >
+                                {'Памятка'}
+                            </Typography>
+                        </ActionButton>
+                    </Box>
+                </Tooltip>
+            ) : iconOnly ? (
+                <Tooltip title="Памятка по роли" placement="right" enterDelay={150}>
+                    <Box component="span" sx={{ display: 'block', width: '100%' }}>
+                        <ActionButton
+                            kind="custom"
+                            showNavigationIcons={false}
+                            onClick={handleOpen}
+                            aria-label="Открыть памятку по роли"
+                            sx={{
+                                width: '100%',
+                                minWidth: 0,
+                                minHeight: 42,
+                                height: 42,
+                                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                                justifyContent: 'center',
+                                px: 0,
+                                gap: 0
+                            }}
+                        >
+                            <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                                <HelpOutlineRounded fontSize="small" />
+                            </Box>
+                        </ActionButton>
+                    </Box>
+                </Tooltip>
+            ) : (
             <Button
                 variant="outlined"
                 onClick={handleOpen}
+                startIcon={<HelpOutlineRounded fontSize="small" />}
                 sx={{
-                    minWidth: 42,
-                    width: 42,
+                    minWidth: 124,
                     height: 42,
-                    borderRadius: '50%',
-                    p: 0,
-                    borderColor: 'rgba(124, 77, 255, 0.55)',
-                    background: 'linear-gradient(135deg, rgba(124, 77, 255, 0.12), rgba(0, 188, 212, 0.12))',
-                    
+                    borderRadius: `${theme.acomShape.buttonRadius}px`,
+                    textTransform: 'none',
                     '&:hover': {
-                        borderColor: 'rgba(124, 77, 255, 0.8)',
-                        background: 'linear-gradient(135deg, rgba(124, 77, 255, 0.2), rgba(0, 188, 212, 0.2))',
                         boxShadow: 'none'
                     }
                 }}
                 aria-label="Открыть памятку по роли"
             >
-                <HelpIcon />
+                Памятка
             </Button>
+            )}
 
             <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="md">
                 <DialogContent sx={{ p: { xs: 2, md: 3 }, backgroundColor: '#f4f6fb' }}>
