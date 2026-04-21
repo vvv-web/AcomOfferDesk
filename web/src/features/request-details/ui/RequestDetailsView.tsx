@@ -1,22 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Box,
     Button,
-    Chip,
-    IconButton,
-    MenuItem,
     Select,
     Stack,
     TextField,
     Typography
 } from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import EditOutlined from '@mui/icons-material/EditOutlined';
+import { useTheme } from '@mui/material/styles';
 import { OffersTable } from './OffersTable';
 import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
-import { formatDate } from '@shared/lib/formatters';
 import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
 import type { RequestDetails, RequestDetailsFile, RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
 import { getRequestEconomists } from '@shared/api/requests/getRequestEconomists';
@@ -26,10 +20,8 @@ import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
 import { downloadFile } from '@shared/api/fileDownload';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
-import { DatePickerField } from '@shared/components/DatePickerField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { ToggleSection } from '@shared/components/ToggleSection';
-import { getFileKey } from '@shared/lib/files';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { useRequestDetails } from '../model/useRequestDetails';
 import {
@@ -43,6 +35,7 @@ import {
     toDeadlineIso,
 } from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
+import { RequestDetailsMainCard } from './RequestDetailsMainCard';
 
 const offerStatusOptions: OfferStatusOption[] = [
     { value: 'accepted', label: 'Принято' },
@@ -55,52 +48,6 @@ const requestStatusToneByValue: Record<RequestStatus, 'success' | 'warning' | 'n
     closed: 'neutral',
     cancelled: 'neutral'
 };
-
-const detailFieldSx = {
-    width: { xs: '100%', sm: 142 },
-    '& .MuiOutlinedInput-root': {
-        borderRadius: 999,
-        minHeight: 34
-    },
-    '& .MuiOutlinedInput-input': {
-        px: 1.1,
-        py: 0.6,
-        fontSize: 14
-    }
-} as const;
-
-type DetailRowProps = {
-    label: string;
-    children: ReactNode;
-    divider?: boolean;
-};
-
-const DetailRow = ({ label, children, divider = true }: DetailRowProps) => (
-    <Box
-        sx={(theme) => ({
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr auto' },
-            alignItems: 'center',
-            gap: 1,
-            px: 1.25,
-            py: 0.8,
-            borderBottom: divider ? `1px solid ${theme.palette.divider}` : 'none',
-        })}
-    >
-        <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
-            {label}
-        </Typography>
-        <Box sx={{ justifySelf: { xs: 'stretch', sm: 'end' }, display: 'flex' }}>{children}</Box>
-    </Box>
-);
-
-const detailValueTextSx = {
-    justifySelf: { xs: 'stretch', sm: 'end' },
-    textAlign: { xs: 'left', sm: 'right' },
-    fontWeight: 500,
-    fontSize: 14,
-    lineHeight: 1.3
-} as const;
 
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
@@ -640,6 +587,20 @@ export const RequestDetailsView = () => {
     );
     const descriptionText = requestDetails?.description?.trim() ?? '';
     const canExpandDescription = isDescriptionOverflowing;
+    const handleStatusSelection = (nextStatus: RequestStatus) => {
+        if (nextStatus !== status) {
+            const isConfirmed = window.confirm(
+                `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
+            );
+            if (!isConfirmed) {
+                return;
+            }
+        }
+        setStatus(nextStatus);
+        if (nextStatus === 'review') {
+            setDeadline(todayDate);
+        }
+    };
 
     useEffect(() => {
         const element = descriptionTextRef.current;
@@ -710,335 +671,49 @@ export const RequestDetailsView = () => {
                 </Alert>
             )}
 
-            <Box
-                sx={(theme) => ({
-                    borderRadius: `${theme.acomShape.panelRadius}px`,
-                    border: `1px solid ${theme.palette.divider}`,
-                    backgroundColor: theme.palette.background.paper,
-                    px: { xs: 2, md: 3 },
-                    py: { xs: 2, md: 2.5 },
-                    display: 'grid',
-                    gap: 2.5,
-                })}
-            >
-                <Stack
-                    direction={{ xs: 'column', md: 'row' }}
-                    alignItems={{ xs: 'flex-start', md: 'center' }}
-                    justifyContent="space-between"
-                    spacing={1.5}
-                >
-                    <Typography variant="h5" fontWeight={700}>
-                        Заявка №{requestDetails.id}
-                    </Typography>
-                    <Select
-                        size="small"
-                        value={status}
-                        onChange={(event) => {
-                            const nextStatus = event.target.value as RequestStatus;
-                            if (nextStatus !== status) {
-                                const isConfirmed = window.confirm(
-                                    `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
-                                );
-                                if (!isConfirmed) {
-                                    return;
-                                }
-                            }
-                            setStatus(nextStatus);
-                            if (nextStatus === 'review') {
-                                setDeadline(todayDate);
-                            }
-                        }}
-                        disabled={!canEditRequest || !isEditMode}
-                        sx={{
-                            minWidth: { xs: '100%', sm: 170, md: 190 },
-                            borderRadius: 999,
-                            color: statusColor,
-                            fontWeight: 600,
-                            backgroundColor: alpha(statusColor, 0.1),
-                            '& .MuiOutlinedInput-notchedOutline': { borderColor: statusColor },
-                            '& .MuiSelect-icon': { color: statusColor },
-                            '&.Mui-disabled': {
-                                opacity: 1,
-                                color: statusColor,
-                                WebkitTextFillColor: statusColor,
-                                backgroundColor: alpha(statusColor, 0.1)
-                            },
-                            '&.Mui-disabled .MuiOutlinedInput-notchedOutline': {
-                                borderColor: statusColor
-                            },
-                            '&.Mui-disabled .MuiSelect-icon': {
-                                color: statusColor,
-                                opacity: 1
-                            }
-                        }}
-                    >
-                        {statusOptions.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                                {option.label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </Stack>
-
-                <Box
-                    sx={{
-                        display: 'grid',
-                        gap: 2,
-                        gridTemplateColumns: { xs: '1fr', md: '1.6fr 1fr' },
-                        alignItems: 'stretch',
-                    }}
-                >
-                    <Box
-                        onClick={() => {
-                            if (canExpandDescription) {
-                                setIsDescriptionExpanded((prev) => !prev);
-                            }
-                        }}
-                        sx={(themeValue) => ({
-                            border: `1px solid ${themeValue.palette.divider}`,
-                            borderRadius: `${themeValue.acomShape.controlRadius}px`,
-                            px: 1.5,
-                            py: 1,
-                            minHeight: 74,
-                            height: '100%',
-                            cursor: canExpandDescription ? 'pointer' : 'default',
-                            position: 'relative',
-                            display: 'grid',
-                            alignItems: 'center',
-                        })}
-                    >
-                        <Typography
-                            ref={descriptionTextRef}
-                            component="p"
-                            sx={{
-                                pr: canExpandDescription ? 12 : 0,
-                                whiteSpace: 'pre-wrap',
-                                ...(isDescriptionExpanded
-                                    ? {}
-                                    : {
-                                        display: '-webkit-box',
-                                        WebkitBoxOrient: 'vertical',
-                                        WebkitLineClamp: 2,
-                                        overflow: 'hidden',
-                                    })
-                            }}
-                        >
-                            {descriptionText || 'Описание заявки отсутствует'}
-                        </Typography>
-                        {canExpandDescription ? (
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    position: 'absolute',
-                                    right: 12,
-                                    bottom: 8,
-                                    color: 'primary.main',
-                                    fontWeight: 600
-                                }}
-                            >
-                                {isDescriptionExpanded ? 'Свернуть' : 'Развернуть'}
-                            </Typography>
-                        ) : null}
-                    </Box>
-                    <Stack spacing={0.6} sx={{ minHeight: 74, height: '100%', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" color="text.secondary">
-                            Ответственный по заявке
-                        </Typography>
-                        {ownerField}
-                    </Stack>
-                </Box>
-
-                <Stack spacing={0.75}>
-                    <Typography variant="body2" color="text.secondary">
-                        Файлы заявки
-                    </Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                        {existingFiles.length > 0 ? (
-                            existingFiles.map((file) => (
-                                <Chip
-                                    key={file.id}
-                                    label={file.name}
-                                    variant="outlined"
-                                    onClick={() => void handleDownload(file.download_url, file.name)}
-                                    onDelete={isEditMode && canDeleteRequestFiles ? () => handleRemoveExistingFile(file.id) : undefined}
-                                    sx={{ borderRadius: 999 }}
-                                />
-                            ))
-                        ) : (
-                            <Typography variant="body2">Файлы не прикреплены</Typography>
-                        )}
-                        {newFile && (
-                            <Chip
-                                key={getFileKey(newFile)}
-                                label={newFile.name}
-                                variant="outlined"
-                                color="primary"
-                                onDelete={() => setNewFile(null)}
-                                sx={{ borderRadius: 999 }}
-                            />
-                        )}
-                        {isEditMode && canUploadRequestFiles && (
-                            <IconButton
-                                component="label"
-                                size="small"
-                                aria-label="Добавить файл"
-                                sx={{
-                                    alignSelf: 'center',
-                                    color: 'primary.main',
-                                    width: 32,
-                                    height: 32,
-                                    p: 0,
-                                    '&:hover': {
-                                        backgroundColor: 'transparent'
-                                    }
-                                }}
-                            >
-                                <AddCircleOutlineIcon sx={{ fontSize: 32 }} />
-                                <input
-                                    hidden
-                                    type="file"
-                                    onChange={(event) => {
-                                        setNewFile(event.target.files?.[0] ?? null);
-                                        event.target.value = '';
-                                    }}
-                                />
-                            </IconButton>
-                        )}
-                    </Stack>
-                </Stack>
-
-                <Box
-                    sx={{
-                        display: 'grid',
-                        gap: 1.5,
-                        gridTemplateColumns: { xs: '1fr', md: canViewRequestAmounts ? '1fr 1fr' : '1fr' },
-                    }}
-                >
-                    <Box
-                        sx={(themeValue) => ({
-                            border: `1px solid ${themeValue.palette.divider}`,
-                            borderRadius: `${themeValue.acomShape.controlRadius}px`,
-                            overflow: 'hidden',
-                            backgroundColor: themeValue.palette.background.paper,
-                            p: 0.8,
-                            boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)',
-                        })}
-                    >
-                        <DetailRow label="Создана">
-                            <Typography sx={detailValueTextSx}>{formatDate(requestDetails.created_at)}</Typography>
-                        </DetailRow>
-                        <DetailRow label="Закрыта">
-                            <Typography sx={detailValueTextSx}>{formatDate(requestDetails.closed_at)}</Typography>
-                        </DetailRow>
-                        <DetailRow label="Дедлайн сбора КП" divider={!canViewRequestAmounts}>
-                            {isEditMode && canEditRequest ? (
-                                <DatePickerField
-                                    value={deadline}
-                                    onChange={setDeadline}
-                                    showDropdownIcon={false}
-                                    allowClear={false}
-                                    minWidth={detailFieldSx.width}
-                                    sx={{
-                                        '& .MuiInputBase-root': {
-                                            borderRadius: 999,
-                                            minHeight: 34
-                                        },
-                                        '& .MuiInputBase-input': {
-                                            px: 1.1,
-                                            py: 0.6,
-                                            fontSize: 14
-                                        }
-                                    }}
-                                />
-                            ) : (
-                                <Typography sx={detailValueTextSx}>{formatDate(requestDetails.deadline_at)}</Typography>
-                            )}
-                        </DetailRow>
-                        {!canViewRequestAmounts && (
-                            <DetailRow label="Номер КП" divider={false}>
-                                <Typography sx={detailValueTextSx}>{requestDetails.id_offer ?? '-'}</Typography>
-                            </DetailRow>
-                        )}
-                    </Box>
-
-                    {canViewRequestAmounts && (
-                        <Box
-                            sx={(themeValue) => ({
-                                border: `1px solid ${themeValue.palette.divider}`,
-                                borderRadius: `${themeValue.acomShape.controlRadius}px`,
-                                overflow: 'hidden',
-                                backgroundColor: themeValue.palette.background.paper,
-                                p: 0.8,
-                                boxShadow: '0 1px 3px rgba(17, 24, 39, 0.05)',
-                            })}
-                        >
-                            <DetailRow label="Сумма по ТЗ, руб.">
-                                {isEditMode && canEditRequest ? (
-                                    <TextField
-                                        size="small"
-                                        value={initialAmount}
-                                        onChange={(event) => setInitialAmount(event.target.value)}
-                                        inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                                        sx={detailFieldSx}
-                                    />
-                                ) : (
-                                    <Typography sx={detailValueTextSx}>{initialAmount || '-'}</Typography>
-                                )}
-                            </DetailRow>
-                            <DetailRow label="Итоговая сумма, руб.">
-                                {isEditMode && canEditRequest ? (
-                                    <TextField
-                                        size="small"
-                                        value={finalAmount}
-                                        onChange={(event) => setFinalAmount(event.target.value)}
-                                        inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                                        sx={detailFieldSx}
-                                    />
-                                ) : (
-                                    <Typography sx={detailValueTextSx}>{finalAmount || '-'}</Typography>
-                                )}
-                            </DetailRow>
-                            <DetailRow label="Номер КП" divider={false}>
-                                <Typography sx={detailValueTextSx}>{requestDetails.id_offer ?? '-'}</Typography>
-                            </DetailRow>
-                        </Box>
-                    )}
-                </Box>
-
-                <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    justifyContent="space-between"
-                    alignItems={{ xs: 'flex-start', sm: 'center' }}
-                    spacing={1.5}
-                >
-                    <Typography variant="body1">Обновлено {formatDate(requestDetails.updated_at, true)}</Typography>
-                    <Stack direction="row" spacing={1}>
-                        {isEditMode ? (
-                            <>
-                                <Button variant="outlined" onClick={handleCancelEditing} disabled={isSaving}>
-                                    Отмена
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => void handleSave()}
-                                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
-                                >
-                                    {isSaving ? 'Сохранение...' : 'Сохранить'}
-                                </Button>
-                            </>
-                        ) : (
-                            <Button
-                                variant="outlined"
-                                startIcon={<EditOutlined />}
-                                onClick={() => setIsEditMode(true)}
-                                disabled={!canEnterEditMode}
-                            >
-                                Изменить
-                            </Button>
-                        )}
-                    </Stack>
-                </Stack>
-            </Box>
+            <RequestDetailsMainCard
+                requestId={requestDetails.id}
+                status={status}
+                statusOptions={statusOptions}
+                statusColor={statusColor}
+                canEditRequest={canEditRequest}
+                isEditMode={isEditMode}
+                onStatusChange={handleStatusSelection}
+                descriptionText={descriptionText}
+                descriptionTextRef={descriptionTextRef}
+                canExpandDescription={canExpandDescription}
+                isDescriptionExpanded={isDescriptionExpanded}
+                onToggleDescription={() => setIsDescriptionExpanded((prev) => !prev)}
+                ownerField={ownerField}
+                existingFiles={existingFiles}
+                canDeleteRequestFiles={canDeleteRequestFiles}
+                onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
+                onRemoveExistingFile={handleRemoveExistingFile}
+                newFile={newFile}
+                onClearNewFile={() => setNewFile(null)}
+                canUploadRequestFiles={canUploadRequestFiles}
+                onNewFileSelected={setNewFile}
+                canViewRequestAmounts={canViewRequestAmounts}
+                deadline={deadline}
+                initialAmount={initialAmount}
+                finalAmount={finalAmount}
+                onDeadlineChange={setDeadline}
+                onInitialAmountChange={setInitialAmount}
+                onFinalAmountChange={setFinalAmount}
+                requestCreatedAt={requestDetails.created_at ?? null}
+                requestClosedAt={requestDetails.closed_at ?? null}
+                requestDeadlineAt={requestDetails.deadline_at ?? null}
+                requestOfferId={requestDetails.id_offer ?? '-'}
+                requestUpdatedAt={requestDetails.updated_at ?? null}
+                isSaving={isSaving}
+                canSaveRequestChanges={canSaveRequestChanges}
+                hasPendingChanges={hasPendingChanges}
+                hasValidationError={Boolean(saveValidationError)}
+                canEnterEditMode={canEnterEditMode}
+                onCancelEditing={handleCancelEditing}
+                onSave={() => void handleSave()}
+                onStartEdit={() => setIsEditMode(true)}
+            />
 
             {status === 'open' && (
                 <Box sx={{ mt: 2.5 }}>
@@ -1114,7 +789,7 @@ export const RequestDetailsView = () => {
                     errorMessage={offersError}
                     statusOptions={offerStatusOptions}
                     onStatusChange={(offerId, value) => void handleOfferStatusChange(offerId, value)}
-                    onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace`)}
+                    onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace?requestId=${requestDetails.id}`)}
                     onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
                     canChangeStatus={canChangeOfferStatus}
                     onAddClick={canCreateManualOffer ? () => setIsManualOfferDialogOpen(true) : undefined}
@@ -1126,7 +801,8 @@ export const RequestDetailsView = () => {
                 onClose={() => setIsManualOfferDialogOpen(false)}
                 onCreated={(workspacePath) => {
                     setIsManualOfferDialogOpen(false);
-                    navigate(workspacePath);
+                    const separator = workspacePath.includes('?') ? '&' : '?';
+                    navigate(`${workspacePath}${separator}requestId=${requestDetails.id}`);
                 }}
             />
         </Box>

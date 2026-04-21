@@ -98,10 +98,12 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               aria-label="Загрузить нормативный документ"
               sx={{
                 width: '100%',
-                minHeight: 42,
+                minHeight: iconOnly ? 42 : 52,
                 minWidth: 0,
                 borderRadius: `${theme.acomShape.buttonRadius}px !important`,
                 justifyContent: iconOnly ? 'center' : 'flex-start',
+                alignItems: iconOnly ? 'center' : 'flex-start',
+                py: iconOnly ? 0 : 0.75,
                 px: iconOnly ? 0 : 1.75,
                 gap: iconOnly ? 0 : 1.25,
                 transition: 'padding 0.32s ease, gap 0.32s ease'
@@ -110,22 +112,40 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
                 <UploadFileRounded fontSize="small" />
               </Box>
-              <Typography
-                sx={{
-                  maxWidth: iconOnly ? 0 : 180,
-                  opacity: iconOnly ? 0 : 1,
-                  transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
-                  overflow: 'hidden',
-                  textOverflow: 'clip',
-                  whiteSpace: 'nowrap',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  lineHeight: 1.2,
-                  transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
-                }}
-              >
-                {'Нормативный документ'}
-              </Typography>
+              <Stack spacing={0.15} sx={{ minWidth: 0, textAlign: 'left' }}>
+                <Typography
+                  sx={{
+                    maxWidth: iconOnly ? 0 : 180,
+                    opacity: iconOnly ? 0 : 1,
+                    transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                    overflow: 'hidden',
+                    textOverflow: 'clip',
+                    whiteSpace: 'nowrap',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    lineHeight: 1.15,
+                    transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                  }}
+                >
+                  Нормативный
+                </Typography>
+                <Typography
+                  sx={{
+                    maxWidth: iconOnly ? 0 : 180,
+                    opacity: iconOnly ? 0 : 1,
+                    transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                    overflow: 'hidden',
+                    textOverflow: 'clip',
+                    whiteSpace: 'nowrap',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    lineHeight: 1.15,
+                    transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                  }}
+                >
+                  документ
+                </Typography>
+              </Stack>
             </ActionButton>
           </Box>
         </Tooltip>

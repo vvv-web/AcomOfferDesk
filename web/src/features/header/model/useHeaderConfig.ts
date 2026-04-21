@@ -25,6 +25,7 @@ export const useHeaderConfig = () => {
   const requestMatch = location.pathname.match(/^\/requests\/(\d+)$/);
   const contractorRequestMatch = location.pathname.match(/^\/requests\/(\d+)\/contractor$/);
   const offerMatch = location.pathname.match(/^\/offers\/(\d+)\/workspace$/);
+  const offerRequestIdParam = searchParams.get('requestId');
   const isPmDashboard = location.pathname === '/pm-dashboard';
   const isPmSavings = location.pathname === '/pm-dashboard/savings';
   const isRequestCreatePage = location.pathname === '/requests/create';
@@ -71,15 +72,18 @@ export const useHeaderConfig = () => {
     }
 
     if (offerMatch) {
+      const requestCrumb = offerRequestIdParam
+        ? { key: `request-${offerRequestIdParam}`, label: `Заявка №${offerRequestIdParam}`, to: `/requests/${offerRequestIdParam}` }
+        : { key: 'request-details', label: 'Заявка', to: '/requests' };
       return [
         { key: 'requests', label: 'Заявки', to: '/requests' },
-        { key: 'request-details', label: 'Заявка', to: '/requests' },
+        requestCrumb,
         { key: `offer-${offerMatch[1]}`, label: `КП №${offerMatch[1]}` },
       ];
     }
 
     return [];
-  }, [contractorRequestMatch, isPmDashboard, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, requestMatch]);
+  }, [contractorRequestMatch, isPmDashboard, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
 
   return useMemo(
     () =>

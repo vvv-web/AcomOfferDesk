@@ -66,12 +66,13 @@ export const buildHeaderConfig = ({
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
   const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard';
   const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard/savings';
-  const isResponsibilityRequestsPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/requests');
+  const isResponsibilityRequestsPage =
+    (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
   const isAdminUsersPage = isAdmin && pathname.startsWith('/admin');
 
   const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
-  const isLeadRequestsTab = isLeadLike && pathname.startsWith('/requests');
+  const isLeadRequestsTab = isLeadLike && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isLeadEconomistsTab = isLeadLike && pathname.startsWith('/admin');
   const canUseLeadTabs = isLeadLike && !isProjectManager && !isLeadEconomist
     && (isLeadRequestsTab || isLeadEconomistsTab)
@@ -79,18 +80,6 @@ export const buildHeaderConfig = ({
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
     && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
     && canOpenUsersPage;
-
-  if (isOfferWorkspacePage) {
-    return {
-      mode: 'hidden',
-      tabs: [],
-      actions: [],
-      showFeedback: false,
-      showRoleGuide: false,
-      showProfile: false,
-      showLogout: false
-    };
-  }
 
   if (isSuperadmin) {
     return {

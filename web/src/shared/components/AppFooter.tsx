@@ -42,14 +42,16 @@ export const AppFooter = () => (
     component="footer"
     sx={{
       width: '100%',
+      pr: { lg: 'var(--offer-workspace-chat-offset, 0px)' },
       px: { xs: 0.5, md: 1.2 },
       pt: { xs: 0.4, md: 0.6 },
       pb: { xs: 0.9, md: 1.1 },
+      transition: 'padding-right 0.2s ease'
     }}
   >
     <Box
       sx={{
-        maxWidth: 1200,
+        maxWidth: '100%',
         mx: 'auto',
         px: { xs: 1.1, md: 1.75 },
         py: { xs: 0.8, md: 0.95 },
@@ -59,14 +61,14 @@ export const AppFooter = () => (
       }}
     >
       <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        alignItems="center"
+        direction={{ xs: 'column', xl: 'row' }}
+        alignItems={{ xs: 'stretch', xl: 'center' }}
         justifyContent="space-between"
         spacing={{ xs: 0.9, md: 2.2 }}
       >
-        <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', md: 'flex-start' } }}>
-          <Stack direction="row" alignItems="center" spacing={1.1}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+        <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', xl: 'flex-start' } }}>
+          <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="wrap" justifyContent={{ xs: 'center', xl: 'flex-start' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, textAlign: { xs: 'center', xl: 'left' } }}>
               {CREATED_BY_LABEL}
             </Typography>
             <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={iconLinkSx}>
@@ -82,16 +84,15 @@ export const AppFooter = () => (
             fontWeight: 600,
             letterSpacing: 0.3,
             textTransform: 'none',
-            textAlign: 'center',
-            whiteSpace: 'nowrap'
+            textAlign: 'center'
           }}
         >
           AcomOfferDesk
         </Typography>
 
-        <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', md: 'flex-end' } }}>
-          <Stack direction="row" alignItems="center" spacing={1.1}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+        <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', xl: 'flex-end' } }}>
+          <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="wrap" justifyContent={{ xs: 'center', xl: 'flex-end' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, textAlign: { xs: 'center', xl: 'right' } }}>
               {SUPPORT_LABEL}
             </Typography>
             <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={iconLinkSx}>
