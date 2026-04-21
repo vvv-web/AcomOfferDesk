@@ -1,7 +1,12 @@
 import { MouseEvent as ReactMouseEvent, useState, type ReactNode } from 'react';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import HighlightOffOutlinedIcon from '@mui/icons-material/HighlightOffOutlined';
 import MarkEmailUnreadRounded from '@mui/icons-material/MarkEmailUnreadRounded';
-import { Box, ButtonBase, Chip, Collapse, Divider, MenuItem, Paper, Select, Stack, SvgIcon, Tooltip, Typography } from '@mui/material';
+import RemoveOutlinedIcon from '@mui/icons-material/RemoveOutlined';
+import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
+import { Box, ButtonBase, Chip, Collapse, Divider, MenuItem, Paper, Select, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import type { RequestDetailsOffer } from '@shared/api/requests/getRequestDetails';
 import { StatusPill } from '@shared/components/StatusPill';
@@ -93,55 +98,35 @@ const getContactPersonInfo = (offer: RequestDetailsOffer) => {
 const getNotificationStyle = (status: string | null, palette: { divider: string; text: string }): NotificationStyle => {
   if (status === 'accepted') {
     return {
-      borderColor: '#2e7d32',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#2e7d32' }}>
-          <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-        </SvgIcon>
-      )
+      borderColor: '#1976d2',
+      icon: <CheckCircleOutlineIcon fontSize="small" sx={{ color: '#1976d2' }} />
     };
   }
 
   if (status === 'submitted') {
     return {
       borderColor: '#2e7d32',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#2e7d32' }}>
-          <path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
-        </SvgIcon>
-      )
+      icon: <AccessTimeOutlinedIcon sx={{ color: '#2e7d32', fontSize: 24 }} />
     };
   }
 
   if (status === 'deleted') {
     return {
       borderColor: '#c62828',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#c62828' }}>
-          <path d="M11 15h2v2h-2zm0-10h2v8h-2z" />
-        </SvgIcon>
-      )
+      icon: <ReportProblemOutlinedIcon fontSize="small" sx={{ color: '#c62828' }} />
     };
   }
 
   if (status === 'rejected') {
     return {
       borderColor: '#787878',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#787878' }}>
-          <path d="M19 13H5V11H19V13Z" />
-        </SvgIcon>
-      )
+      icon: <HighlightOffOutlinedIcon fontSize="small" sx={{ color: '#787878' }} />
     };
   }
 
   return {
     borderColor: palette.divider,
-    icon: (
-      <SvgIcon fontSize="small" sx={{ color: palette.text }}>
-        <path d="M19 13H5V11H19V13Z" />
-      </SvgIcon>
-    )
+    icon: <RemoveOutlinedIcon fontSize="small" sx={{ color: palette.text }} />
   };
 };
 
@@ -329,7 +314,6 @@ const OfferMobileCard = ({
                 width: 28,
                 height: 28,
                 borderRadius: 8,
-                border: `1px solid ${notificationStyle.borderColor}`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -465,7 +449,6 @@ export const OffersTable = ({
                 width: 28,
                 height: 28,
                 borderRadius: 8,
-                border: `1px solid ${notificationStyle.borderColor}`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

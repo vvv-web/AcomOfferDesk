@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import HighlightOffOutlinedIcon from '@mui/icons-material/HighlightOffOutlined';
+import RemoveOutlinedIcon from '@mui/icons-material/RemoveOutlined';
+import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import {
   Box,
   Button,
@@ -10,7 +15,6 @@ import {
   MenuItem,
   Select,
   Stack,
-  SvgIcon,
   TextField,
   Typography
 } from '@mui/material';
@@ -33,55 +37,35 @@ const offerDecisionOptions = [
 const getOfferStatusBadgeStyle = (status: string | null) => {
   if (status === 'accepted') {
     return {
-      borderColor: '#2e7d32',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#2e7d32' }}>
-          <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-        </SvgIcon>
-      )
+      borderColor: '#1976d2',
+      icon: <CheckCircleOutlineIcon fontSize="small" sx={{ color: '#1976d2' }} />
     };
   }
 
   if (status === 'submitted') {
     return {
       borderColor: '#2e7d32',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#2e7d32' }}>
-          <path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
-        </SvgIcon>
-      )
+      icon: <AccessTimeOutlinedIcon sx={{ color: '#2e7d32', fontSize: 24 }} />
     };
   }
 
   if (status === 'deleted') {
     return {
       borderColor: '#c62828',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#c62828' }}>
-          <path d="M11 15h2v2h-2zm0-10h2v8h-2z" />
-        </SvgIcon>
-      )
+      icon: <ReportProblemOutlinedIcon fontSize="small" sx={{ color: '#c62828' }} />
     };
   }
 
   if (status === 'rejected') {
     return {
       borderColor: '#787878',
-      icon: (
-        <SvgIcon fontSize="small" sx={{ color: '#787878' }}>
-          <path d="M19 13H5V11H19V13Z" />
-        </SvgIcon>
-      )
+      icon: <HighlightOffOutlinedIcon fontSize="small" sx={{ color: '#787878' }} />
     };
   }
 
   return {
     borderColor: '#d3dbe7',
-    icon: (
-      <SvgIcon fontSize="small" sx={{ color: '#1f2a44' }}>
-        <path d="M19 13H5V11H19V13Z" />
-      </SvgIcon>
-    )
+    icon: <RemoveOutlinedIcon fontSize="small" sx={{ color: '#1f2a44' }} />
   };
 };
 
@@ -394,7 +378,6 @@ export const OfferWorkspaceView = () => {
                       width: 28,
                       height: 28,
                       borderRadius: 8,
-                      border: `1px solid ${itemBadgeStyle.borderColor}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
