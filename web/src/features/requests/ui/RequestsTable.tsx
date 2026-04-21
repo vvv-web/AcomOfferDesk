@@ -25,6 +25,8 @@ type RequestsTableProps = {
     canEditOwner?: boolean;
     onOwnerChange?: (request: RequestWithOfferStats, ownerUserId: string) => void;
     isContractor?: boolean;
+    showContractorOffersColumn?: boolean;
+    showContractorNotificationColumn?: boolean;
 };
 
 const requestStatusToneByValue: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -157,6 +159,7 @@ const NotificationContent = ({
 type RequestMobileCardProps = {
     row: RequestTableRow;
     canEditOwner: boolean;
+    isContractor: boolean;
     ownerOptions: OwnerOption[];
     onOwnerChange?: (request: RequestWithOfferStats, ownerUserId: string) => void;
     isExpanded: boolean;
@@ -167,6 +170,7 @@ type RequestMobileCardProps = {
 const RequestMobileCard = ({
     row,
     canEditOwner,
+    isContractor,
     ownerOptions,
     onOwnerChange,
     isExpanded,
@@ -180,7 +184,7 @@ const RequestMobileCard = ({
         { key: 'deadline', label: 'Прием КП до', value: formatDate(row.deadline_at) },
         { key: 'created', label: 'Открыта', value: formatDate(row.created_at) },
         { key: 'closed', label: 'Закрыта', value: formatDate(row.closed_at) },
-        { key: 'offer', label: 'Номер КП', value: String(row.id_offer ?? '-') },
+        ...(!isContractor ? [{ key: 'offer', label: 'Номер КП', value: String(row.id_offer ?? '-') }] : []),
         { key: 'owner', label: 'Ответственный', value: ownerValue }
     ];
 
@@ -389,7 +393,9 @@ export const RequestsTable = ({
     ownerOptions = [],
     canEditOwner = false,
     onOwnerChange,
-    isContractor = false
+    isContractor = false,
+    showContractorOffersColumn = true,
+    showContractorNotificationColumn = true
 }: RequestsTableProps) => {
     const [expandedCardsById, setExpandedCardsById] = useState<Record<number, boolean>>({});
     const rows = requests.map((request) => ({
@@ -496,15 +502,6 @@ export const RequestsTable = ({
             renderValue: (value) => <Typography variant="body2">{formatDate(value as string | null)}</Typography>
         },
         {
-            id: 'offer',
-            header: 'Номер КП',
-            field: 'id_offer',
-            minWidth: 90,
-            width: '96px',
-            align: 'left',
-            renderValue: (value) => <Typography variant="body2">{String(value ?? '-')}</Typography>
-        },
-        {
             id: 'owner',
             header: 'Ответственный',
             minWidth: 240,
@@ -547,7 +544,19 @@ export const RequestsTable = ({
         }
     ];
 
-    if (isContractor) {
+    if (!isContractor) {
+        columns.push({
+            id: 'offer',
+            header: 'Номер КП',
+            field: 'id_offer',
+            minWidth: 90,
+            width: '96px',
+            align: 'left',
+            renderValue: (value) => <Typography variant="body2">{String(value ?? '-')}</Typography>
+        });
+    }
+
+    if (isContractor && showContractorOffersColumn) {
         columns.push({
             id: 'contractorOffers',
             header: 'Мои отклики',
@@ -578,46 +587,52 @@ export const RequestsTable = ({
         });
     }
 
-    columns.push({
-        id: 'notification',
-        header: 'Уведомление',
-        field: '__notificationLabel',
-        minWidth: 180,
-        width: '1.2fr',
-        filterKind: 'select',
-        filterOptions: [
-            { label: 'Есть уведомление', value: 'Есть уведомление' },
-            { label: 'Нет уведомления', value: 'Нет уведомления' }
-        ],
-        renderCell: (row) => {
-            if (isContractor) {
-                const contractorOffers = row.offers ?? [];
-                const unreadCount = contractorOffers.reduce((acc, offer) => acc + (offer.unread_messages_count ?? 0), 0);
-                const unreadLabel = getUnreadMessagesLabel(unreadCount);
-                return unreadLabel ? (
-                    <StatusPill
-                        label=""
-                        tone="info"
-                        icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
-                        iconOnly
+    if (!isContractor || showContractorNotificationColumn) {
+        columns.push({
+            id: 'notification',
+            header: 'Уведомление',
+            field: '__notificationLabel',
+            minWidth: 180,
+            width: '1.2fr',
+            filterKind: 'select',
+            filterOptions: [
+                { label: 'Есть уведомление', value: 'Есть уведомление' },
+                { label: 'Нет уведомления', value: 'Нет уведомления' }
+            ],
+            renderCell: (row) => {
+                if (isContractor) {
+                    const contractorOffers = row.offers ?? [];
+                    const unreadCount = contractorOffers.reduce((acc, offer) => acc + (offer.unread_messages_count ?? 0), 0);
+                    const unreadLabel = getUnreadMessagesLabel(unreadCount);
+                    return unreadLabel ? (
+                        <StatusPill
+                            label=""
+                            tone="info"
+                            icon={<MarkEmailUnreadRounded sx={{ fontSize: 15 }} />}
+                            iconOnly
+                        />
+                    ) : (
+                        <Typography variant="body2" color="text.secondary">-</Typography>
+                    );
+                }
+                return (
+                    <NotificationContent
+                        countSubmitted={row.count_submitted ?? 0}
+                        countDeleted={row.count_deleted_alert ?? 0}
+                        countChatAlerts={chatAlertsMap?.[row.id] ?? row.count_chat_alert ?? 0}
+                        unreadMessagesCount={row.unread_messages_count ?? 0}
                     />
-                ) : (
-                    <Typography variant="body2" color="text.secondary">-</Typography>
                 );
             }
-            return (
-                <NotificationContent
-                    countSubmitted={row.count_submitted ?? 0}
-                    countDeleted={row.count_deleted_alert ?? 0}
-                    countChatAlerts={chatAlertsMap?.[row.id] ?? row.count_chat_alert ?? 0}
-                    unreadMessagesCount={row.unread_messages_count ?? 0}
-                />
-            );
-        }
-    });
+        });
+    }
 
     return (
         <TableTemplate
+            key={[
+                showContractorOffersColumn ? 'offers-visible' : 'offers-hidden',
+                showContractorNotificationColumn ? 'notifications-visible' : 'notifications-hidden'
+            ].join(':')}
             columns={columns}
             rows={rows}
             getRowId={(row) => row.id}
@@ -632,6 +647,7 @@ export const RequestsTable = ({
                 <RequestMobileCard
                     row={row}
                     canEditOwner={!isContractor && canEditOwner}
+                    isContractor={isContractor}
                     ownerOptions={ownerOptions}
                     onOwnerChange={onOwnerChange}
                     isExpanded={Boolean(expandedCardsById[row.id])}

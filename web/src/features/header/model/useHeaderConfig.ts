@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasPermission } from '@shared/auth/permissions';
+import { ROLE } from '@shared/constants/roles';
 import { buildHeaderConfig } from './buildHeaderConfig';
 
 export const useHeaderConfig = () => {
@@ -22,6 +23,7 @@ export const useHeaderConfig = () => {
   const canLoadOfferedRequests = hasPermission(session, 'requests.offered.read');
   const canOpenUsersPage = hasPermission(session, 'users.read');
   const canRegisterUser = hasPermission(session, 'users.create');
+  const isContractor = session?.roleId === ROLE.CONTRACTOR;
   const requestMatch = location.pathname.match(/^\/requests\/(\d+)$/);
   const contractorRequestMatch = location.pathname.match(/^\/requests\/(\d+)\/contractor$/);
   const offerMatch = location.pathname.match(/^\/offers\/(\d+)\/workspace$/);
@@ -72,6 +74,12 @@ export const useHeaderConfig = () => {
     }
 
     if (offerMatch) {
+      if (isContractor) {
+        return [
+          { key: 'requests-my', label: 'Мои заявки', to: '/requests?tab=my' },
+          { key: `offer-${offerMatch[1]}`, label: `КП №${offerMatch[1]}` },
+        ];
+      }
       const requestCrumb = offerRequestIdParam
         ? { key: `request-${offerRequestIdParam}`, label: `Заявка №${offerRequestIdParam}`, to: `/requests/${offerRequestIdParam}` }
         : { key: 'request-details', label: 'Заявка', to: '/requests' };
@@ -83,7 +91,7 @@ export const useHeaderConfig = () => {
     }
 
     return [];
-  }, [contractorRequestMatch, isPmDashboard, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
+  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
 
   return useMemo(
     () =>
@@ -113,6 +121,10 @@ export const useHeaderConfig = () => {
         },
         onNavigateBackToRequests: () => navigate('/requests'),
         onSetContractorTab: (value) => {
+          if (location.pathname !== '/requests') {
+            navigate(`/requests?tab=${value}`);
+            return;
+          }
           setSearchParams((prev) => {
             const next = new URLSearchParams(prev);
             next.set('tab', value);

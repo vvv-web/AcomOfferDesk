@@ -49,6 +49,7 @@ export const AdminPageView = () => {
   const {
     isLeadLike,
     isAdmin,
+    canViewRoleIds,
     isDialogOpen,
     setIsDialogOpen,
     errorMessage,
@@ -123,6 +124,7 @@ export const AdminPageView = () => {
         emptyMessage="Список пользователей пока пуст."
         getRoleLabel={getRoleLabel}
         isContractorsTab={activeTab === 'contractors'}
+        canViewRoleIds={canViewRoleIds}
         canUpdateStatus={canUpdateStatus}
         canUpdateRole={canUpdateRole}
         allowedRoleOptions={[ROLE.ADMIN, ROLE.ECONOMIST]}

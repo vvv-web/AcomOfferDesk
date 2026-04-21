@@ -239,6 +239,7 @@ export const OfferWorkspaceView = () => {
           requestClosedAt={workspace.request.closed_at ?? null}
           requestDeadlineAt={workspace.request.deadline_at ?? null}
           requestOfferId={workspace.request.id_offer ?? workspace.request.chosen_offer_id ?? '-'}
+          showOfferId={false}
           requestUpdatedAt={workspace.request.updated_at ?? null}
           isSaving={false}
           canSaveRequestChanges={false}
@@ -412,6 +413,28 @@ export const OfferWorkspaceView = () => {
                 </Stack>
 
                 <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+                  {isCurrentInEditMode && isContractor && canDeleteOwnOffer ? (
+                    <Button
+                      variant="contained"
+                      onClick={() => void handleDeleteOffer()}
+                      disabled={isUpdatingOfferStatus || offerItem.status === 'deleted'}
+                      sx={(theme) => ({
+                        backgroundColor: theme.palette.error.main,
+                        color: theme.palette.error.contrastText,
+                        boxShadow: 'none',
+                        '&:hover': {
+                          backgroundColor: theme.palette.error.dark,
+                          boxShadow: 'none'
+                        },
+                        '&:disabled': {
+                          backgroundColor: theme.palette.error.light,
+                          color: theme.palette.error.contrastText
+                        }
+                      })}
+                    >
+                      {offerItem.status === 'deleted' ? 'Отклик удален' : 'Удалить отклик'}
+                    </Button>
+                  ) : null}
                   {canEditOfferStatus && isCurrent ? (
                     <Select
                       size="small"
@@ -529,16 +552,6 @@ export const OfferWorkspaceView = () => {
               <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 1.2 }}>
                 <Typography variant="body1">Обновлено {formatDate(offerItem.updated_at, true)}</Typography>
                 <Stack direction="row" spacing={1}>
-                  {isCurrentInEditMode && isContractor && canDeleteOwnOffer ? (
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      onClick={() => void handleDeleteOffer()}
-                      disabled={isUpdatingOfferStatus || offerItem.status === 'deleted'}
-                    >
-                      {offerItem.status === 'deleted' ? 'Отклик удален' : 'Удалить отклик'}
-                    </Button>
-                  ) : null}
                   {isCurrentInEditMode ? (
                     <Button
                       variant="outlined"

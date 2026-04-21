@@ -1,6 +1,7 @@
 import AddRounded from '@mui/icons-material/AddRounded';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import FilePresentOutlinedIcon from '@mui/icons-material/FilePresentOutlined';
 import GroupRounded from '@mui/icons-material/GroupRounded';
 import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
 import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
@@ -75,7 +76,7 @@ export const SuperadminSidebarHeader = ({
       users: <PersonOutlineRounded fontSize="small" />,
       requests: <InsertDriveFileOutlined fontSize="small" />,
       feedback: <FeedbackOutlined fontSize="small" />,
-      offers: <InsertDriveFileOutlined fontSize="small" />,
+      offers: <FilePresentOutlinedIcon fontSize="small" />,
       roles: <GroupRounded fontSize="small" />,
       contact: <ModeEditOutline fontSize="small" />,
       logout: <LogoutRounded fontSize="small" />,
@@ -85,7 +86,7 @@ export const SuperadminSidebarHeader = ({
       economists: <GroupRounded fontSize="small" />,
       contractors: <GroupRounded fontSize="small" />,
       admins: <PersonOutlineRounded fontSize="small" />,
-      my: <InsertDriveFileOutlined fontSize="small" />,
+      my: <FilePresentOutlinedIcon fontSize="small" />,
       open: <InsertDriveFileOutlined fontSize="small" />,
     }),
     []

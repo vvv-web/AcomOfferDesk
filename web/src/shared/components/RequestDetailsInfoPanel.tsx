@@ -30,6 +30,7 @@ type RequestDetailsInfoValue = {
   closedAt: string | null;
   deadlineAt: string | null;
   offerId: string;
+  showOfferId?: boolean;
   canViewRequestAmounts: boolean;
   initialAmountText?: string;
   finalAmountText?: string;
@@ -81,6 +82,7 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
     closedAt,
     deadlineAt,
     offerId,
+    showOfferId = true,
     canViewRequestAmounts,
     initialAmountText = '-',
     finalAmountText = '-',
@@ -161,14 +163,18 @@ export const RequestDetailsInfoPanel = ({ value }: RequestDetailsInfoPanelProps)
       <Box sx={panelSx}>
         <DetailRow label="Создана" value={<Typography sx={detailValueTextSx}>{formatDate(createdAt)}</Typography>} />
         <DetailRow label="Закрыта" value={<Typography sx={detailValueTextSx}>{formatDate(closedAt)}</Typography>} />
-        <DetailRow label="Дедлайн сбора КП" value={deadlineField} divider={!canViewRequestAmounts} />
-        {!canViewRequestAmounts ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}
+        <DetailRow
+          label="Дедлайн сбора КП"
+          value={deadlineField}
+          divider={!canViewRequestAmounts && showOfferId}
+        />
+        {!canViewRequestAmounts && showOfferId ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}
       </Box>
       {canViewRequestAmounts ? (
         <Box sx={panelSx}>
           <DetailRow label="Сумма по ТЗ, руб." value={initialAmountField} />
           <DetailRow label="Итоговая сумма, руб." value={finalAmountField} />
-          <DetailRow label="Номер КП" value={offerField} divider={false} />
+          {showOfferId ? <DetailRow label="Номер КП" value={offerField} divider={false} /> : null}
         </Box>
       ) : null}
     </Box>

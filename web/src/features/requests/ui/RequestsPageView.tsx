@@ -14,7 +14,8 @@ export const RequestsPageView = () => {
     isContractor,
     isLoading,
     ownerOptions,
-    requests
+    requests,
+    shouldLoadOpenRequests
   } = useRequestsPage();
 
   return (
@@ -38,6 +39,8 @@ export const RequestsPageView = () => {
         canEditOwner={canEditOwner}
         onOwnerChange={(request, ownerUserId) => void handleOwnerChange(request, ownerUserId)}
         isContractor={isContractor}
+        showContractorOffersColumn={isContractor && !shouldLoadOpenRequests}
+        showContractorNotificationColumn={isContractor && !shouldLoadOpenRequests}
         onAddClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
       />
     </Box>

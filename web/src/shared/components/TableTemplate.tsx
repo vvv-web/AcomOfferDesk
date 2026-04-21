@@ -10,7 +10,7 @@ import SearchRounded from '@mui/icons-material/SearchRounded';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import TableRowsRounded from '@mui/icons-material/TableRowsRounded';
 import UnfoldMoreRounded from '@mui/icons-material/UnfoldMoreRounded';
-import ViewAgendaRounded from '@mui/icons-material/ViewAgendaRounded';
+import WindowRounded from '@mui/icons-material/WindowRounded';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
 import InputBase from '@mui/material/InputBase';
@@ -938,7 +938,7 @@ export function TableTemplate<T>({
                 }}
               >
                 <Stack direction="row" alignItems="center" gap={0.75}>
-                  <ViewAgendaRounded sx={{ fontSize: 18 }} />
+                  <WindowRounded sx={{ fontSize: 18 }} />
                   <Typography
                     sx={{ display: { xs: 'none', sm: 'block' }, fontSize: fontSize - 1, fontWeight: 600 }}
                   >

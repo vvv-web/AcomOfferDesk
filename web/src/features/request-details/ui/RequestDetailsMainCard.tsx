@@ -63,7 +63,9 @@ type RequestDetailsMainCardProps = {
   requestClosedAt: string | null;
   requestDeadlineAt: string | null;
   requestOfferId: number | string | null;
+  showOfferId?: boolean;
   requestUpdatedAt: string | null;
+  hideUpdatedAtIfEmpty?: boolean;
   isSaving: boolean;
   canSaveRequestChanges: boolean;
   hasPendingChanges: boolean;
@@ -108,7 +110,9 @@ export const RequestDetailsMainCard = ({
   requestClosedAt,
   requestDeadlineAt,
   requestOfferId,
+  showOfferId = true,
   requestUpdatedAt,
+  hideUpdatedAtIfEmpty = false,
   isSaving,
   canSaveRequestChanges,
   hasPendingChanges,
@@ -307,6 +311,7 @@ export const RequestDetailsMainCard = ({
         closedAt: requestClosedAt,
         deadlineAt: requestDeadlineAt,
         offerId: String(requestOfferId ?? '-'),
+        showOfferId,
         canViewRequestAmounts,
         initialAmountText: initialAmount || '-',
         finalAmountText: finalAmount || '-',
@@ -327,7 +332,11 @@ export const RequestDetailsMainCard = ({
       alignItems={{ xs: 'flex-start', sm: 'center' }}
       spacing={1.5}
     >
-      <Typography variant="body1">Обновлено {formatDate(requestUpdatedAt, true)}</Typography>
+      {(!hideUpdatedAtIfEmpty || Boolean(requestUpdatedAt)) ? (
+        <Typography variant="body1">Обновлено {formatDate(requestUpdatedAt, true)}</Typography>
+      ) : (
+        <Box />
+      )}
       {hideActions ? null : (
         <Stack direction="row" spacing={1}>
           {isEditMode ? (

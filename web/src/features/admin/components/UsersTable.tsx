@@ -71,6 +71,7 @@ type UsersTableProps = {
   onAddClick?: () => void;
   getRoleLabel: (roleId: number) => string;
   isContractorsTab: boolean;
+  canViewRoleIds: boolean;
   canUpdateStatus: boolean;
   canUpdateRole: boolean;
   allowedRoleOptions: number[];
@@ -155,19 +156,20 @@ const formatPhoneForView = (value: string | null | undefined) => {
 
 type UserMobileCardProps = {
   row: UserRow;
+  canViewRoleIds: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onOpenDetails?: (row: UserRow) => void;
 };
 
-const UserMobileCard = ({ row, isExpanded, onToggleExpand, onOpenDetails }: UserMobileCardProps) => {
+const UserMobileCard = ({ row, canViewRoleIds, isExpanded, onToggleExpand, onOpenDetails }: UserMobileCardProps) => {
   const theme = useTheme();
   const detailRows = [
     { key: 'login', label: 'Логин', value: row.id },
     { key: 'full_name', label: 'ФИО', value: row.full_name },
     { key: 'phone', label: 'Телефон', value: row.phone },
     { key: 'mail', label: 'E-mail', value: row.mail },
-    { key: 'role_id', label: 'ID роли', value: String(row.id_role) },
+    ...(canViewRoleIds ? [{ key: 'role_id', label: 'ID роли', value: String(row.id_role) }] : []),
     { key: 'role', label: 'Роль', value: row.role },
     { key: 'status', label: 'Статус профиля', value: userStatusLabelByValue[row.status] }
   ];
@@ -747,6 +749,7 @@ export const UsersTable = ({
   onAddClick,
   getRoleLabel,
   isContractorsTab,
+  canViewRoleIds,
   canUpdateStatus,
   canUpdateRole,
   allowedRoleOptions,
@@ -1082,7 +1085,7 @@ export const UsersTable = ({
         minWidth: 190,
         renderValue: (value) => <Typography variant="body2">{String(value ?? '—')}</Typography>
       },
-      { id: 'id_role', header: 'ID роли', field: 'id_role', minWidth: 100, width: '110px' },
+      ...(canViewRoleIds ? [{ id: 'id_role', header: 'ID роли', field: 'id_role', minWidth: 100, width: '110px' } as TableTemplateColumn<UserRow>] : []),
       {
         id: 'role',
         header: 'Роль',
@@ -1091,13 +1094,23 @@ export const UsersTable = ({
         filterOptions: usersRoleFilterOptions,
         getFilterValue: (row) => row.role,
         getSearchValue: (row) => row.role,
-        renderCell: (row) =>
-          allowedRoleOptions.includes(row.id_role) ? (
+        renderCell: (row) => {
+          const canEditRoleForRow = Boolean(
+            canUpdateRole
+            && users.find((item) => item.user_id === row.id)?.actions.update_role
+            && allowedRoleOptions.includes(row.id_role)
+          );
+
+          if (!canEditRoleForRow) {
+            return <Typography variant="body2">{row.role}</Typography>;
+          }
+
+          return (
             <TextField
               select
               size="small"
               value={row.id_role}
-              disabled={!canUpdateRole || updatingUserId === row.id || !users.find((item) => item.user_id === row.id)?.actions.update_role}
+              disabled={updatingUserId === row.id}
               onClick={(event) => event.stopPropagation()}
               onChange={(event) => {
                 event.stopPropagation();
@@ -1115,9 +1128,8 @@ export const UsersTable = ({
                 </MenuItem>
               ))}
             </TextField>
-          ) : (
-            <Typography variant="body2">{row.role}</Typography>
-          )
+          );
+        }
       },
       {
         id: 'status',
@@ -1153,7 +1165,7 @@ export const UsersTable = ({
         )
       }
     ],
-    [allowedRoleOptions, canUpdateRole, getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, updatingUserId, users, usersRoleFilterOptions, usersStatusFilterOptions]
+    [allowedRoleOptions, canUpdateRole, canViewRoleIds, getRoleLabel, handleInlineRoleChange, handleInlineStatusChange, canEditUserStatus, updatingUserId, users, usersRoleFilterOptions, usersStatusFilterOptions]
   );
   const contractorStatusFilterOptions = useMemo(
     () => Array.from(new Set(users.map((user) => toStatusLabel(user.status)))).map((status) => ({ label: status, value: status })),
@@ -1214,6 +1226,7 @@ export const UsersTable = ({
             renderCard={(row) => (
               <UserMobileCard
                 row={row}
+                canViewRoleIds={canViewRoleIds}
                 isExpanded={Boolean(expandedUserCardsById[row.id])}
                 onToggleExpand={() =>
                   setExpandedUserCardsById((prev) => ({
