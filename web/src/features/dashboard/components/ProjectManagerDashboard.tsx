@@ -23,8 +23,11 @@ import {
 } from '@shared/api/users/getResponsibilityDashboard';
 import { useAuth } from '@app/providers/AuthProvider';
 import { formatDate } from '@shared/lib/formatters';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 import { updateRequestDetails } from '@shared/api/requests/updateRequestDetails';
 import { ROLE } from '@shared/constants/roles';
+import { ActionButton } from '@shared/components/ActionButton';
+import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import {
@@ -43,9 +46,20 @@ import {
 import { CircularProcessChart, EmployeeWorkloadChart } from './DashboardCharts';
 import { EmployeeNodeCard } from './EmployeeNodeCard';
 
+const getRequestStatusTone = (status: string): StatusPillTone => {
+  if (status === 'open') {
+    return 'success';
+  }
+  if (status === 'review') {
+    return 'warning';
+  }
+  return 'neutral';
+};
+
 export const ProjectManagerDashboard = () => {
   const { session } = useAuth();
   const theme = useTheme();
+  const isMobileViewport = useIsMobileViewport();
   const statusColors = useMemo<Record<string, string>>(() => ({
     open: theme.palette.dashboard.status.open,
     review: theme.palette.dashboard.status.review
@@ -391,6 +405,9 @@ export const ProjectManagerDashboard = () => {
               <Tabs
                 value={requestsTab}
                 onChange={(_, value: 'unassigned' | 'mine' | 'assigned') => setRequestsTab(value)}
+                variant={isMobileViewport ? 'scrollable' : 'standard'}
+                allowScrollButtonsMobile={isMobileViewport}
+                scrollButtons={isMobileViewport ? 'auto' : false}
                 sx={{ mb: 2 }}
               >
                 <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
@@ -401,6 +418,9 @@ export const ProjectManagerDashboard = () => {
               <Tabs
                 value={requestsTab}
                 onChange={(_, value: 'unassigned' | 'mine' | 'assigned') => setRequestsTab(value)}
+                variant={isMobileViewport ? 'scrollable' : 'standard'}
+                allowScrollButtonsMobile={isMobileViewport}
+                scrollButtons={isMobileViewport ? 'auto' : false}
                 sx={{ mb: 2 }}
               >
                 <Tab value="unassigned" label={`Нераспределённые (${unassignedRequests.length})`} />
@@ -441,52 +461,73 @@ export const ProjectManagerDashboard = () => {
                           <Stack spacing={0.9} sx={{ minWidth: 0 }}>
                             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                               <Typography fontWeight={700}>Заявка #{request.request_id}</Typography>
-                              <Chip
-                                size="small"
+                              <StatusPill
                                 label={STATUS_LABELS[request.status] ?? request.status_label}
-                                color={request.status === 'open' ? 'primary' : 'info'}
+                                tone={getRequestStatusTone(request.status)}
                               />
                             </Stack>
                             <Typography variant="body2" color="text.secondary">
                               {request.description || 'Описание не указано'}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Дедлайн: {formatDate(request.deadline_at)}
-                            </Typography>
-                            {requestsTab !== 'unassigned' ? (
-                              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                            <Box
+                              sx={{
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: 1.5,
+                                px: 1.1,
+                                py: 0.8,
+                                display: 'grid',
+                                gap: 0.6,
+                                maxWidth: { xs: '100%', md: 480 }
+                              }}
+                            >
+                              <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                                 <Typography variant="caption" color="text.secondary">
-                                  Ответственный: {request.owner_full_name || employeeNameById[request.owner_user_id] || request.owner_user_id}
+                                  Дедлайн
                                 </Typography>
-                                {requestOwnerWarningTooltip ? (
-                                  <Tooltip title={requestOwnerWarningTooltip} arrow>
-                                    <Box
-                                      component="span"
-                                      tabIndex={0}
-                                      role="img"
-                                      aria-label={requestOwnerWarningTooltip}
-                                      sx={{
-                                        width: 18,
-                                        height: 18,
-                                        borderRadius: '50%',
-                                        backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
-                                        border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
-                                        color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: 12,
-                                        fontWeight: 800,
-                                        lineHeight: 1,
-                                        cursor: 'help'
-                                      }}
-                                    >
-                                      !
-                                    </Box>
-                                  </Tooltip>
-                                ) : null}
+                                <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+                                  {formatDate(request.deadline_at)}
+                                </Typography>
                               </Stack>
-                            ) : null}
+                              <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+                                <Typography variant="caption" color="text.secondary">
+                                  Ответственный
+                                </Typography>
+                                <Stack direction="row" spacing={0.6} alignItems="center" sx={{ minWidth: 0 }}>
+                                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+                                    {request.owner_full_name || employeeNameById[request.owner_user_id] || request.owner_user_id || '-'}
+                                  </Typography>
+                                  {requestsTab !== 'unassigned' && requestOwnerWarningTooltip ? (
+                                    <Tooltip title={requestOwnerWarningTooltip} arrow>
+                                      <Box
+                                        component="span"
+                                        tabIndex={0}
+                                        role="img"
+                                        aria-label={requestOwnerWarningTooltip}
+                                        sx={{
+                                          width: 18,
+                                          height: 18,
+                                          borderRadius: '50%',
+                                          backgroundColor: requestOwnerActiveUnavailability ? '#fef2f2' : '#fff7ed',
+                                          border: `1px solid ${requestOwnerActiveUnavailability ? '#ef4444' : '#f59e0b'}`,
+                                          color: requestOwnerActiveUnavailability ? '#dc2626' : '#d97706',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: 12,
+                                          fontWeight: 800,
+                                          lineHeight: 1,
+                                          cursor: 'help',
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        !
+                                      </Box>
+                                    </Tooltip>
+                                  ) : null}
+                                </Stack>
+                              </Stack>
+                            </Box>
                           </Stack>
 
                           <Stack
@@ -513,24 +554,22 @@ export const ProjectManagerDashboard = () => {
                             </Select>
 
                             <Stack direction="row" justifyContent="flex-end" sx={{ pt: { xs: 0, md: 0.5 } }}>
-                              <Button
-                                variant="outlined"
-                                size="small"
+                              <ActionButton
+                                kind="outlined"
+                                showNavigationIcons={false}
                                 sx={{
-                                  minWidth: 48,
-                                  height: 32,
-                                  px: 1.5,
-                                  fontWeight: 700,
-                                  borderRadius: 999,
+                                  minWidth: 44,
+                                  height: 36,
+                                  px: 1.4,
+                                  fontWeight: 600,
                                   borderColor: 'divider',
-                                  color: 'text.secondary',
-                                  backgroundColor: 'background.paper'
+                                  color: 'text.secondary'
                                 }}
                                 onClick={() => void handleAssignSingle(request.request_id)}
                                 disabled={!assignmentState[request.request_id] || isAssigning}
                               >
                                 ОК
-                              </Button>
+                              </ActionButton>
                             </Stack>
                           </Stack>
                         </Stack>

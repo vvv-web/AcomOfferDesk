@@ -52,7 +52,7 @@ const DetailRow = ({ label, value, divider = true }: { label: string; value: Rea
   <Box
     sx={(theme) => ({
       display: 'grid',
-      gridTemplateColumns: { xs: '1fr', sm: '1fr auto' },
+      gridTemplateColumns: '1fr auto',
       alignItems: 'center',
       gap: 1,
       px: 1.25,

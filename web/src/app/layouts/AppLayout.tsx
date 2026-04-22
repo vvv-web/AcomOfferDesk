@@ -3,20 +3,22 @@ import { useTheme } from '@mui/material/styles';
 import { useMemo, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
-import { AppHeader, useHeaderConfig } from '@features/header';
+import { AppHeader, MobileBottomNavigation, useHeaderConfig } from '@features/header';
 import { AppFooter } from '@shared/components/AppFooter';
 import { BreadcrumbsNav } from '@shared/components/BreadcrumbsNav';
+import { MOBILE_BOTTOM_NAV_CONTENT_PADDING, useIsMobileViewport } from '@shared/lib/responsive';
 
 export const AppLayout = () => {
   const theme = useTheme();
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('lg'));
+  const isMobileViewport = useIsMobileViewport();
   const navigate = useNavigate();
   const { logout } = useAuth();
   const headerConfig = useHeaderConfig();
   const isSidebarLayout = headerConfig.mode !== 'hidden';
   const isHiddenHeader = headerConfig.mode === 'hidden';
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const isSidebarInIconMode = isCompactViewport || isSidebarCollapsed;
+  const isSidebarInIconMode = !isMobileViewport && (isCompactViewport || isSidebarCollapsed);
   const breadcrumbItems = useMemo(
     () =>
       (headerConfig.breadcrumbs ?? []).map((item) => ({
@@ -28,6 +30,34 @@ export const AppLayout = () => {
   );
 
   if (isSidebarLayout) {
+    if (isMobileViewport) {
+      return (
+        <Stack sx={{ minHeight: '100vh', backgroundColor: 'background.default' }}>
+          <Stack
+            component="section"
+            spacing={1.25}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              px: 1,
+              pt: 1.25,
+              pb: MOBILE_BOTTOM_NAV_CONTENT_PADDING,
+              overflowX: 'hidden',
+            }}
+          >
+            {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
+            <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1 }}>
+              <Outlet />
+            </Box>
+
+            <AppFooter compact />
+          </Stack>
+
+          <MobileBottomNavigation config={headerConfig} onLogout={logout} />
+        </Stack>
+      );
+    }
+
     return (
       <Stack
         sx={{

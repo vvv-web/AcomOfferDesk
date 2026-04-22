@@ -16,6 +16,7 @@ import type { RequestDetailsFile } from '@shared/api/requests/getRequestDetails'
 import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
 import { formatDate } from '@shared/lib/formatters';
 import { RequestDetailsInfoPanel } from '@shared/components/RequestDetailsInfoPanel';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 import type { RequestStatus } from '../model/requestDetailsUtils';
 
 type RequestStatusOption = {
@@ -123,6 +124,7 @@ export const RequestDetailsMainCard = ({
   onStartEdit,
   hideActions = false
 }: RequestDetailsMainCardProps) => {
+  const isMobileViewport = useIsMobileViewport();
   const statusLabel = statusOptions.find((option) => option.value === status)?.label ?? String(status);
   const showStatusSelect = canEditRequest && isEditMode;
 
@@ -139,10 +141,11 @@ export const RequestDetailsMainCard = ({
     })}
   >
     <Stack
-      direction={{ xs: 'column', md: 'row' }}
-      alignItems={{ xs: 'flex-start', md: 'center' }}
+      direction="row"
+      alignItems="center"
       justifyContent="space-between"
       spacing={1.5}
+      sx={{ flexWrap: 'nowrap' }}
     >
       <Typography variant="h5" fontWeight={700}>
         Заявка №{requestId}
@@ -153,7 +156,7 @@ export const RequestDetailsMainCard = ({
           value={status}
           onChange={(event) => onStatusChange(event.target.value as RequestStatus)}
           sx={{
-            minWidth: { xs: '100%', sm: 170, md: 190 },
+            minWidth: 170,
             borderRadius: 999,
             color: statusColor,
             fontWeight: 600,
@@ -171,11 +174,11 @@ export const RequestDetailsMainCard = ({
       ) : (
         <Box
           sx={{
-            minWidth: { xs: '100%', sm: 170, md: 190 },
+            minWidth: 170,
             minHeight: 40,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: { xs: 'flex-start', md: 'flex-end' }
+            justifyContent: 'flex-end'
           }}
         >
           <StatusPill label={statusLabel} tone={requestStatusPillTone[status]} />
@@ -327,18 +330,21 @@ export const RequestDetailsMainCard = ({
     />
 
     <Stack
-      direction={{ xs: 'column', sm: 'row' }}
+      direction="row"
       justifyContent="space-between"
-      alignItems={{ xs: 'flex-start', sm: 'center' }}
-      spacing={1.5}
+      alignItems="center"
+      spacing={1}
+      sx={{ flexWrap: 'nowrap' }}
     >
       {(!hideUpdatedAtIfEmpty || Boolean(requestUpdatedAt)) ? (
-        <Typography variant="body1">Обновлено {formatDate(requestUpdatedAt, true)}</Typography>
+        <Typography variant="body1" sx={{ minHeight: 36, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+          Обновлено {formatDate(requestUpdatedAt, true)}
+        </Typography>
       ) : (
-        <Box />
+        <Box sx={{ minHeight: 36 }} />
       )}
       {hideActions ? null : (
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
           {isEditMode ? (
             <>
               <Button variant="outlined" onClick={onCancelEditing} disabled={isSaving}>
@@ -353,8 +359,20 @@ export const RequestDetailsMainCard = ({
               </Button>
             </>
           ) : (
-            <Button variant="outlined" startIcon={<EditOutlined />} onClick={onStartEdit} disabled={!canEnterEditMode}>
-              Изменить
+            <Button
+              variant="outlined"
+              startIcon={isMobileViewport ? undefined : <EditOutlined fontSize="small" />}
+              onClick={onStartEdit}
+              disabled={!canEnterEditMode}
+              aria-label="Изменить"
+              sx={{
+                minHeight: 36,
+                minWidth: isMobileViewport ? 40 : undefined,
+                width: isMobileViewport ? 40 : 'auto',
+                px: isMobileViewport ? 0 : undefined
+              }}
+            >
+              {isMobileViewport ? <EditOutlined fontSize="small" /> : 'Изменить'}
             </Button>
           )}
         </Stack>

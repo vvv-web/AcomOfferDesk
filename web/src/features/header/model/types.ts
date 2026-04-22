@@ -29,6 +29,15 @@ export type HeaderSidebarItem = {
   isBottomItem?: boolean;
 };
 
+export type HeaderMobileNavItem = {
+  key: string;
+  label: string;
+  to?: string;
+  tabValue?: string;
+  disabled?: boolean;
+  children?: HeaderMobileNavItem[];
+};
+
 export type HeaderConfig = {
   mode: HeaderMode;
   title?: string;
@@ -39,6 +48,7 @@ export type HeaderConfig = {
   backAction?: HeaderBackAction;
   breadcrumbs?: { key: string; label: string; to?: string }[];
   sidebarItems?: HeaderSidebarItem[];
+  mobileNavItems?: HeaderMobileNavItem[];
   showFeedback: boolean;
   showRoleGuide: boolean;
   showProfile: boolean;

@@ -16,10 +16,12 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useMediaQuery } from '@mui/material';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { downloadFile } from '@shared/api/fileDownload';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
@@ -69,9 +71,30 @@ const getOfferStatusBadgeStyle = (status: string | null) => {
   };
 };
 
+const getOfferStatusLabel = (status: string | null) => {
+  if (status === 'accepted') {
+    return 'Принято';
+  }
+
+  if (status === 'submitted') {
+    return 'На рассмотрении';
+  }
+
+  if (status === 'deleted') {
+    return 'Удалено';
+  }
+
+  if (status === 'rejected') {
+    return 'Отказано';
+  }
+
+  return 'Неизвестный статус';
+};
+
 export const OfferWorkspaceView = () => {
   const theme = useTheme();
   const isDesktopWithSidebar = useMediaQuery(theme.breakpoints.up('lg'));
+  const isMobileViewport = useIsMobileViewport();
   const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
   const [isOfferEditMode, setIsOfferEditMode] = useState(false);
   const {
@@ -264,27 +287,27 @@ export const OfferWorkspaceView = () => {
               }}
             >
               <Stack spacing={0.75}>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">ИНН</Typography>
-                  <Typography variant="body2" sx={{ textAlign: 'right' }}>{contractorInfo?.inn ?? workspace.company_contacts?.inn ?? '-'}</Typography>
+                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{contractorInfo?.inn ?? workspace.company_contacts?.inn ?? '-'}</Typography>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">Компания</Typography>
-                  <Typography variant="body2" sx={{ textAlign: 'right' }}>{contractorInfo?.company_name ?? workspace.company_contacts?.company_name ?? '-'}</Typography>
+                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{contractorInfo?.company_name ?? workspace.company_contacts?.company_name ?? '-'}</Typography>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">Телефон</Typography>
-                  <Typography variant="body2" sx={{ textAlign: 'right' }}>{contractorInfo?.company_phone ?? workspace.company_contacts?.phone ?? '-'}</Typography>
+                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{contractorInfo?.company_phone ?? workspace.company_contacts?.phone ?? '-'}</Typography>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">E-mail</Typography>
                   <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
                     {contractorInfo?.company_mail ?? workspace.company_contacts?.mail ?? '-'}
                   </Typography>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">Адрес</Typography>
-                  <Typography variant="body2" sx={{ textAlign: 'right' }}>{contractorInfo?.address ?? workspace.company_contacts?.address ?? '-'}</Typography>
+                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{contractorInfo?.address ?? workspace.company_contacts?.address ?? '-'}</Typography>
                 </Stack>
               </Stack>
             </Paper>
@@ -312,19 +335,19 @@ export const OfferWorkspaceView = () => {
               }}
             >
               <Stack spacing={0.75}>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">ФИО</Typography>
-                  <Typography variant="body2" sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
                     {contractorInfo?.full_name ?? workspace.profile?.full_name ?? '-'}
                   </Typography>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">Телефон</Typography>
-                  <Typography variant="body2" sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
                     {contractorInfo?.phone ?? workspace.profile?.phone ?? '-'}
                   </Typography>
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary">E-mail</Typography>
                   <Typography variant="body2" sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
                     {contractorInfo?.mail ?? workspace.profile?.mail ?? '-'}
@@ -336,8 +359,13 @@ export const OfferWorkspaceView = () => {
         </Paper>
 
         {isContractor && canCreateNewOffer ? (
-          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2.5 }}>
-            <Button variant="contained" disabled={isUpdatingOfferStatus} onClick={() => void handleCreateNewOffer()}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent={{ xs: 'stretch', sm: 'flex-end' }} sx={{ mt: 2.5 }}>
+            <Button
+              variant="contained"
+              disabled={isUpdatingOfferStatus}
+              onClick={() => void handleCreateNewOffer()}
+              sx={{ width: { xs: '100%', sm: 'auto' } }}
+            >
               Новый отклик
             </Button>
           </Stack>
@@ -348,6 +376,7 @@ export const OfferWorkspaceView = () => {
           const isCurrentInEditMode = isCurrent && isOfferEditMode;
           const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
           const itemBadgeStyle = getOfferStatusBadgeStyle(offerItem.status ?? null);
+          const offerStatusLabel = getOfferStatusLabel(offerItem.status ?? null);
           return (
             <Paper
               key={offerItem.offer_id}
@@ -373,20 +402,30 @@ export const OfferWorkspaceView = () => {
                   <Typography variant="h5" sx={{ fontWeight: 700 }}>
                     КП №{offerItem.offer_id}
                   </Typography>
-                  <Box
-                    sx={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 8,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: 'transparent'
+                  <Tooltip
+                    title={offerStatusLabel}
+                    enterTouchDelay={0}
+                    slotProps={{
+                      popper: {
+                        modifiers: [{ name: 'offset', options: { offset: [0, 1] } }]
+                      }
                     }}
-                    aria-label={`status-${offerItem.status ?? 'unknown'}`}
                   >
-                    {itemBadgeStyle.icon}
-                  </Box>
+                    <Box
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'transparent'
+                      }}
+                      aria-label={`status-${offerItem.status ?? 'unknown'}`}
+                    >
+                      {itemBadgeStyle.icon}
+                    </Box>
+                  </Tooltip>
                   <Chip
                     label={isCurrent ? 'Активный отклик' : 'Неактивный отклик'}
                     size="small"
@@ -426,7 +465,8 @@ export const OfferWorkspaceView = () => {
                       disabled={isUpdatingOfferStatus || offerItem.status === 'deleted'}
                       onChange={(event) => void handleStatusChange(event.target.value as 'accepted' | 'rejected' | '')}
                       sx={{
-                        minWidth: 230,
+                        width: { xs: '100%', sm: 'auto' },
+                        minWidth: { xs: '100%', sm: 230 },
                         borderRadius: 3,
                         '& .MuiOutlinedInput-input': { py: 1 }
                       }}
@@ -465,15 +505,25 @@ export const OfferWorkspaceView = () => {
                     gap: 0.8
                   })}
                 >
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    justifyContent="space-between"
+                    spacing={1}
+                  >
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
                       Создана
                     </Typography>
-                    <Typography sx={{ fontWeight: 500, textAlign: 'right' }}>
+                    <Typography sx={{ fontWeight: 500, textAlign: { xs: 'left', sm: 'right' } }}>
                       {formatDate(offerItem.created_at)}
                     </Typography>
                   </Stack>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    justifyContent="space-between"
+                    spacing={1}
+                  >
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
                       Сумма КП, руб.
                     </Typography>
@@ -487,7 +537,7 @@ export const OfferWorkspaceView = () => {
                         sx={{ width: 140, '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
                       />
                     ) : (
-                      <Typography sx={{ fontWeight: 500, textAlign: 'right' }}>
+                      <Typography sx={{ fontWeight: 500, textAlign: { xs: 'left', sm: 'right' } }}>
                         {formatAmount(offerItem.offer_amount)}
                       </Typography>
                     )}
@@ -532,9 +582,21 @@ export const OfferWorkspaceView = () => {
                   </IconButton>
                 ) : null}
               </Stack>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 1.2 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                justifyContent="space-between"
+                spacing={1}
+                flexWrap="nowrap"
+                sx={{ mt: 1.2 }}
+              >
                 <Typography variant="body1">Обновлено {formatDate(offerItem.updated_at, true)}</Typography>
-                <Stack direction="row" spacing={1}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  sx={{ width: 'auto', flexWrap: 'nowrap', '& > *': { width: 'auto' } }}
+                >
                   {isCurrentInEditMode ? (
                     <Button
                       variant="outlined"
@@ -544,20 +606,33 @@ export const OfferWorkspaceView = () => {
                       Отмена
                     </Button>
                   ) : (
-                    <Button
-                      variant="outlined"
-                      startIcon={<EditOutlinedIcon />}
-                      onClick={() => {
-                        if (!isCurrent) {
+                    isCurrent ? (
+                      <Button
+                        variant="outlined"
+                        startIcon={isMobileViewport ? undefined : <EditOutlinedIcon fontSize="small" />}
+                        onClick={() => setIsOfferEditMode(true)}
+                        disabled={isUpdatingOfferAmount}
+                        aria-label="Изменить"
+                        sx={{
+                          minWidth: isMobileViewport ? 40 : undefined,
+                          width: isMobileViewport ? 40 : 'auto',
+                          height: 36,
+                          px: isMobileViewport ? 0 : undefined
+                        }}
+                      >
+                        {isMobileViewport ? <EditOutlinedIcon fontSize="small" /> : 'Изменить'}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outlined"
+                        onClick={() => {
                           setSelectedOfferId(offerItem.offer_id);
-                          return;
-                        }
-                        setIsOfferEditMode(true);
-                      }}
-                      disabled={!isCurrent && isUpdatingOfferAmount}
-                    >
-                      {isCurrent ? 'Изменить' : 'Открыть'}
-                    </Button>
+                        }}
+                        disabled={isUpdatingOfferAmount}
+                      >
+                        Открыть
+                      </Button>
+                    )
                   )}
                   {isCurrentInEditMode && canEditOfferAmount ? (
                     <Button

@@ -21,13 +21,13 @@ import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
-import useMediaQuery from '@mui/material/useMediaQuery';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormGroup from '@mui/material/FormGroup';
 import Button from '@mui/material/Button';
 import { alpha, useTheme } from '@mui/material/styles';
 import { ActionButton } from '@shared/components/ActionButton';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 
 type CellAlign = 'left' | 'center' | 'right';
 
@@ -115,10 +115,14 @@ export type TableTemplateProps<T> = {
   renderCard?: (row: T, rowIndex: number) => ReactNode;
   cardExcludedColumnIds?: string[];
   getRowId?: (row: T, index: number) => string | number;
+  showSearch?: boolean;
   searchPlaceholder?: string;
   addButtonLabel?: string;
   onAddClick?: () => void;
+  showAddAction?: boolean;
   onSettingsClick?: () => void;
+  showViewToggle?: boolean;
+  defaultViewMode?: DataViewMode;
   showSettingsAction?: boolean;
   rowsPerPageOptions?: number[];
   defaultRowsPerPage?: number;
@@ -372,10 +376,14 @@ export function TableTemplate<T>({
   renderCard,
   cardExcludedColumnIds = [],
   getRowId,
+  showSearch = true,
   searchPlaceholder = 'Найти',
   addButtonLabel = 'Добавить',
   onAddClick,
+  showAddAction = true,
   onSettingsClick,
+  showViewToggle = true,
+  defaultViewMode,
   showSettingsAction = true,
   rowsPerPageOptions = [8, 16, 32],
   defaultRowsPerPage,
@@ -387,7 +395,7 @@ export function TableTemplate<T>({
   cardExpansionControl
 }: TableTemplateProps<T>) {
   const theme = useTheme();
-  const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'));
+  const isMobileViewport = useIsMobileViewport();
   const {
     toolbarGap,
     searchWidth,
@@ -450,13 +458,36 @@ export function TableTemplate<T>({
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
   const [sortState, setSortState] = useState<{ columnId: string; direction: SortDirection } | null>(null);
   const [selectFilterAnchor, setSelectFilterAnchor] = useState<{ columnId: string; anchorEl: HTMLElement } | null>(null);
-  const [viewMode, setViewMode] = useState<DataViewMode>(isCompactViewport ? 'cards' : 'table');
+  const [viewMode, setViewMode] = useState<DataViewMode>(defaultViewMode ?? (isMobileViewport ? 'cards' : 'table'));
+  const hasUserToggledViewMode = useRef(false);
   const [rowsPerPage, setRowsPerPage] = useState(
     defaultRowsPerPage && safeRowsPerPageOptions.includes(defaultRowsPerPage)
       ? defaultRowsPerPage
       : safeRowsPerPageOptions[0]
   );
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    if (!defaultViewMode) {
+      return;
+    }
+
+    hasUserToggledViewMode.current = false;
+    setViewMode(defaultViewMode);
+  }, [defaultViewMode]);
+
+  useEffect(() => {
+    if (isMobileViewport) {
+      setViewMode('cards');
+      return;
+    }
+
+    if (defaultViewMode || hasUserToggledViewMode.current) {
+      return;
+    }
+
+    setViewMode('table');
+  }, [defaultViewMode, isMobileViewport]);
 
   useEffect(() => {
     setColumnFilters((currentFilters) => {
@@ -565,7 +596,7 @@ export function TableTemplate<T>({
   }, [isResizingColumn, visibleColumns]);
 
   useEffect(() => {
-    if (!safeRowsPerPageOptions.includes(rowsPerPage)) {
+    if (!Number.isFinite(rowsPerPage) || rowsPerPage < 1) {
       setRowsPerPage(safeRowsPerPageOptions[0]);
     }
   }, [rowsPerPage, safeRowsPerPageOptions]);
@@ -621,7 +652,8 @@ export function TableTemplate<T>({
     setPage(1);
   }, [columnFilters, normalizedSearch, rowsPerPage]);
 
-  const pageCount = Math.max(1, Math.ceil(sortedRows.length / rowsPerPage));
+  const effectiveRowsPerPage = rowsPerPage;
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / effectiveRowsPerPage));
 
   useEffect(() => {
     if (page > pageCount) {
@@ -630,13 +662,13 @@ export function TableTemplate<T>({
   }, [page, pageCount]);
 
   const visibleRows = useMemo(() => {
-    const start = (page - 1) * rowsPerPage;
-    return sortedRows.slice(start, start + rowsPerPage);
-  }, [page, rowsPerPage, sortedRows]);
+    const start = (page - 1) * effectiveRowsPerPage;
+    return sortedRows.slice(start, start + effectiveRowsPerPage);
+  }, [effectiveRowsPerPage, page, sortedRows]);
   const paginationItems = useMemo(() => getPaginationItems(page, pageCount), [page, pageCount]);
+  const firstVisibleRow = sortedRows.length === 0 ? 0 : (page - 1) * effectiveRowsPerPage + 1;
+  const lastVisibleRow = sortedRows.length === 0 ? 0 : Math.min(page * effectiveRowsPerPage, sortedRows.length);
 
-  const firstVisibleRow = sortedRows.length > 0 ? (page - 1) * rowsPerPage + 1 : 0;
-  const lastVisibleRow = sortedRows.length > 0 ? Math.min(page * rowsPerPage, sortedRows.length) : 0;
   const hasActiveSelectFilters = Object.values(columnFilters).some((values) => values.length > 0);
   const showEmptySearchState = (normalizedSearch.length > 0 || hasActiveSelectFilters) && sortedRows.length === 0;
 
@@ -689,6 +721,22 @@ export function TableTemplate<T>({
     const nextValue = event.target.value;
     setSearchValue(nextValue);
     onSearchChange?.(nextValue);
+  };
+
+  const rowsPerPageSelectValue = safeRowsPerPageOptions.includes(rowsPerPage)
+      ? String(rowsPerPage)
+      : 'custom';
+
+  const handleRowsPerPageSelectChange = (event: { target: { value: unknown } }) => {
+    const selectedValue = String(event.target.value);
+    if (selectedValue === 'custom') {
+      return;
+    }
+
+    const parsedValue = Number(selectedValue);
+    if (Number.isFinite(parsedValue) && parsedValue > 0) {
+      setRowsPerPage(parsedValue);
+    }
   };
 
   const handleSortToggle = (columnId: string) => {
@@ -824,82 +872,118 @@ export function TableTemplate<T>({
   }, [selectFilterAnchor, visibleColumns]);
   const isCardsView = viewMode === 'cards';
   const viewToggleButtonRadius = Math.max(8, controlRadius - 4);
+  const canToggleViewMode = showViewToggle;
+  const showCardExpansionToggle = isCardsView && Boolean(cardExpansionControl);
+  const shouldUseIconOnlyViewToggle = isMobileViewport || viewportWidth < 560;
+  const shouldUseIconOnlyAddButton = isMobileViewport || viewportWidth < 500;
+  const estimatedAddButtonWidth = showAddAction && onAddClick ? (shouldUseIconOnlyAddButton ? searchHeight : 132) : 0;
+  const estimatedSettingsButtonWidth = showSettingsAction ? searchHeight : 0;
+  const estimatedViewToggleWidth = canToggleViewMode ? (shouldUseIconOnlyViewToggle ? 96 : 206) : 0;
+  const estimatedSwitchWidth = showCardExpansionToggle ? 38 : 0;
+  const estimatedExpandLabelWidth = showCardExpansionToggle ? 126 : 0;
+  const estimatedToolbarGaps = 16;
+  const estimatedRequiredToolbarWidthWithLabel =
+    estimatedAddButtonWidth +
+    estimatedSettingsButtonWidth +
+    estimatedViewToggleWidth +
+    estimatedSwitchWidth +
+    estimatedExpandLabelWidth +
+    estimatedToolbarGaps;
+  const shouldHideExpandAllLabel = showCardExpansionToggle && viewportWidth < estimatedRequiredToolbarWidthWithLabel;
+  const shouldHideRowsCountLabel = isMobileViewport || viewportWidth < 410;
 
-  return (
+  const handleViewModeChange = (nextMode: DataViewMode) => {
+    hasUserToggledViewMode.current = true;
+    setViewMode(nextMode);
+  };
+
+  const toolbarSearch = showSearch ? (
     <Paper
       sx={{
-        borderRadius: `${theme.acomShape.panelRadius}px`,
+        width: { xs: '100%', md: searchWidth },
+        minHeight: searchHeight,
+        borderRadius: `${controlRadius}px`,
         border: '1px solid',
         borderColor: 'divider',
-        bgcolor: 'brand.softSection',
-        p: `${theme.acomShape.panelPadding}px`
+        bgcolor: 'background.paper',
+        px: 2,
+        py: 0.5,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1
       }}
     >
-      <Stack spacing={1.25}>
-        <Stack
-          direction="row"
-          gap={`${toolbarGap}px`}
-          justifyContent="space-between"
-          alignItems="center"
-          flexWrap="wrap"
-        >
-          <Paper
-            sx={{
-              width: { xs: '100%', md: searchWidth },
-              minHeight: searchHeight,
-              borderRadius: `${controlRadius}px`,
-              border: '1px solid',
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
-              px: 2,
-              py: 0.5,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
-            }}
-          >
-            <InputBase
-              value={searchValue}
-              onChange={handleSearchChange}
-              placeholder={searchPlaceholder}
-              inputProps={{ 'aria-label': 'Поиск по таблице' }}
-              sx={{
-                flex: 1,
-                fontSize,
-                color: 'text.primary',
-                '& input::placeholder': {
-                  color: 'text.secondary',
-                  opacity: 1
-                }
-              }}
-            />
-            <SearchRounded sx={{ color: 'text.secondary', fontSize: iconSize }} />
-          </Paper>
+      <InputBase
+        value={searchValue}
+        onChange={handleSearchChange}
+        placeholder={searchPlaceholder}
+        inputProps={{ 'aria-label': 'Поиск по таблице' }}
+        sx={{
+          flex: 1,
+          fontSize,
+          color: 'text.primary',
+          '& input::placeholder': {
+            color: 'text.secondary',
+            opacity: 1
+          }
+        }}
+      />
+      <SearchRounded sx={{ color: 'text.secondary', fontSize: iconSize }} />
+    </Paper>
+  ) : null;
 
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            flexWrap="wrap"
-            sx={{ width: { xs: '100%', md: 'auto' }, justifyContent: 'flex-end' }}
-          >
-            <Paper
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                p: 0.5,
-                borderRadius: `${controlRadius}px`,
-                border: '1px solid',
-                borderColor: 'divider',
-                bgcolor: 'background.paper'
-              }}
-            >
+  const toolbarActions = (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      flexWrap="nowrap"
+      sx={{
+        width: { xs: '100%', md: 'auto' },
+        justifyContent: isMobileViewport ? 'space-between' : 'flex-end'
+      }}
+    >
+      {showAddAction && onAddClick ? (
+        <ActionButton
+          kind="filled"
+          showNavigationIcons={false}
+          startIcon={<AddRounded />}
+          aria-label={addButtonLabel}
+          onClick={onAddClick}
+          sx={{
+            minHeight: searchHeight,
+            px: shouldUseIconOnlyAddButton ? 0 : 2.5,
+            width: shouldUseIconOnlyAddButton ? searchHeight : 'auto',
+            minWidth: shouldUseIconOnlyAddButton ? searchHeight : undefined,
+            borderRadius: `${controlRadius}px`,
+            fontSize
+          }}
+        >
+          {shouldUseIconOnlyAddButton ? null : addButtonLabel}
+        </ActionButton>
+      ) : null}
+
+      {canToggleViewMode || showCardExpansionToggle ? (
+        <Paper
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            p: 0.5,
+            flex: isMobileViewport ? 1 : 'initial',
+            borderRadius: `${controlRadius}px`,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper'
+          }}
+        >
+          {canToggleViewMode ? (
+            <>
               <ActionButton
                 kind="custom"
                 selected={viewMode === 'table'}
                 showNavigationIcons={false}
                 aria-label="Режим таблицы"
-                onClick={() => setViewMode('table')}
+                onClick={() => handleViewModeChange('table')}
                 sx={{
                   minHeight: searchHeight - 8,
                   minWidth: 0,
@@ -914,7 +998,7 @@ export function TableTemplate<T>({
                 <Stack direction="row" alignItems="center" gap={0.75}>
                   <TableRowsRounded sx={{ fontSize: 18 }} />
                   <Typography
-                    sx={{ display: { xs: 'none', sm: 'block' }, fontSize: fontSize - 1, fontWeight: 600 }}
+                    sx={{ display: shouldUseIconOnlyViewToggle ? 'none' : 'block', fontSize: fontSize - 1, fontWeight: 600 }}
                   >
                     Таблица
                   </Typography>
@@ -925,7 +1009,7 @@ export function TableTemplate<T>({
                 selected={viewMode === 'cards'}
                 showNavigationIcons={false}
                 aria-label="Режим карточек"
-                onClick={() => setViewMode('cards')}
+                onClick={() => handleViewModeChange('cards')}
                 sx={{
                   minHeight: searchHeight - 8,
                   minWidth: 0,
@@ -940,77 +1024,97 @@ export function TableTemplate<T>({
                 <Stack direction="row" alignItems="center" gap={0.75}>
                   <WindowRounded sx={{ fontSize: 18 }} />
                   <Typography
-                    sx={{ display: { xs: 'none', sm: 'block' }, fontSize: fontSize - 1, fontWeight: 600 }}
+                    sx={{ display: shouldUseIconOnlyViewToggle ? 'none' : 'block', fontSize: fontSize - 1, fontWeight: 600 }}
                   >
                     Карточки
                   </Typography>
                 </Stack>
               </ActionButton>
-              {viewMode === 'cards' && cardExpansionControl ? (
-                <Stack
-                  direction="row"
-                  alignItems="center"
-                  sx={{ ml: 0.5, pl: 1, borderLeft: '1px solid', borderColor: 'divider' }}
-                >
-                  <Switch
-                    size="small"
-                    checked={cardExpansionControl.checked}
-                    onChange={(event) => cardExpansionControl.onChange(event.target.checked)}
-                    inputProps={{ 'aria-label': 'Раскрыть или свернуть все карточки' }}
-                  />
-                  <Typography
-                    sx={{
-                      display: { xs: 'none', sm: 'block' },
-                      fontSize: fontSize - 2,
-                      color: 'text.secondary',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {cardExpansionControl.checked
-                      ? cardExpansionControl.closeLabel ?? 'Свернуть все'
-                      : cardExpansionControl.openLabel ?? 'Раскрыть все'}
-                  </Typography>
-                </Stack>
-              ) : null}
-            </Paper>
+            </>
+          ) : null}
 
-            {onAddClick ? (
-              <ActionButton
-                kind="filled"
-                showNavigationIcons={false}
-                startIcon={<AddRounded />}
-                onClick={onAddClick}
+          {showCardExpansionToggle && cardExpansionControl ? (
+            <Stack
+              direction="row"
+              alignItems="center"
+              sx={{
+                ml: canToggleViewMode ? 0.5 : 0,
+                pl: canToggleViewMode ? 1 : 0,
+                pr: 1,
+                borderLeft: canToggleViewMode ? '1px solid' : 'none',
+                borderColor: 'divider'
+              }}
+            >
+              <Switch
+                size="small"
+                checked={cardExpansionControl.checked}
+                onChange={(event) => cardExpansionControl.onChange(event.target.checked)}
+                inputProps={{ 'aria-label': 'Раскрыть или свернуть все карточки' }}
+              />
+              <Typography
                 sx={{
-                  minHeight: searchHeight,
-                  px: 2.5,
-                  borderRadius: `${controlRadius}px`,
-                  fontSize
+                  display: shouldHideExpandAllLabel ? 'none' : 'block',
+                  fontSize: fontSize - 2,
+                  color: 'text.secondary',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                {addButtonLabel}
-              </ActionButton>
-            ) : null}
+                Развернуть
+              </Typography>
+            </Stack>
+          ) : null}
+        </Paper>
+      ) : null}
 
-            {showSettingsAction ? (
-              <ActionButton
-                kind="outlined"
-                showNavigationIcons={false}
-                onClick={handleSettingsButtonClick}
-                sx={{
-                  minHeight: searchHeight,
-                  width: searchHeight,
-                  minWidth: searchHeight,
-                  px: 0,
-                  borderRadius: `${controlRadius}px`,
-                  borderColor: 'divider',
-                  color: 'text.secondary'
-                }}
-              >
-                <SettingsOutlined sx={{ fontSize: iconSize }} />
-              </ActionButton>
-            ) : null}
+      {showSettingsAction ? (
+        <ActionButton
+          kind="outlined"
+          showNavigationIcons={false}
+          onClick={handleSettingsButtonClick}
+          sx={{
+            minHeight: searchHeight,
+            width: searchHeight,
+            minWidth: searchHeight,
+            px: 0,
+            borderRadius: `${controlRadius}px`,
+            borderColor: 'divider',
+            color: 'text.secondary'
+          }}
+        >
+          <SettingsOutlined sx={{ fontSize: iconSize }} />
+        </ActionButton>
+      ) : null}
+    </Stack>
+  );
+
+  return (
+    <Paper
+      sx={{
+        borderRadius: `${theme.acomShape.panelRadius}px`,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'brand.softSection',
+        p: `${theme.acomShape.panelPadding}px`
+      }}
+    >
+      <Stack spacing={1.25}>
+        {isMobileViewport ? (
+          <Stack spacing={1}>
+            {toolbarActions}
+            {toolbarSearch}
           </Stack>
-        </Stack>
+        ) : (
+          <Stack
+            direction="row"
+            gap={`${toolbarGap}px`}
+            justifyContent="space-between"
+            alignItems="center"
+            flexWrap="wrap"
+          >
+            {toolbarSearch}
+            {toolbarActions}
+          </Stack>
+        )}
 
         <Popover
           open={Boolean(settingsAnchorEl)}
@@ -1708,16 +1812,26 @@ export function TableTemplate<T>({
         <Divider />
 
         <Stack
+          direction="row"
           sx={{
             minHeight: footerHeight,
-            display: { xs: 'flex', md: 'grid' },
-            gridTemplateColumns: { md: 'minmax(280px, 1fr) auto minmax(220px, 1fr)' },
+            display: 'flex',
+            flexWrap: 'nowrap',
             alignItems: 'center',
-            gap: 1.5
+            justifyContent: 'space-between',
+            gap: 1.25
           }}
         >
-          <Typography sx={{ fontSize, color: 'text.secondary', justifySelf: { md: 'start' } }}>
-            {'Показаны строки'} {firstVisibleRow}-{lastVisibleRow} {'из'} {filteredRows.length}
+          <Typography
+            sx={{
+              fontSize,
+              color: 'text.secondary',
+              display: { xs: 'none', md: 'block' },
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            {`Показаны строки ${firstVisibleRow}-${lastVisibleRow} из ${sortedRows.length}`}
           </Typography>
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ justifySelf: { md: 'center' } }}>
@@ -1784,11 +1898,19 @@ export function TableTemplate<T>({
             </ActionButton>
           </Stack>
 
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary', justifySelf: { md: 'end' } }}>
-            <Typography sx={{ fontSize, color: 'inherit' }}>{'Показать'}</Typography>
+          <Stack
+            direction="row"
+            spacing={0.75}
+            alignItems="center"
+            sx={{
+              color: 'text.secondary',
+              flexShrink: 0,
+              minHeight: pagerButtonSize
+            }}
+          >
             <Select
-              value={rowsPerPage}
-              onChange={(event) => setRowsPerPage(Number(event.target.value))}
+              value={rowsPerPageSelectValue}
+              onChange={(event) => handleRowsPerPageSelectChange(event as { target: { value: unknown } })}
               IconComponent={KeyboardArrowDownRounded}
               sx={{
                 width: rowsPerPageWidth,
@@ -1796,21 +1918,26 @@ export function TableTemplate<T>({
                 borderRadius: `${controlRadius}px`,
                 bgcolor: 'background.paper',
                 color: 'text.secondary',
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'divider'
+                '& .MuiSelect-select': {
+                  py: 0.75
                 },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
+                '& .MuiOutlinedInput-notchedOutline': {
                   borderColor: 'divider'
                 }
               }}
             >
               {safeRowsPerPageOptions.map((option) => (
-                <MenuItem key={option} value={option}>
+                <MenuItem key={option} value={String(option)}>
                   {option}
                 </MenuItem>
               ))}
+              <MenuItem value="custom" disabled>
+                Свое
+              </MenuItem>
             </Select>
-            <Typography sx={{ fontSize, color: 'inherit' }}>{'строк'}</Typography>
+            <Typography sx={{ display: shouldHideRowsCountLabel ? 'none' : 'block', fontSize, color: 'text.secondary' }}>
+              строк
+            </Typography>
           </Stack>
         </Stack>
       </Stack>

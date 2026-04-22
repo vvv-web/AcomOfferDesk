@@ -140,6 +140,22 @@ const getUnreadMessagesLabel = (count: number) => {
   return `Новых сообщений: ${count}`;
 };
 
+const getOfferStatusLabel = (status: string | null) => {
+  if (status === 'accepted') {
+    return 'Принято';
+  }
+  if (status === 'submitted') {
+    return 'На рассмотрении';
+  }
+  if (status === 'deleted') {
+    return 'Удалено';
+  }
+  if (status === 'rejected') {
+    return 'Отказано';
+  }
+  return 'Неизвестный статус';
+};
+
 const OfferMobileCard = ({
   offer,
   selectedStatus,
@@ -157,6 +173,7 @@ const OfferMobileCard = ({
     divider: theme.palette.divider,
     text: theme.palette.text.primary
   });
+  const statusLabel = getOfferStatusLabel(offer.status ?? null);
   const detailRows = [
     {
       label: 'Контрагент',
@@ -309,18 +326,20 @@ const OfferMobileCard = ({
 
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
           <Stack direction="row" alignItems="center" gap={0.75}>
-            <Box
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              {notificationStyle.icon}
-            </Box>
+            <Tooltip title={statusLabel} enterTouchDelay={0}>
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {notificationStyle.icon}
+              </Box>
+            </Tooltip>
             <Typography sx={{ fontSize: 18, fontWeight: 600, color: 'text.primary', lineHeight: 1.15 }}>
               {formatAmount(offer.offer_amount)}
             </Typography>
@@ -442,22 +461,25 @@ export const OffersTable = ({
       sortable: false,
       renderCell: (offer) => {
         const notificationStyle = getNotificationStyle(offer.status, notificationPalette);
+        const statusLabel = getOfferStatusLabel(offer.status ?? null);
         return (
           <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-            <Box
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: 'transparent',
-                fontWeight: 700
-              }}
-            >
-              {notificationStyle.icon}
-            </Box>
+            <Tooltip title={statusLabel} enterTouchDelay={0}>
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'transparent',
+                  fontWeight: 700
+                }}
+              >
+                {notificationStyle.icon}
+              </Box>
+            </Tooltip>
           </Box>
         );
       }

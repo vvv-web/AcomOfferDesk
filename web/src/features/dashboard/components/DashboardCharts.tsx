@@ -7,6 +7,7 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
+import { useState } from 'react';
 import type { ResponsibilityEmployeeNode } from '@shared/api/users/getResponsibilityDashboard';
 import { STATUS_LABELS, sumTotals, type StatusTotals } from './dashboardUtils';
 
@@ -21,6 +22,19 @@ export const ChevronDownIcon = () => (
     <path d="M7.41 8.41L12 13l4.59-4.59L18 9.83l-6 6-6-6z" />
   </SvgIcon>
 );
+
+const toRadians = (angle: number) => (Math.PI / 180) * angle;
+
+const describeSectorPath = (centerX: number, centerY: number, radius: number, startAngle: number, endAngle: number) => {
+  const safeSweep = Math.min(Math.max(endAngle - startAngle, 0), 359.999);
+  const startX = centerX + radius * Math.cos(toRadians(startAngle));
+  const startY = centerY + radius * Math.sin(toRadians(startAngle));
+  const endX = centerX + radius * Math.cos(toRadians(startAngle + safeSweep));
+  const endY = centerY + radius * Math.sin(toRadians(startAngle + safeSweep));
+  const largeArcFlag = safeSweep > 180 ? 1 : 0;
+
+  return `M ${centerX} ${centerY} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
+};
 
 export const SegmentedProgressBar = ({
   totals,
@@ -88,6 +102,7 @@ export const SegmentedProgressBar = ({
 };
 
 export const CircularProcessChart = ({ totals, statusColors }: { totals: StatusTotals; statusColors: Record<string, string> }) => {
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const entries = Object.entries(totals)
     .filter(([, count]) => count > 0)
     .sort(([a], [b]) => (a > b ? 1 : -1));
@@ -106,16 +121,22 @@ export const CircularProcessChart = ({ totals, statusColors }: { totals: StatusT
     );
   }
 
-  let offset = 0;
-  const segments: string[] = [];
-  for (const [status, count] of entries) {
+  let currentAngle = -90;
+  const pieSegments = entries.map(([status, count]) => {
     const percent = (count / total) * 100;
-    const color = statusColors[status] ?? '#64748b';
-    const start = offset;
-    const end = offset + percent;
-    segments.push(`${color} ${start}% ${end}%`);
-    offset = end;
-  }
+    const sweep = (count / total) * 360;
+    const endAngle = currentAngle + sweep;
+    const segment = {
+      status,
+      count,
+      percent,
+      color: statusColors[status] ?? '#64748b',
+      startAngle: currentAngle,
+      endAngle
+    };
+    currentAngle = endAngle;
+    return segment;
+  });
 
   return (
     <Card
@@ -137,26 +158,49 @@ export const CircularProcessChart = ({ totals, statusColors }: { totals: StatusT
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '220px minmax(0, 1fr)' },
-            gap: 2,
+            gridTemplateColumns: { xs: '128px minmax(0, 1fr)', md: '220px minmax(0, 1fr)' },
+            gap: { xs: 1.25, md: 2 },
             alignItems: 'center'
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-            <Box
-              sx={{
-                width: 180,
-                height: 180,
-                borderRadius: '50%',
-                background: `conic-gradient(${segments.join(', ')})`,
-                p: '16px',
-                boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 10px 24px rgba(31,42,68,0.12)'
-              }}
-            >
+            <Tooltip open={Boolean(activeTooltip)} title={activeTooltip ?? ''} disableFocusListener disableTouchListener placement="top">
               <Box
                 sx={{
-                  width: '100%',
-                  height: '100%',
+                  position: 'relative',
+                  width: { xs: 128, md: 180 },
+                  height: { xs: 128, md: 180 },
+                  borderRadius: '50%',
+                  boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 10px 24px rgba(31,42,68,0.12)'
+                }}
+              >
+                <Box component="svg" viewBox="0 0 200 200" sx={{ width: '100%', height: '100%' }}>
+                  {pieSegments.map((segment) => (
+                    <path
+                      key={`process-sector-${segment.status}`}
+                      d={describeSectorPath(100, 100, 88, segment.startAngle, segment.endAngle)}
+                      fill={segment.color}
+                      stroke="#ffffff"
+                      strokeWidth={2}
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={() =>
+                        setActiveTooltip(
+                          `${STATUS_LABELS[segment.status] ?? segment.status}: ${segment.count} · ${Math.round(segment.percent * 10) / 10}%`
+                        )
+                      }
+                      onMouseLeave={() => setActiveTooltip(null)}
+                      onClick={() =>
+                        setActiveTooltip(
+                          `${STATUS_LABELS[segment.status] ?? segment.status}: ${segment.count} · ${Math.round(segment.percent * 10) / 10}%`
+                        )
+                      }
+                    />
+                  ))}
+                </Box>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: { xs: 16, md: 20 },
                   borderRadius: '50%',
                   backgroundColor: 'background.paper',
                   boxShadow: '0 0 0 1px rgba(47,111,214,0.10)',
@@ -167,37 +211,39 @@ export const CircularProcessChart = ({ totals, statusColors }: { totals: StatusT
                   textAlign: 'center'
                 }}
               >
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
                   Всего в работе
                 </Typography>
                 <Typography variant="h4" fontWeight={800}>
                   {total}
                 </Typography>
               </Box>
-            </Box>
+              </Box>
+            </Tooltip>
           </Box>
 
-          <Stack spacing={1.2}>
+          <Stack spacing={{ xs: 0.8, md: 1.2 }}>
             {entries.map(([status, count]) => {
               const percent = Math.round((count / total) * 1000) / 10;
               return (
                 <Card key={`process-${status}`} variant="outlined" sx={{ borderRadius: 2.5 }}>
-                  <CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 } }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                      <Stack direction="row" spacing={1} alignItems="center">
+                  <CardContent sx={{ py: { xs: 0.75, md: 1.25 }, px: { xs: 1.1, md: 2 }, '&:last-child': { pb: { xs: 0.75, md: 1.25 } } }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.75}>
+                      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                         <Box
                           sx={{
                             width: 10,
                             height: 10,
                             borderRadius: '50%',
-                            backgroundColor: statusColors[status] ?? '#64748b'
+                            backgroundColor: statusColors[status] ?? '#64748b',
+                            flexShrink: 0
                           }}
                         />
-                        <Typography variant="body2" fontWeight={600}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
                           {STATUS_LABELS[status] ?? status}
                         </Typography>
                       </Stack>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {count} · {percent}%
                       </Typography>
                     </Stack>
@@ -219,6 +265,7 @@ export const EmployeeWorkloadChart = ({
   employees: ResponsibilityEmployeeNode[];
   workloadColors: string[];
 }) => {
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const entries = employees
     .map((employee) => ({
       userId: employee.user_id,
@@ -242,16 +289,21 @@ export const EmployeeWorkloadChart = ({
     );
   }
 
-  let offset = 0;
-  const segments: string[] = [];
-  for (const [index, entry] of entries.entries()) {
+  let currentAngle = -90;
+  const pieSegments = entries.map((entry, index) => {
     const percent = (entry.count / total) * 100;
-    const color = workloadColors[index % workloadColors.length] ?? '#64748b';
-    const start = offset;
-    const end = offset + percent;
-    segments.push(`${color} ${start}% ${end}%`);
-    offset = end;
-  }
+    const sweep = (entry.count / total) * 360;
+    const endAngle = currentAngle + sweep;
+    const segment = {
+      ...entry,
+      percent,
+      color: workloadColors[index % workloadColors.length] ?? '#64748b',
+      startAngle: currentAngle,
+      endAngle
+    };
+    currentAngle = endAngle;
+    return segment;
+  });
 
   return (
     <Card
@@ -273,26 +325,45 @@ export const EmployeeWorkloadChart = ({
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '220px minmax(0, 1fr)' },
-            gap: 2,
+            gridTemplateColumns: { xs: '128px minmax(0, 1fr)', md: '220px minmax(0, 1fr)' },
+            gap: { xs: 1.25, md: 2 },
             alignItems: 'center'
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-            <Box
-              sx={{
-                width: 180,
-                height: 180,
-                borderRadius: '50%',
-                background: `conic-gradient(${segments.join(', ')})`,
-                p: '16px',
-                boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 10px 24px rgba(31,42,68,0.12)'
-              }}
-            >
+            <Tooltip open={Boolean(activeTooltip)} title={activeTooltip ?? ''} disableFocusListener disableTouchListener placement="top">
               <Box
                 sx={{
-                  width: '100%',
-                  height: '100%',
+                  position: 'relative',
+                  width: { xs: 128, md: 180 },
+                  height: { xs: 128, md: 180 },
+                  borderRadius: '50%',
+                  boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 10px 24px rgba(31,42,68,0.12)'
+                }}
+              >
+                <Box component="svg" viewBox="0 0 200 200" sx={{ width: '100%', height: '100%' }}>
+                  {pieSegments.map((segment) => (
+                    <path
+                      key={`workload-sector-${segment.userId}`}
+                      d={describeSectorPath(100, 100, 88, segment.startAngle, segment.endAngle)}
+                      fill={segment.color}
+                      stroke="#ffffff"
+                      strokeWidth={2}
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={() =>
+                        setActiveTooltip(`${segment.label}: ${segment.count} · ${Math.round(segment.percent * 10) / 10}%`)
+                      }
+                      onMouseLeave={() => setActiveTooltip(null)}
+                      onClick={() =>
+                        setActiveTooltip(`${segment.label}: ${segment.count} · ${Math.round(segment.percent * 10) / 10}%`)
+                      }
+                    />
+                  ))}
+                </Box>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: { xs: 16, md: 20 },
                   borderRadius: '50%',
                   backgroundColor: 'background.paper',
                   boxShadow: '0 0 0 1px rgba(47,111,214,0.10)',
@@ -303,37 +374,49 @@ export const EmployeeWorkloadChart = ({
                   textAlign: 'center'
                 }}
               >
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
                   Всего в работе
                 </Typography>
                 <Typography variant="h4" fontWeight={800}>
                   {total}
                 </Typography>
               </Box>
-            </Box>
+              </Box>
+            </Tooltip>
           </Box>
 
-          <Stack spacing={1.2}>
+          <Stack spacing={{ xs: 0.8, md: 1.2 }}>
             {entries.map((entry, index) => {
               const percent = Math.round((entry.count / total) * 1000) / 10;
               return (
                 <Card key={`workload-${entry.userId}`} variant="outlined" sx={{ borderRadius: 2.5 }}>
-                  <CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 } }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                      <Stack direction="row" spacing={1} alignItems="center">
+                  <CardContent sx={{ py: { xs: 0.75, md: 1.25 }, px: { xs: 1.1, md: 2 }, '&:last-child': { pb: { xs: 0.75, md: 1.25 } } }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.75}>
+                      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                         <Box
                           sx={{
                             width: 10,
                             height: 10,
                             borderRadius: '50%',
-                            backgroundColor: workloadColors[index % workloadColors.length] ?? '#64748b'
+                            backgroundColor: workloadColors[index % workloadColors.length] ?? '#64748b',
+                            flexShrink: 0
                           }}
                         />
-                        <Typography variant="body2" fontWeight={600}>
+                        <Typography
+                          variant="body2"
+                          fontWeight={600}
+                          sx={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            lineHeight: 1.2
+                          }}
+                        >
                           {entry.label}
                         </Typography>
                       </Stack>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {entry.count} · {percent}%
                       </Typography>
                     </Stack>

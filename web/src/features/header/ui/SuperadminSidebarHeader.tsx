@@ -1,19 +1,11 @@
 import AddRounded from '@mui/icons-material/AddRounded';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
-import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
-import FilePresentOutlinedIcon from '@mui/icons-material/FilePresentOutlined';
-import GroupRounded from '@mui/icons-material/GroupRounded';
-import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
 import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
 import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
-import ModeEditOutline from '@mui/icons-material/ModeEditOutline';
-import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
-import SpaceDashboardRounded from '@mui/icons-material/SpaceDashboardRounded';
-import FeedbackOutlined from '@mui/icons-material/FeedbackOutlined';
-import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -24,6 +16,7 @@ import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { ROLE } from '@shared/constants/roles';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
 import type { HeaderConfig } from '../model/types';
+import { getHeaderNavigationIcon } from './navigationIcons';
 
 const navLinkStyles = { textDecoration: 'none', display: 'block', width: '100%' } as const;
 
@@ -48,6 +41,8 @@ export const SuperadminSidebarHeader = ({
   const [isEdgeHovered, setIsEdgeHovered] = useState(false);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
   const [isToggleVisible, setIsToggleVisible] = useState(false);
+  const [isDashboardMenuHovered, setIsDashboardMenuHovered] = useState(false);
+  const [dashboardMenuAnchorEl, setDashboardMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsCompactHeight(window.innerHeight <= 760);
@@ -71,29 +66,10 @@ export const SuperadminSidebarHeader = ({
     };
   }, [isEdgeHovered, isToggleHovered, onToggleCollapse]);
 
-  const iconByKey = useMemo(
-    () => ({
-      users: <PersonOutlineRounded fontSize="small" />,
-      requests: <InsertDriveFileOutlined fontSize="small" />,
-      feedback: <FeedbackOutlined fontSize="small" />,
-      offers: <FilePresentOutlinedIcon fontSize="small" />,
-      roles: <GroupRounded fontSize="small" />,
-      contact: <ModeEditOutline fontSize="small" />,
-      logout: <LogoutRounded fontSize="small" />,
-      dashboard: <SpaceDashboardRounded fontSize="small" />,
-      savings: <AttachMoneyRounded fontSize="small" />,
-      employees: <GroupRounded fontSize="small" />,
-      economists: <GroupRounded fontSize="small" />,
-      contractors: <GroupRounded fontSize="small" />,
-      admins: <PersonOutlineRounded fontSize="small" />,
-      my: <FilePresentOutlinedIcon fontSize="small" />,
-      open: <InsertDriveFileOutlined fontSize="small" />,
-    }),
-    []
-  );
-
   const topItems = (config.sidebarItems ?? []).filter((item) => !item.isBottomItem && item.key !== 'logout');
   const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
+  const hasSavingsTab = config.tabs.some((tabItem) => tabItem.key === 'savings');
+  const isDashboardPopupOpen = collapsed && hasSavingsTab && Boolean(dashboardMenuAnchorEl);
 
   return (
     <Stack
@@ -129,7 +105,7 @@ export const SuperadminSidebarHeader = ({
           ) : null}
 
           {topItems.map((item) => {
-            const icon = item.icon ?? iconByKey[item.key as keyof typeof iconByKey];
+            const icon = item.icon ?? getHeaderNavigationIcon(item.key);
             if (!item.to) {
               return (
                 <SidebarMenuButton
@@ -157,16 +133,82 @@ export const SuperadminSidebarHeader = ({
             );
           })}
 
-          {config.tabs.map((tab) => (
-            <SidebarMenuButton
-              key={tab.key}
-              label={tab.label}
-              icon={iconByKey[tab.key as keyof typeof iconByKey] ?? <InsertDriveFileOutlined fontSize="small" />}
-              collapsed={collapsed}
-              active={config.activeTab === tab.value}
-              onClick={() => config.onTabChange?.(tab.value)}
-            />
-          ))}
+          {config.tabs.map((tab) => {
+            if (tab.key === 'savings') {
+              return null;
+            }
+
+            if (tab.key === 'dashboard') {
+              const isDashboardOrSavingsActive = config.activeTab === 'dashboard' || config.activeTab === 'savings';
+              const shouldShowDashboardChildren = !collapsed && hasSavingsTab && (isDashboardMenuHovered || isDashboardOrSavingsActive);
+
+              return (
+                <Stack
+                  key={tab.key}
+                  spacing={0.5}
+                  onMouseEnter={() => {
+                    if (!collapsed) {
+                      setIsDashboardMenuHovered(true);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (!collapsed) {
+                      setIsDashboardMenuHovered(false);
+                    }
+                  }}
+                >
+                  <Box
+                    onClick={(event) => {
+                      if (collapsed && hasSavingsTab) {
+                        setDashboardMenuAnchorEl((currentAnchorEl) =>
+                          currentAnchorEl ? null : (event.currentTarget as HTMLElement)
+                        );
+                        return;
+                      }
+
+                      config.onTabChange?.('dashboard');
+                    }}
+                  >
+                    <SidebarMenuButton
+                      label={tab.label}
+                      icon={getHeaderNavigationIcon(tab.key)}
+                      collapsed={collapsed}
+                      active={collapsed ? isDashboardOrSavingsActive : false}
+                    />
+                  </Box>
+                  {shouldShowDashboardChildren ? (
+                    <Stack spacing={0.35} sx={{ pl: 1.25 }}>
+                      <SidebarMenuButton
+                        label="Процесс работы"
+                        icon={getHeaderNavigationIcon('dashboard')}
+                        collapsed={false}
+                        active={config.activeTab === 'dashboard'}
+                        onClick={() => config.onTabChange?.('dashboard')}
+                      />
+                      <SidebarMenuButton
+                        label="Экономия"
+                        icon={getHeaderNavigationIcon('savings')}
+                        collapsed={false}
+                        active={config.activeTab === 'savings'}
+                        onClick={() => config.onTabChange?.('savings')}
+                      />
+                    </Stack>
+                  ) : null}
+                </Stack>
+              );
+            }
+
+            return (
+              <SidebarMenuButton
+                key={tab.key}
+                label={tab.label}
+                icon={getHeaderNavigationIcon(tab.key)}
+                collapsed={collapsed}
+                active={config.activeTab === tab.value}
+                onClick={() => config.onTabChange?.(tab.value)}
+              />
+            );
+          })}
 
           {config.backAction ? (
             <SidebarMenuButton
@@ -189,6 +231,33 @@ export const SuperadminSidebarHeader = ({
 
           {isSuperadmin ? null : <NormativeFileButton iconOnly={collapsed} sidebar />}
         </Stack>
+
+        <Menu
+          open={isDashboardPopupOpen}
+          anchorEl={dashboardMenuAnchorEl}
+          onClose={() => {
+            setDashboardMenuAnchorEl(null);
+          }}
+          anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'center', horizontal: 'left' }}
+        >
+          <MenuItem
+            onClick={() => {
+              config.onTabChange?.('dashboard');
+              setDashboardMenuAnchorEl(null);
+            }}
+          >
+            Процесс работы
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              config.onTabChange?.('savings');
+              setDashboardMenuAnchorEl(null);
+            }}
+          >
+            Экономия
+          </MenuItem>
+        </Menu>
 
         <Stack
           spacing={1.25}

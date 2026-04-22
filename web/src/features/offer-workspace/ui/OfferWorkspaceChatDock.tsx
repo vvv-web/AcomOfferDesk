@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import { Box, Fab, Paper } from '@mui/material';
+import { MOBILE_BOTTOM_NAV_OFFSET, useIsMobileViewport } from '@shared/lib/responsive';
 
 type OfferWorkspaceChatDockProps = {
   isOpen: boolean;
@@ -11,6 +12,8 @@ type OfferWorkspaceChatDockProps = {
 export const OFFER_WORKSPACE_CHAT_WIDTH_PX = 430;
 
 export const OfferWorkspaceChatDock = ({ isOpen, onOpen, children }: OfferWorkspaceChatDockProps) => {
+  const isMobileViewport = useIsMobileViewport();
+
   return (
     <>
       {isOpen ? (
@@ -20,7 +23,7 @@ export const OfferWorkspaceChatDock = ({ isOpen, onOpen, children }: OfferWorksp
             top: 0,
             right: 0,
             width: { xs: '100vw', lg: OFFER_WORKSPACE_CHAT_WIDTH_PX },
-            height: '100vh',
+            height: '100dvh',
             zIndex: (theme) => theme.zIndex.drawer + 1
           }}
         >
@@ -49,8 +52,9 @@ export const OfferWorkspaceChatDock = ({ isOpen, onOpen, children }: OfferWorksp
           sx={{
             position: 'fixed',
             right: 16,
-            top: '50%',
-            transform: 'translateY(-50%)',
+            top: isMobileViewport ? 'auto' : '50%',
+            bottom: isMobileViewport ? `calc(${MOBILE_BOTTOM_NAV_OFFSET} + 12px)` : 'auto',
+            transform: isMobileViewport ? 'none' : 'translateY(-50%)',
             zIndex: (theme) => theme.zIndex.drawer + 1
           }}
         >

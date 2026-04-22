@@ -19,6 +19,7 @@ import {
   type ResponsibilitySavingsSummary,
 } from '@shared/api/users/getResponsibilityDashboard';
 import { formatDate, formatAmount, formatSignedAmount } from '@shared/lib/formatters';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 
 const emptySavings: ResponsibilitySavingsSummary = {
   total_closed_requests: 0,
@@ -239,8 +240,8 @@ const SavingsRatioChart = ({
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '220px minmax(0, 1fr)' },
-            gap: 2,
+            gridTemplateColumns: { xs: '128px minmax(0, 1fr)', md: '220px minmax(0, 1fr)' },
+            gap: { xs: 1.25, md: 2 },
             alignItems: 'center',
           }}
         >
@@ -248,8 +249,8 @@ const SavingsRatioChart = ({
             <Box
               sx={{
                 position: 'relative',
-                width: 180,
-                height: 180,
+                width: { xs: 128, md: 180 },
+                height: { xs: 128, md: 180 },
                 borderRadius: '50%',
                 boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 10px 24px rgba(31,42,68,0.12)',
               }}
@@ -273,7 +274,7 @@ const SavingsRatioChart = ({
             </Box>
           </Box>
 
-          <Stack spacing={1.25}>
+          <Stack spacing={{ xs: 0.8, md: 1.25 }}>
             {pieSegments.map((segment) => (
               <Card
                 key={segment.key}
@@ -283,15 +284,15 @@ const SavingsRatioChart = ({
                   borderColor: activeSliceKey === segment.key ? segment.color : 'divider',
                 }}
               >
-                <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: segment.color }} />
-                      <Typography variant="body2" fontWeight={600}>
+                <CardContent sx={{ py: { xs: 0.75, md: 1.5 }, px: { xs: 1.1, md: 2 }, '&:last-child': { pb: { xs: 0.75, md: 1.5 } } }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.75}>
+                    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                      <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: segment.color, flexShrink: 0 }} />
+                      <Typography variant="body2" fontWeight={600} noWrap>
                         {segment.label}
                       </Typography>
                     </Stack>
-                    <Typography variant="body2" fontWeight={700} color={segment.key === 'savings' ? 'success.main' : 'error.main'}>
+                    <Typography variant="body2" fontWeight={700} color={segment.key === 'savings' ? 'success.main' : 'error.main'} noWrap>
                       {formatAmount(segment.amount)} ({roundPercent(segment.percent)}%)
                     </Typography>
                   </Stack>
@@ -388,6 +389,7 @@ const SavingsTzMetrics = ({
 };
 
 export const ProjectManagerSavingsDashboard = () => {
+  const isMobileViewport = useIsMobileViewport();
   const [savings, setSavings] = useState<ResponsibilitySavingsSummary>(emptySavings);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -397,6 +399,15 @@ export const ProjectManagerSavingsDashboard = () => {
     savings: true,
     lost: true,
   });
+
+  useEffect(() => {
+    setExpandedCards({
+      closed: !isMobileViewport,
+      withSavings: !isMobileViewport,
+      savings: !isMobileViewport,
+      lost: !isMobileViewport
+    });
+  }, [isMobileViewport]);
 
   const loadSavings = useCallback(async () => {
     setIsLoading(true);
