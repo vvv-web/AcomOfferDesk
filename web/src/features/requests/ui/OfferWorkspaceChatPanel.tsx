@@ -281,8 +281,8 @@ export const OfferWorkspaceChatPanel = ({
         p: 0,
         display: 'flex',
         flexDirection: 'column',
-        minHeight: { xs: 420, lg: 0 },
-        height: { lg: '100%' },
+        minHeight: 0,
+        height: '100%',
         overflow: 'hidden',
         transition: 'width 0.2s ease'
       }}

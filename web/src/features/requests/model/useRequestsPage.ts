@@ -230,6 +230,7 @@ export const useRequestsPage = () => {
     isContractor,
     isLoading,
     ownerOptions,
-    requests
+    requests,
+    shouldLoadOpenRequests
   };
 };

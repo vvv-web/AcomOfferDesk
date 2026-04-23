@@ -1,4 +1,4 @@
-import type { HeaderConfig, HeaderSidebarItem } from './types';
+﻿import type { HeaderConfig, HeaderMobileNavItem, HeaderSidebarItem } from './types';
 import { ROLE } from '@shared/constants/roles';
 
 type BuildHeaderConfigArgs = {
@@ -9,6 +9,7 @@ type BuildHeaderConfigArgs = {
   canLoadOpenRequests: boolean;
   canLoadOfferedRequests: boolean;
   canOpenUsersPage: boolean;
+  breadcrumbs?: { key: string; label: string; to?: string }[];
   contractorTab: 'my' | 'open';
   adminUsersTab: 'contractors' | 'economists' | 'admins';
   onNavigateToDashboard: () => void;
@@ -25,27 +26,218 @@ type BuildHeaderConfigArgs = {
 const superadminItems: HeaderSidebarItem[] = [
   { key: 'users', label: 'Пользователи', to: '/admin' },
   { key: 'requests', label: 'Заявки', to: '/requests' },
-  { key: 'feedback', label: 'Фидбек', to: '/feedback' },
   { key: 'offers', label: 'КП', disabled: true },
-  { key: 'roles', label: 'Роли', disabled: true }
+  { key: 'roles', label: 'Роли', disabled: true },
+  { key: 'contact', label: 'Обратная связь', to: '/feedback', isBottomItem: true },
+  { key: 'logout', label: 'Выйти', isBottomItem: true },
 ];
+
+type MoreMenuOptions = {
+  showProfile?: boolean;
+  showNormative?: boolean;
+  showRoleGuide?: boolean;
+  showFeedback?: boolean;
+  showLogout?: boolean;
+};
+
+const buildMoreNavItem = ({
+  showProfile = true,
+  showNormative = false,
+  showRoleGuide = true,
+  showFeedback = true,
+  showLogout = true,
+}: MoreMenuOptions): HeaderMobileNavItem => {
+  const children: HeaderMobileNavItem[] = [];
+
+  if (showProfile) {
+    children.push({ key: 'profile', label: 'Профиль' });
+  }
+  if (showNormative) {
+    children.push({ key: 'normative', label: 'Нормативные документы' });
+  }
+  if (showRoleGuide) {
+    children.push({ key: 'guide', label: 'Памятка' });
+  }
+  if (showFeedback) {
+    children.push({ key: 'feedback', label: 'Обратная связь' });
+  }
+  if (showLogout) {
+    children.push({ key: 'logout', label: 'Выйти' });
+  }
+
+  return {
+    key: 'more',
+    label: 'Прочее',
+    children,
+  };
+};
+
+const buildSuperadminMobileNavItems = (): HeaderMobileNavItem[] => [
+  { key: 'users', label: 'Пользователи', to: '/admin' },
+  { key: 'requests', label: 'Заявки', to: '/requests' },
+  buildMoreNavItem({
+    showProfile: false,
+    showNormative: false,
+    showRoleGuide: true,
+    showFeedback: true,
+    showLogout: true,
+  }),
+];
+
+const buildProjectManagerMobileNavItems = (showNormative: boolean, canOpenUsersPage: boolean): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [
+    {
+      key: 'dashboard',
+      label: 'Дашборд',
+      to: '/pm-dashboard',
+      children: [
+        { key: 'dashboard-process', label: 'Процесс работы', to: '/pm-dashboard' },
+        { key: 'dashboard-savings', label: 'Экономия', to: '/pm-dashboard/savings' },
+      ],
+    },
+    { key: 'requests', label: 'Заявки', to: '/requests' }
+  ];
+
+  if (canOpenUsersPage) {
+    items.push({ key: 'employees', label: 'Штат сотрудников', to: '/admin' });
+  }
+
+  items.push(
+    buildMoreNavItem({
+      showProfile: true,
+      showNormative,
+      showRoleGuide: true,
+      showFeedback: true,
+      showLogout: true,
+    })
+  );
+
+  return items;
+};
+
+const buildContractorMobileNavItems = (): HeaderMobileNavItem[] => [
+  {
+    key: 'requests',
+    label: 'Заявки',
+    children: [
+      { key: 'my', label: 'Мои заявки', tabValue: 'my' },
+      { key: 'open', label: 'Открытые', tabValue: 'open' },
+    ],
+  },
+  buildMoreNavItem({
+    showProfile: true,
+    showNormative: false,
+    showRoleGuide: true,
+    showFeedback: true,
+    showLogout: true,
+  }),
+];
+
+const buildLeadMobileNavItems = (): HeaderMobileNavItem[] => [
+  { key: 'requests', label: 'Заявки', to: '/requests' },
+  { key: 'economists', label: 'Экономисты', to: '/admin' },
+  buildMoreNavItem({
+    showProfile: true,
+    showNormative: false,
+    showRoleGuide: true,
+    showFeedback: true,
+    showLogout: true,
+  }),
+];
+
+const buildAdminMobileNavItems = (canOpenUsersPage: boolean): HeaderMobileNavItem[] => {
+  const items: HeaderMobileNavItem[] = [];
+
+  if (canOpenUsersPage) {
+    items.push({ key: 'users', label: 'Пользователи', to: '/admin' });
+  }
+
+  items.push(
+    buildMoreNavItem({
+      showProfile: true,
+      showNormative: false,
+      showRoleGuide: true,
+      showFeedback: true,
+      showLogout: true,
+    })
+  );
+
+  return items;
+};
+
+const buildAdminUsersMobileNavItems = (): HeaderMobileNavItem[] => [
+  {
+    key: 'users',
+    label: 'Пользователи',
+    to: '/admin',
+    children: [
+      { key: 'contractors', label: 'Контрагенты', tabValue: 'contractors' },
+      { key: 'economists', label: 'Экономисты', tabValue: 'economists' },
+      { key: 'admins', label: 'Админы', tabValue: 'admins' },
+    ],
+  },
+  buildMoreNavItem({
+    showProfile: true,
+    showNormative: false,
+    showRoleGuide: true,
+    showFeedback: true,
+    showLogout: true,
+  }),
+];
+
+const resolveDefaultMobileNavItems = ({
+  isSuperadmin,
+  isProjectManager,
+  isLeadEconomist,
+  isContractor,
+  isLeadLike,
+  isAdmin,
+  canOpenUsersPage,
+}: {
+  isSuperadmin: boolean;
+  isProjectManager: boolean;
+  isLeadEconomist: boolean;
+  isContractor: boolean;
+  isLeadLike: boolean;
+  isAdmin: boolean;
+  canOpenUsersPage: boolean;
+}): HeaderMobileNavItem[] => {
+  if (isSuperadmin) {
+    return buildSuperadminMobileNavItems();
+  }
+
+  if (isProjectManager || isLeadEconomist) {
+    return buildProjectManagerMobileNavItems(isLeadEconomist, canOpenUsersPage);
+  }
+
+  if (isContractor) {
+    return buildContractorMobileNavItems();
+  }
+
+  if (isLeadLike && !isProjectManager && !isLeadEconomist) {
+    return buildLeadMobileNavItems();
+  }
+
+  return buildAdminMobileNavItems(isAdmin && canOpenUsersPage);
+};
 
 export const buildHeaderConfig = ({
   roleId,
   pathname,
-  canCreateRequest,
-  canRegisterUser,
+  canCreateRequest: _canCreateRequest,
+  canRegisterUser: _canRegisterUser,
   canLoadOpenRequests,
   canLoadOfferedRequests,
   canOpenUsersPage,
+  breadcrumbs = [],
   contractorTab,
   adminUsersTab,
   onNavigateToDashboard,
   onNavigateToSavings,
   onNavigateToRequests,
-  onNavigateToRequestCreate,
+  onNavigateToRequestCreate: _onNavigateToRequestCreate,
   onNavigateToAdmin,
-  onNavigateToAdminCreate,
+  onNavigateToAdminCreate: _onNavigateToAdminCreate,
   onNavigateBackToRequests,
   onSetContractorTab,
   onSetAdminUsersTab
@@ -60,15 +252,19 @@ export const buildHeaderConfig = ({
 
   const isRequestsListPage = pathname === '/requests';
   const isRequestDetailsPage = /^\/requests\/\d+$/.test(pathname);
+  const isContractorRequestDetailsPage = /^\/requests\/\d+\/contractor$/.test(pathname);
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
   const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard';
   const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard/savings';
-  const isResponsibilityRequestsPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/requests');
+  const isResponsibilityRequestsPage =
+    (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
   const isAdminUsersPage = isAdmin && pathname.startsWith('/admin');
 
-  const canUseContractorTabs = isContractor && isRequestsListPage && canLoadOpenRequests && canLoadOfferedRequests;
-  const isLeadRequestsTab = isLeadLike && pathname.startsWith('/requests');
+  const isContractorRequestsArea = isContractor
+    && (isRequestsListPage || isContractorRequestDetailsPage || isOfferWorkspacePage);
+  const canUseContractorTabs = isContractorRequestsArea && canLoadOpenRequests && canLoadOfferedRequests;
+  const isLeadRequestsTab = isLeadLike && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isLeadEconomistsTab = isLeadLike && pathname.startsWith('/admin');
   const canUseLeadTabs = isLeadLike && !isProjectManager && !isLeadEconomist
     && (isLeadRequestsTab || isLeadEconomistsTab)
@@ -77,31 +273,24 @@ export const buildHeaderConfig = ({
     && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
     && canOpenUsersPage;
 
-  if (isOfferWorkspacePage) {
-    return {
-      mode: 'hidden',
-      tabs: [],
-      actions: [],
-      showFeedback: false,
-      showRoleGuide: false,
-      showProfile: false,
-      showLogout: false
-    };
-  }
+  const defaultMobileNavItems = resolveDefaultMobileNavItems({
+    isSuperadmin,
+    isProjectManager,
+    isLeadEconomist,
+    isContractor,
+    isLeadLike,
+    isAdmin,
+    canOpenUsersPage,
+  });
 
   if (isSuperadmin) {
     return {
       mode: 'sidebar',
       tabs: [],
-      actions: isRequestsListPage && canCreateRequest
-        ? [{
-            key: 'create-request',
-            label: 'Создать заявку',
-            variant: 'contained',
-            onClick: onNavigateToRequestCreate
-          }]
-        : [],
+      actions: [],
+      breadcrumbs,
       sidebarItems: superadminItems,
+      mobileNavItems: buildSuperadminMobileNavItems(),
       showFeedback: true,
       showRoleGuide: true,
       showProfile: false,
@@ -111,18 +300,9 @@ export const buildHeaderConfig = ({
 
   if (canUseProjectManagerTabs) {
     return {
-      mode: 'topbar',
-      title: isProjectManager
-        ? isResponsibilityDashboard
-          ? 'Дашборд Руководителя проекта'
-          : isResponsibilitySavings
-            ? 'Экономия по закрытым заявкам'
-            : undefined
-        : isResponsibilityDashboard
-          ? 'Дашборд Ведущего экономиста'
-          : isResponsibilitySavings
-            ? 'Экономия по закрытым заявкам'
-            : undefined,
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildProjectManagerMobileNavItems(isLeadEconomist, canOpenUsersPage),
       tabs: [
         { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
         { key: 'savings', value: 'savings', label: 'Экономия' },
@@ -151,24 +331,7 @@ export const buildHeaderConfig = ({
         }
         onNavigateToRequests();
       },
-      actions: [
-        ...(isResponsibilityRequestsPage && canCreateRequest
-          ? [{
-              key: 'create-request',
-              label: 'Создать заявку',
-              variant: 'outlined' as const,
-              onClick: onNavigateToRequestCreate
-            }]
-          : []),
-        ...(isResponsibilityEmployeesPage && canRegisterUser
-          ? [{
-              key: 'create-economist',
-              label: 'Добавить экономиста',
-              variant: 'outlined' as const,
-              onClick: onNavigateToAdminCreate
-            }]
-          : [])
-      ],
+      actions: [],
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
@@ -178,9 +341,11 @@ export const buildHeaderConfig = ({
 
   if (isRequestDetailsPage) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
       tabs: [],
       actions: [],
+      mobileNavItems: defaultMobileNavItems,
       backAction: {
         label: 'К списку заявок',
         onClick: onNavigateBackToRequests
@@ -194,7 +359,9 @@ export const buildHeaderConfig = ({
 
   if (canUseContractorTabs) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildContractorMobileNavItems(),
       tabs: [
         { key: 'my', value: 'my', label: 'Мои заявки' },
         { key: 'open', value: 'open', label: 'Актуальные заявки' }
@@ -211,7 +378,9 @@ export const buildHeaderConfig = ({
 
   if (canUseLeadTabs) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildLeadMobileNavItems(),
       tabs: [
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'economists', value: 'economists', label: 'Экономисты' }
@@ -224,14 +393,7 @@ export const buildHeaderConfig = ({
         }
         onNavigateToRequests();
       },
-      actions: (isLeadRequestsTab ? canCreateRequest : canRegisterUser)
-        ? [{
-            key: 'lead-context-action',
-            label: isLeadRequestsTab ? 'Создать заявку' : 'Добавить экономиста',
-            variant: 'outlined',
-            onClick: isLeadRequestsTab ? onNavigateToRequestCreate : onNavigateToAdminCreate
-          }]
-        : [],
+      actions: [],
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
@@ -241,7 +403,9 @@ export const buildHeaderConfig = ({
 
   if (isAdminUsersPage) {
     return {
-      mode: 'topbar',
+      mode: 'sidebar',
+      breadcrumbs,
+      mobileNavItems: buildAdminUsersMobileNavItems(),
       tabs: [
         { key: 'contractors', value: 'contractors', label: 'Контрагенты' },
         { key: 'economists', value: 'economists', label: 'Экономисты' },
@@ -249,14 +413,7 @@ export const buildHeaderConfig = ({
       ],
       activeTab: adminUsersTab,
       onTabChange: (value) => onSetAdminUsersTab(value as 'contractors' | 'economists' | 'admins'),
-      actions: canRegisterUser
-        ? [{
-            key: 'create-user',
-            label: 'Добавить пользователя',
-            variant: 'outlined',
-            onClick: onNavigateToAdminCreate
-          }]
-        : [],
+      actions: [],
       showFeedback: true,
       showRoleGuide: true,
       showProfile: true,
@@ -265,16 +422,11 @@ export const buildHeaderConfig = ({
   }
 
   return {
-    mode: 'topbar',
+    mode: 'sidebar',
+    breadcrumbs,
     tabs: [],
-    actions: isRequestsListPage && canCreateRequest
-      ? [{
-          key: 'create-request',
-          label: 'Создать заявку',
-          variant: 'contained',
-          onClick: onNavigateToRequestCreate
-        }]
-      : [],
+    mobileNavItems: defaultMobileNavItems,
+    actions: [],
     showFeedback: true,
     showRoleGuide: true,
     showProfile: true,

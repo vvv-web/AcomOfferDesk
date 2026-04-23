@@ -183,6 +183,8 @@ export const useAdminPage = () => {
   const isEconomist = session?.roleId === ROLE.ECONOMIST;
   const isLeadLike = isLeadEconomist || isProjectManager || isEconomist;
   const isAdmin = session?.roleId === ROLE.ADMIN;
+  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
+  const canViewRoleIds = isAdmin || isSuperadmin;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -400,6 +402,7 @@ export const useAdminPage = () => {
   return {
     isLeadLike,
     isAdmin,
+    canViewRoleIds,
     isDialogOpen,
     setIsDialogOpen,
     errorMessage,

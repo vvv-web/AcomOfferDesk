@@ -1,3 +1,4 @@
+import FeedbackOutlined from '@mui/icons-material/FeedbackOutlined';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Alert,
@@ -7,13 +8,15 @@ import {
   DialogContent,
   Stack,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
+import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { createFeedback } from '@shared/api/feedback/createFeedback';
+import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
 const schema = z.object({
@@ -21,6 +24,11 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
+
+type FeedbackButtonProps = {
+  iconOnly?: boolean;
+  sidebar?: boolean;
+};
 
 const dialogPaperSx = (theme: Theme) => ({
   borderRadius: 2,
@@ -42,7 +50,8 @@ const dialogContentSx = {
   }
 };
 
-export const FeedbackButton = () => {
+export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackButtonProps) => {
+  const theme = useTheme();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -88,9 +97,76 @@ export const FeedbackButton = () => {
 
   return (
     <>
-      <Button variant="outlined" onClick={handleOpen}>
-        Обратная связь
-      </Button>
+      {sidebar ? (
+        <Tooltip title="Обратная связь" placement="right" enterDelay={150} disableHoverListener={!iconOnly}>
+          <Box component="span" sx={{ display: 'block', width: '100%' }}>
+            <ActionButton
+              kind="custom"
+              showNavigationIcons={false}
+              onClick={handleOpen}
+              aria-label="Открыть форму обратной связи"
+              sx={{
+                width: '100%',
+                minHeight: 42,
+                minWidth: 0,
+                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                justifyContent: iconOnly ? 'center' : 'flex-start',
+                px: iconOnly ? 0 : 1.75,
+                gap: iconOnly ? 0 : 1.25,
+                transition: 'padding 0.32s ease, gap 0.32s ease'
+              }}
+            >
+              <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                <FeedbackOutlined fontSize="small" />
+              </Box>
+              <Typography
+                sx={{
+                  maxWidth: iconOnly ? 0 : 160,
+                  opacity: iconOnly ? 0 : 1,
+                  transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                  overflow: 'hidden',
+                  textOverflow: 'clip',
+                  whiteSpace: 'nowrap',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  lineHeight: 1.2,
+                  transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                }}
+              >
+                {'Обратная связь'}
+              </Typography>
+            </ActionButton>
+          </Box>
+        </Tooltip>
+      ) : iconOnly ? (
+        <Tooltip title="Обратная связь" placement="right">
+          <Box component="span" sx={{ display: 'block', width: '100%' }}>
+            <ActionButton
+              kind="custom"
+              showNavigationIcons={false}
+              onClick={handleOpen}
+              aria-label="Открыть форму обратной связи"
+              sx={{
+                width: '100%',
+                minHeight: 42,
+                minWidth: 0,
+                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                justifyContent: 'center',
+                px: 0,
+                gap: 0,
+              }}
+            >
+              <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                <FeedbackOutlined fontSize="small" />
+              </Box>
+            </ActionButton>
+          </Box>
+        </Tooltip>
+      ) : (
+        <Button variant="outlined" onClick={handleOpen}>
+          Обратная связь
+        </Button>
+      )}
       <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm" PaperProps={{ sx: dialogPaperSx }}>
         <DialogContent sx={dialogContentSx}>
           <Box component="form" onSubmit={handleSubmit(onSubmit)}>

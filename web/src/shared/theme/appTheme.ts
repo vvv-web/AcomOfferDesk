@@ -1,18 +1,18 @@
-﻿import { alpha, createTheme } from '@mui/material/styles';
+import { alpha, createTheme } from '@mui/material/styles';
 import { themeTokens } from '@shared/theme/tokens';
-
-const dashboardPalette = {
-  status: {
-    open: '#6fa8dc',
-    review: '#f4b183'
-  },
-  workload: ['#6fa8dc', '#8ecae6', '#a4c2f4', '#f4b183', '#a8d5ba', '#c9b6e4', '#f7c9a9', '#b7d7e8']
-};
 
 const tokens = themeTokens;
 const buttonRadius = tokens.shape.buttonRadius;
 const panelPadding = tokens.shape.panelPadding;
 const surfacePadding = tokens.shape.surfacePadding;
+
+const dashboardPalette = {
+  status: {
+    open: tokens.color.status.open,
+    review: tokens.color.status.review
+  },
+  workload: [...tokens.color.chart]
+};
 
 export const appTheme = createTheme({
   acomShape: {
@@ -174,6 +174,38 @@ export const appTheme = createTheme({
             borderColor: tokens.color.disabled.text,
             color: tokens.color.disabled.text
           }
+        }
+      }
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          backgroundColor: tokens.color.background.card,
+          borderRadius: buttonRadius,
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: tokens.color.border
+          },
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: tokens.color.primary.main
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderColor: tokens.color.primary.main,
+            borderWidth: 1.5
+          }
+        }
+      }
+    },
+    MuiChip: {
+      styleOverrides: {
+        outlined: {
+          borderWidth: 1.5
+        }
+      }
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          color: tokens.color.text.primary
         }
       }
     }

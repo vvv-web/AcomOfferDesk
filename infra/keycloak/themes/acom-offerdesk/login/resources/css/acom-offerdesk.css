@@ -1,4 +1,5 @@
 :root {
+  --aod-font-family: "Inter", "Segoe UI", sans-serif;
   --aod-primary: #2f6fd6;
   --aod-primary-dark: #245bb5;
   --aod-primary-light: #e7f0ff;
@@ -25,7 +26,7 @@ html,
 body {
   min-height: 100%;
   margin: 0;
-  font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+  font-family: var(--aod-font-family);
   color: var(--aod-text);
 }
 
@@ -481,26 +482,186 @@ body#keycloak-bg.aod-body {
   color: var(--aod-text-muted);
   font-size: 13px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.aod-guide-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--aod-control-radius);
+  border: 1px solid var(--aod-border);
+  background: #fff;
+  color: var(--aod-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.aod-guide-trigger:hover {
+  border-color: var(--aod-primary);
+  color: var(--aod-primary);
+  transform: translateY(-1px);
+}
+
+.aod-guide-trigger__icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--aod-primary-light);
+  color: var(--aod-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.aod-guide-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.aod-guide-modal[hidden] {
+  display: none;
+}
+
+.aod-guide-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 22, 46, 0.5);
+}
+
+.aod-guide-modal__panel {
+  position: relative;
+  width: min(920px, 96vw);
+  max-height: min(88vh, 880px);
+  overflow: auto;
+  background: var(--aod-surface);
+  border: 1px solid var(--aod-border);
+  border-radius: 18px;
+  box-shadow: 0 28px 64px rgba(11, 22, 46, 0.28);
+  padding: 20px;
+}
+
+.aod-guide-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.aod-guide-modal__title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--aod-text);
+}
+
+.aod-guide-modal__close {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border: 1px solid var(--aod-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--aod-text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.aod-guide-modal__close:hover {
+  border-color: var(--aod-primary);
+  color: var(--aod-primary);
+}
+
+.aod-guide-modal__summary {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--aod-border);
+  background: #f8fbff;
+  color: var(--aod-text-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.aod-guide-modal__sections {
+  display: grid;
+  gap: 10px;
+}
+
+.aod-guide-section {
+  border: 1px solid var(--aod-border);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.aod-guide-section > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--aod-text);
+  background: #fbfdff;
+  border-bottom: 1px solid transparent;
+}
+
+.aod-guide-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.aod-guide-section[open] > summary {
+  border-bottom-color: var(--aod-border);
+}
+
+.aod-guide-section__body {
+  padding: 12px 14px;
+}
+
+.aod-guide-section__list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.aod-guide-section__list li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--aod-text-muted);
 }
 
 .aod-app-footer {
   width: 100%;
-  padding: 8px 20px 18px;
-  border-top: 1px solid rgba(211, 219, 231, 0.8);
-  background: linear-gradient(180deg, rgba(237, 243, 255, 0) 0%, rgba(255, 255, 255, 0.9) 22%, #ffffff 100%);
+  padding: 6px 20px 18px;
 }
 
 .aod-app-footer__panel {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 10px 18px;
-  border-radius: 36px;
-  border: 1px solid rgba(211, 219, 231, 0.95);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(231, 240, 255, 0.88) 100%);
-  box-shadow: 0 10px 24px rgba(15, 35, 75, 0.1);
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 4px 14px rgba(15, 35, 75, 0.06);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 18px;
+  gap: 12px;
   align-items: center;
 }
 
@@ -520,26 +681,26 @@ body#keycloak-bg.aod-body {
 
 .aod-app-footer__text {
   color: var(--aod-text-muted);
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 500;
 }
 
 .aod-app-footer__brand {
   text-align: center;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0.1px;
   color: var(--aod-text);
   white-space: nowrap;
 }
 
 .aod-app-footer__icon-link {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 36px;
+  border-radius: 10px;
   border: 1px solid var(--aod-border);
   background: rgba(255, 255, 255, 0.86);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
@@ -553,10 +714,16 @@ body#keycloak-bg.aod-body {
 }
 
 .aod-app-footer__icon-link img {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   object-fit: cover;
-  border-radius: 36px;
+  border-radius: 6px;
+}
+
+@media (max-width: 640px) {
+  .aod-app-footer__text {
+    font-size: 12px;
+  }
 }
 
 @keyframes aod-spin {
@@ -581,13 +748,22 @@ body#keycloak-bg.aod-body {
     font-size: 26px;
   }
 
+  .aod-guide-modal__panel {
+    padding: 16px;
+  }
+
+  .aod-guide-modal__title {
+    font-size: 21px;
+  }
+
   .aod-app-footer {
     padding: 0 12px 12px;
   }
 
   .aod-app-footer__panel {
     grid-template-columns: 1fr;
-    padding: 14px 16px;
+    padding: 10px 12px;
+    border-radius: 10px;
     text-align: center;
   }
 

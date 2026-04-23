@@ -101,6 +101,8 @@ class UserStatusUpdateRequest(BaseModel):
 class UserStatusUpdateData(BaseModel):
     user_id: str
     user_status: str
+    tg_user_id: int | None = None
+    tg_status: str | None = None
 
 
 class UserStatusUpdateResponse(BaseModel):

@@ -16,3 +16,6 @@ build/
 *.log
 *.sqlite3
 .DS_Store
+.claude/
+.cursor/
+.trellis/

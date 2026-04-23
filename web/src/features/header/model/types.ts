@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 export type HeaderMode = 'hidden' | 'topbar' | 'sidebar';
 
 export type HeaderTab = {
@@ -21,8 +23,19 @@ export type HeaderBackAction = {
 export type HeaderSidebarItem = {
   key: string;
   label: string;
+  icon?: ReactNode;
   to?: string;
   disabled?: boolean;
+  isBottomItem?: boolean;
+};
+
+export type HeaderMobileNavItem = {
+  key: string;
+  label: string;
+  to?: string;
+  tabValue?: string;
+  disabled?: boolean;
+  children?: HeaderMobileNavItem[];
 };
 
 export type HeaderConfig = {
@@ -33,7 +46,9 @@ export type HeaderConfig = {
   onTabChange?: (value: string) => void;
   actions: HeaderAction[];
   backAction?: HeaderBackAction;
+  breadcrumbs?: { key: string; label: string; to?: string }[];
   sidebarItems?: HeaderSidebarItem[];
+  mobileNavItems?: HeaderMobileNavItem[];
   showFeedback: boolean;
   showRoleGuide: boolean;
   showProfile: boolean;

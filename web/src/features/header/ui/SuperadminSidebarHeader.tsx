@@ -1,311 +1,364 @@
-﻿import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
-import InsertDriveFileOutlined from '@mui/icons-material/InsertDriveFileOutlined';
-import NavigateBeforeRounded from '@mui/icons-material/NavigateBeforeRounded';
-import NavigateNextRounded from '@mui/icons-material/NavigateNextRounded';
-import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
-import SentimentSatisfiedAltRounded from '@mui/icons-material/SentimentSatisfiedAltRounded';
-import { Box, ButtonBase, Stack, Tooltip, Typography } from '@mui/material';
+import AddRounded from '@mui/icons-material/AddRounded';
+import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
+import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
+import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
+import LogoutRounded from '@mui/icons-material/LogoutRounded';
+import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import { NavLink, useLocation } from 'react-router-dom';
-import { ActionButton } from '@shared/ui/buttons';
-import { HeaderActions } from './HeaderActions';
+import { useEffect, useState } from 'react';
+import { NavLink } from 'react-router-dom';
+import { ActionButton } from '@shared/components/ActionButton';
+import { useAuth } from '@app/providers/AuthProvider';
+import { FeedbackButton } from '@shared/components/FeedbackButton';
+import { NormativeFileButton } from '@shared/components/NormativeFileButton';
+import { ProfileButton } from '@shared/components/ProfileButton';
+import { RoleGuideButton } from '@shared/components/RoleGuideButton';
+import { ROLE } from '@shared/constants/roles';
+import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
 import type { HeaderConfig } from '../model/types';
+import { getHeaderNavigationIcon } from './navigationIcons';
 
-const SIDEBAR_EXPANDED_WIDTH = 248;
-const SIDEBAR_COLLAPSED_WIDTH = 84;
-const AUTO_COLLAPSE_BREAKPOINT = 1200;
-
-const getSidebarItemIcon = (key: string) => {
-  if (key === 'users') {
-    return <PersonOutlineRounded fontSize="small" />;
-  }
-  if (key === 'requests') {
-    return <InsertDriveFileOutlined fontSize="small" />;
-  }
-  if (key === 'feedback') {
-    return <SentimentSatisfiedAltRounded fontSize="small" />;
-  }
-  if (key === 'offers') {
-    return <InsertDriveFileOutlined fontSize="small" />;
-  }
-  if (key === 'roles') {
-    return <PersonOutlineRounded fontSize="small" />;
-  }
-  return <InsertDriveFileOutlined fontSize="small" />;
-};
-
-type SidebarNavButtonProps = {
-  label: string;
-  icon: ReactNode;
-  collapsed: boolean;
-  disabled?: boolean;
-  active?: boolean;
-  onClick?: () => void;
-};
-
-const SidebarNavButton = ({ label, icon, collapsed, disabled, active, onClick }: SidebarNavButtonProps) => {
-  const theme = useTheme();
-
-  return (
-    <Tooltip title={label} placement="right" enterDelay={120} disableHoverListener={!collapsed}>
-      <Box sx={{ width: '100%', minWidth: 0 }}>
-        <ActionButton
-          kind="custom"
-          selected={Boolean(active)}
-          disabled={disabled}
-          showNavigationIcons={false}
-          onClick={onClick}
-          sx={{
-            width: '100%',
-            minWidth: 0,
-            minHeight: 42,
-            borderRadius: `${theme.acomShape.buttonRadius}px !important`,
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            px: collapsed ? 0 : 1.75,
-            gap: collapsed ? 0 : 1.25,
-            transition: 'background-color 0.28s ease, border-color 0.28s ease, color 0.28s ease, padding 0.32s ease, gap 0.32s ease',
-            '&:focus-visible': {
-              outline: `2px solid ${alpha(theme.palette.primary.main, 0.28)}`,
-              outlineOffset: 1
-            }
-          }}
-        >
-          <Stack component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
-            {icon}
-          </Stack>
-          <Typography
-            sx={{
-              maxWidth: collapsed ? 0 : 180,
-              opacity: collapsed ? 0 : 1,
-              transform: collapsed ? 'translateX(-4px)' : 'translateX(0)',
-              overflow: 'hidden',
-              textOverflow: 'clip',
-              whiteSpace: 'nowrap',
-              fontSize: 14,
-              fontWeight: active ? 600 : 500,
-              lineHeight: 1.2,
-              transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
-            }}
-          >
-            {label}
-          </Typography>
-        </ActionButton>
-      </Box>
-    </Tooltip>
-  );
-};
+const navLinkStyles = { textDecoration: 'none', display: 'block', width: '100%' } as const;
 
 type SuperadminSidebarHeaderProps = {
   config: HeaderConfig;
   onLogout: () => void;
+  collapsed: boolean;
+  onToggleCollapse?: () => void;
 };
 
-export const SuperadminSidebarHeader = ({ config, onLogout }: SuperadminSidebarHeaderProps) => {
+export const SuperadminSidebarHeader = ({
+  config,
+  onLogout,
+  collapsed,
+  onToggleCollapse,
+}: SuperadminSidebarHeaderProps) => {
   const theme = useTheme();
-  const location = useLocation();
-
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isAutoCollapsed, setIsAutoCollapsed] = useState(false);
-  const [isCompactHeight, setIsCompactHeight] = useState(false);
+  const { session } = useAuth();
+  const [isCompactHeight, setIsCompactHeight] = useState<boolean>(
+    typeof window !== 'undefined' ? window.innerHeight <= 760 : false
+  );
   const [isEdgeHovered, setIsEdgeHovered] = useState(false);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
+  const [isToggleVisible, setIsToggleVisible] = useState(false);
+  const [isDashboardMenuHovered, setIsDashboardMenuHovered] = useState(false);
+  const [dashboardMenuAnchorEl, setDashboardMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    const syncViewport = () => {
-      const shouldAutoCollapse = window.innerWidth <= AUTO_COLLAPSE_BREAKPOINT;
-      setIsCompactHeight(window.innerHeight <= 760);
+    const handleResize = () => setIsCompactHeight(window.innerHeight <= 760);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-      if (shouldAutoCollapse) {
-        setIsAutoCollapsed(true);
-        setIsCollapsed(true);
-        return;
-      }
+  useEffect(() => {
+    const shouldShow = Boolean(onToggleCollapse) && (isEdgeHovered || isToggleHovered);
+    if (shouldShow) {
+      setIsToggleVisible(true);
+      return;
+    }
 
-      if (isAutoCollapsed) {
-        setIsAutoCollapsed(false);
-        setIsCollapsed(false);
-      }
-    };
-
-    syncViewport();
-    window.addEventListener('resize', syncViewport);
+    const hideTimeout = window.setTimeout(() => {
+      setIsToggleVisible(false);
+    }, 160);
 
     return () => {
-      window.removeEventListener('resize', syncViewport);
+      window.clearTimeout(hideTimeout);
     };
-  }, [isAutoCollapsed]);
+  }, [isEdgeHovered, isToggleHovered, onToggleCollapse]);
 
-  const currentWidth = isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH;
-  const showToggleTab = isEdgeHovered || isToggleHovered;
+  const topItems = (config.sidebarItems ?? []).filter((item) => !item.isBottomItem && item.key !== 'logout');
+  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
+  const hasSavingsTab = config.tabs.some((tabItem) => tabItem.key === 'savings');
+  const isDashboardPopupOpen = collapsed && hasSavingsTab && Boolean(dashboardMenuAnchorEl);
 
   return (
     <Stack
       component="aside"
+      justifyContent="space-between"
       sx={{
-        width: currentWidth,
-        minWidth: currentWidth,
+        width: '100%',
+        position: 'sticky',
+        top: 0,
+        minHeight: '100vh',
+        height: '100vh',
         bgcolor: 'background.paper',
         borderRight: '1px solid',
         borderColor: 'divider',
-        position: 'relative',
-        height: '100%',
+        px: collapsed ? 1 : 1.5,
+        py: 1.5,
         overflow: 'hidden',
-        overflowX: 'hidden',
-        transition: 'width 420ms cubic-bezier(0.22, 1, 0.36, 1), min-width 420ms cubic-bezier(0.22, 1, 0.36, 1)',
-        willChange: 'width',
-        flexShrink: 0
+        transition: 'padding 0.24s ease'
       }}
     >
-      <Stack sx={{ height: '100%', minWidth: 0, overflowX: 'hidden' }}>
-        <Stack
-          sx={{
-            px: isCollapsed ? 1.25 : 2,
-            minHeight: 66,
-            alignItems: isCollapsed ? 'center' : 'stretch',
-            justifyContent: 'center',
-            transition: 'padding 420ms cubic-bezier(0.22, 1, 0.36, 1)'
-          }}
-        >
-          <Stack sx={{ position: 'relative', minHeight: 26, alignItems: isCollapsed ? 'center' : 'flex-start', justifyContent: 'center' }}>
-            <Typography
-              sx={{
-                fontSize: 22,
-                fontWeight: 700,
-                lineHeight: 1.1,
-                whiteSpace: 'nowrap',
-                opacity: isCollapsed ? 0 : 1,
-                transform: isCollapsed ? 'translateX(-4px)' : 'translateX(0)',
-                transition: 'opacity 190ms ease, transform 190ms ease'
-              }}
-            >
-              AcomOfferDesk
-            </Typography>
-            <Typography
-              sx={{
-                position: 'absolute',
-                fontSize: 22,
-                fontWeight: 700,
-                lineHeight: 1.1,
-                whiteSpace: 'nowrap',
-                opacity: isCollapsed ? 1 : 0,
-                transform: isCollapsed ? 'scale(1)' : 'scale(0.95)',
-                transition: 'opacity 190ms ease, transform 190ms ease'
-              }}
-            >
-              A
-            </Typography>
-          </Stack>
+      <Stack sx={{ height: '100%' }}>
+        <Stack direction="row" alignItems="center" justifyContent={collapsed ? 'center' : 'space-between'} sx={{ minHeight: 44, mb: 1.8 }}>
+          <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>
+            {collapsed ? 'A' : 'AcomOfferDesk'}
+          </Typography>
         </Stack>
 
-        <Stack
-          spacing={1.25}
-          sx={{
-            flex: 1,
-            px: isCollapsed ? 1.25 : 2,
-            pb: 2,
-            overflowY: { lg: 'auto' },
-            overflowX: 'hidden',
-            minWidth: 0,
-            scrollbarWidth: 'thin',
-            '&::-webkit-scrollbar:horizontal': {
-              height: 0
-            },
-            transition: 'padding 420ms cubic-bezier(0.22, 1, 0.36, 1)'
-          }}
-        >
-          {(config.sidebarItems ?? []).map((item) => {
-            const icon = getSidebarItemIcon(item.key);
+        <Stack spacing={1.25} sx={{ overflowY: { lg: 'auto' }, pr: { lg: 0.5 } }}>
+          {config.title && !collapsed ? (
+            <Typography variant="body2" color="text.secondary" sx={{ px: 0.4, pb: 0.25, fontWeight: 600 }}>
+              {config.title}
+            </Typography>
+          ) : null}
 
-            if (item.to) {
+          {topItems.map((item) => {
+            const icon = item.icon ?? getHeaderNavigationIcon(item.key);
+            if (!item.to) {
               return (
-                <NavLink
+                <SidebarMenuButton
                   key={item.key}
-                  to={item.to}
-                  style={{ textDecoration: 'none', display: 'block', width: '100%', minWidth: 0 }}
-                >
-                  {({ isActive }) => (
-                    <SidebarNavButton
-                      label={item.label}
-                      icon={icon}
-                      collapsed={isCollapsed}
-                      disabled={item.disabled}
-                      active={isActive || location.pathname === item.to}
-                    />
-                  )}
-                </NavLink>
+                  label={item.label}
+                  icon={icon}
+                  collapsed={collapsed}
+                  disabled={item.disabled}
+                />
               );
             }
 
             return (
-              <SidebarNavButton
-                key={item.key}
-                label={item.label}
-                icon={icon}
-                collapsed={isCollapsed}
-                disabled={item.disabled}
-                active={false}
+              <NavLink key={item.key} to={item.to} style={navLinkStyles}>
+                {({ isActive }) => (
+                  <SidebarMenuButton
+                    label={item.label}
+                    icon={icon}
+                    collapsed={collapsed}
+                    active={isActive}
+                    disabled={item.disabled}
+                  />
+                )}
+              </NavLink>
+            );
+          })}
+
+          {config.tabs.map((tab) => {
+            if (tab.key === 'savings') {
+              return null;
+            }
+
+            if (tab.key === 'dashboard') {
+              const isDashboardOrSavingsActive = config.activeTab === 'dashboard' || config.activeTab === 'savings';
+              const shouldShowDashboardChildren = !collapsed && hasSavingsTab && (isDashboardMenuHovered || isDashboardOrSavingsActive);
+
+              return (
+                <Stack
+                  key={tab.key}
+                  spacing={0.5}
+                  onMouseEnter={() => {
+                    if (!collapsed) {
+                      setIsDashboardMenuHovered(true);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (!collapsed) {
+                      setIsDashboardMenuHovered(false);
+                    }
+                  }}
+                >
+                  <Box
+                    onClick={(event) => {
+                      if (collapsed && hasSavingsTab) {
+                        setDashboardMenuAnchorEl((currentAnchorEl) =>
+                          currentAnchorEl ? null : (event.currentTarget as HTMLElement)
+                        );
+                        return;
+                      }
+
+                      config.onTabChange?.('dashboard');
+                    }}
+                  >
+                    <SidebarMenuButton
+                      label={tab.label}
+                      icon={getHeaderNavigationIcon(tab.key)}
+                      collapsed={collapsed}
+                      active={collapsed ? isDashboardOrSavingsActive : false}
+                    />
+                  </Box>
+                  {shouldShowDashboardChildren ? (
+                    <Stack spacing={0.35} sx={{ pl: 1.25 }}>
+                      <SidebarMenuButton
+                        label="Процесс работы"
+                        icon={getHeaderNavigationIcon('dashboard')}
+                        collapsed={false}
+                        active={config.activeTab === 'dashboard'}
+                        onClick={() => config.onTabChange?.('dashboard')}
+                      />
+                      <SidebarMenuButton
+                        label="Экономия"
+                        icon={getHeaderNavigationIcon('savings')}
+                        collapsed={false}
+                        active={config.activeTab === 'savings'}
+                        onClick={() => config.onTabChange?.('savings')}
+                      />
+                    </Stack>
+                  ) : null}
+                </Stack>
+              );
+            }
+
+            return (
+              <SidebarMenuButton
+                key={tab.key}
+                label={tab.label}
+                icon={getHeaderNavigationIcon(tab.key)}
+                collapsed={collapsed}
+                active={config.activeTab === tab.value}
+                onClick={() => config.onTabChange?.(tab.value)}
               />
             );
           })}
 
-          <Stack
-            spacing={1.2}
-            sx={{
-              mt: isCompactHeight ? 2 : 'auto',
-              pt: isCompactHeight ? 2 : 2,
-              borderTop: '1px solid',
-              borderColor: 'divider',
-              opacity: isCollapsed ? 0 : 1,
-              pointerEvents: isCollapsed ? 'none' : 'auto',
-              transition: 'opacity 0.2s ease'
-            }}
-          >
-            <HeaderActions
-              actions={[]}
-              showFeedback={config.showFeedback}
-              showRoleGuide={config.showRoleGuide}
-              showProfile={false}
-              showLogout={config.showLogout}
-              onLogout={onLogout}
-              sidebar
+          {config.backAction ? (
+            <SidebarMenuButton
+              label={config.backAction.label}
+              icon={<ArrowBackRounded fontSize="small" />}
+              collapsed={collapsed}
+              onClick={config.backAction.onClick}
             />
-          </Stack>
+          ) : null}
+
+          {config.actions.map((action) => (
+            <SidebarMenuButton
+              key={action.key}
+              label={action.label}
+              icon={<AddRounded fontSize="small" />}
+              collapsed={collapsed}
+              onClick={action.onClick}
+            />
+          ))}
+
+          {isSuperadmin ? null : <NormativeFileButton iconOnly={collapsed} sidebar />}
         </Stack>
 
-        <Stack
-          component="div"
-          onMouseEnter={() => setIsEdgeHovered(true)}
-          onMouseLeave={() => setIsEdgeHovered(false)}
-          sx={{ position: 'absolute', top: 0, right: 0, width: 28, height: '100%', zIndex: 3 }}
-        />
+        <Menu
+          open={isDashboardPopupOpen}
+          anchorEl={dashboardMenuAnchorEl}
+          onClose={() => {
+            setDashboardMenuAnchorEl(null);
+          }}
+          anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'center', horizontal: 'left' }}
+        >
+          <MenuItem
+            onClick={() => {
+              config.onTabChange?.('dashboard');
+              setDashboardMenuAnchorEl(null);
+            }}
+          >
+            Процесс работы
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              config.onTabChange?.('savings');
+              setDashboardMenuAnchorEl(null);
+            }}
+          >
+            Экономия
+          </MenuItem>
+        </Menu>
 
-        <ButtonBase
-          onClick={() => setIsCollapsed((currentValue) => !currentValue)}
-          onMouseEnter={() => setIsToggleHovered(true)}
-          onMouseLeave={() => setIsToggleHovered(false)}
+        <Stack
+          spacing={1.25}
           sx={{
-            position: 'absolute',
-            top: '50%',
-            transform: `translate3d(${showToggleTab ? 0 : 5}px, -50%, 0)`,
-            right: 4,
-            width: 24,
-            height: 54,
-            borderRadius: `${theme.acomShape.buttonRadius}px`,
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            boxShadow: '0 6px 20px rgba(22, 35, 66, 0.12)',
-            zIndex: 4,
-            opacity: showToggleTab ? 1 : 0,
-            pointerEvents: showToggleTab ? 'auto' : 'none',
-            transition: 'opacity 320ms cubic-bezier(0.22, 1, 0.36, 1), transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
-            willChange: 'opacity, transform'
+            mt: isCompactHeight ? 2 : 'auto',
+            pt: isCompactHeight ? 2 : 0,
+            borderTop: isCompactHeight ? '1px solid' : 'none',
+            borderColor: 'divider'
           }}
         >
-          {isCollapsed ? <NavigateNextRounded fontSize="small" /> : <NavigateBeforeRounded fontSize="small" />}
-        </ButtonBase>
+          {config.showRoleGuide ? <RoleGuideButton iconOnly={collapsed} sidebar /> : null}
+          {config.showFeedback ? <FeedbackButton iconOnly={collapsed} sidebar /> : null}
+
+          {config.showProfile ? (
+            collapsed ? (
+              <>
+                <ProfileButton iconOnly sidebar />
+                <SidebarMenuButton
+                  label="Выйти"
+                  icon={<LogoutRounded fontSize="small" />}
+                  collapsed
+                  onClick={onLogout}
+                />
+              </>
+            ) : (
+              <Stack direction="row" spacing={1}>
+                <Stack sx={{ flex: 1, minWidth: 0 }}>
+                  <ProfileButton sidebar />
+                </Stack>
+                <Tooltip title="Выйти" placement="right" enterDelay={150}>
+                  <Box component="span" sx={{ display: 'inline-flex' }}>
+                    <ActionButton
+                      kind="custom"
+                      showNavigationIcons={false}
+                      onClick={onLogout}
+                      aria-label="Выйти"
+                      sx={{
+                        minWidth: 56,
+                        width: 56,
+                        minHeight: 42,
+                        borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                      }}
+                    >
+                      <LogoutRounded fontSize="small" />
+                    </ActionButton>
+                  </Box>
+                </Tooltip>
+              </Stack>
+            )
+          ) : config.showLogout ? (
+            <SidebarMenuButton
+              label="Выйти"
+              icon={<LogoutRounded fontSize="small" />}
+              collapsed={collapsed}
+              onClick={onLogout}
+            />
+          ) : null}
+        </Stack>
+
+        {onToggleCollapse ? (
+          <>
+            <Stack
+              component="div"
+              onMouseEnter={() => setIsEdgeHovered(true)}
+              onMouseLeave={() => setIsEdgeHovered(false)}
+              sx={{ position: 'absolute', top: 0, right: 0, width: 28, height: '100%', zIndex: 3 }}
+            />
+
+            <IconButton
+              onClick={onToggleCollapse}
+              size="small"
+              onMouseEnter={() => setIsToggleHovered(true)}
+              onMouseLeave={() => setIsToggleHovered(false)}
+              sx={(theme) => ({
+                position: 'absolute',
+                top: '50%',
+                right: 8,
+                transform: isToggleVisible ? 'translate(0, -50%)' : 'translate(8px, -50%)',
+                opacity: isToggleVisible ? 1 : 0,
+                pointerEvents: isToggleVisible ? 'auto' : 'none',
+                zIndex: 4,
+                borderRadius: `${theme.acomShape.controlRadius}px`,
+                border: '1px solid',
+                borderColor: 'divider',
+                color: 'text.secondary',
+                bgcolor: 'background.paper',
+                transition: 'opacity 180ms ease, transform 180ms ease, border-color 180ms ease, color 180ms ease',
+                '&:hover': {
+                  borderColor: 'primary.main',
+                  bgcolor: alpha(theme.palette.primary.main, 0.04),
+                  color: 'primary.main'
+                }
+              })}
+            >
+              {collapsed ? <KeyboardArrowRightRounded fontSize="small" /> : <KeyboardArrowLeftRounded fontSize="small" />}
+            </IconButton>
+          </>
+        ) : null}
       </Stack>
     </Stack>
   );
 };
+
+
