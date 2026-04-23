@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -37,12 +38,14 @@ class RequestRepository:
         deadline_at: datetime,
         description: str | None,
         initial_amount: float | None = None,
+        id_plan: int | None = None,
     ) -> Request:
         request = Request(
             id_user=id_user,
             deadline_at=deadline_at,
             description=description,
             initial_amount=initial_amount,
+            id_plan=id_plan,
         )
         self._session.add(request)
         await self._session.flush()
@@ -51,6 +54,16 @@ class RequestRepository:
     async def get_by_id(self, *, request_id: int) -> Request | None:
         stmt = select(Request).where(Request.id == request_id)
         result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def economy_plan_exists(self, *, plan_id: int) -> bool:
+        stmt = text("SELECT 1 FROM economy_plans WHERE id = :plan_id LIMIT 1")
+        result = await self._session.execute(stmt, {"plan_id": plan_id})
+        return result.scalar_one_or_none() is not None
+
+    async def get_economy_plan_owner_user_id(self, *, plan_id: int) -> str | None:
+        stmt = text("SELECT id_user FROM economy_plans WHERE id = :plan_id LIMIT 1")
+        result = await self._session.execute(stmt, {"plan_id": plan_id})
         return result.scalar_one_or_none()
     
     async def list_files_by_request_id(self, *, request_id: int) -> list[File]:
@@ -97,6 +110,9 @@ class RequestRepository:
 
     async def update_final_amount(self, *, request: Request, final_amount: float) -> None:
         request.final_amount = final_amount
+
+    async def update_plan(self, *, request: Request, plan_id: int | None) -> None:
+        request.id_plan = plan_id
 
     async def attach_file(self, *, request_id: int, file_id: int) -> None:
         self._session.add(RequestFile(id=file_id, id_request=request_id))
@@ -398,6 +414,135 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.all())
+
+    async def aggregate_closed_economy_fact_by_owner_ids(
+        self,
+        *,
+        owner_ids: list[str],
+        period_start: date,
+        period_end: date,
+    ) -> dict[str, Decimal]:
+        if not owner_ids:
+            return {}
+
+        start_dt = datetime.combine(period_start, time.min)
+        end_dt = datetime.combine(period_end + timedelta(days=1), time.min)
+
+        from_view = await self._aggregate_closed_economy_fact_from_view_by_owner_ids(
+            owner_ids=owner_ids,
+            start_dt=start_dt,
+            end_dt=end_dt,
+        )
+        if from_view is not None:
+            return from_view
+
+        return await self._aggregate_closed_economy_fact_from_requests_by_owner_ids(
+            owner_ids=owner_ids,
+            start_dt=start_dt,
+            end_dt=end_dt,
+        )
+
+    async def _aggregate_closed_economy_fact_from_view_by_owner_ids(
+        self,
+        *,
+        owner_ids: list[str],
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> dict[str, Decimal] | None:
+        columns_stmt = text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'v_request_economy'
+            """
+        )
+        columns_result = await self._session.execute(columns_stmt)
+        columns = {row[0] for row in columns_result.all()}
+        if not columns:
+            return None
+
+        owner_candidates = ["id_user", "owner_user_id", "user_id", "responsible_user_id"]
+        request_candidates = ["id_request", "request_id", "id"]
+        amount_candidates = ["economy_amount", "savings_amount", "fact_amount", "amount", "economy_sum"]
+
+        owner_column = next((item for item in owner_candidates if item in columns), None)
+        request_column = next((item for item in request_candidates if item in columns), None)
+        amount_column = next((item for item in amount_candidates if item in columns), None)
+        if owner_column is None or request_column is None or amount_column is None:
+            return None
+
+        owner_ident = self._quote_identifier(owner_column)
+        request_ident = self._quote_identifier(request_column)
+        amount_ident = self._quote_identifier(amount_column)
+
+        stmt = (
+            text(
+                f"""
+                SELECT
+                  COALESCE(v.{owner_ident}, r.id_user) AS owner_user_id,
+                  COALESCE(SUM(v.{amount_ident}), 0) AS fact_amount
+                FROM requests r
+                LEFT JOIN v_request_economy v
+                  ON v.{request_ident} = r.id
+                WHERE r.status = 'closed'
+                  AND r.closed_at >= :start_dt
+                  AND r.closed_at < :end_dt
+                  AND r.id_user IN :owner_ids
+                GROUP BY COALESCE(v.{owner_ident}, r.id_user)
+                """
+            )
+            .bindparams(bindparam("owner_ids", expanding=True))
+        )
+
+        try:
+            result = await self._session.execute(
+                stmt,
+                {
+                    "start_dt": start_dt,
+                    "end_dt": end_dt,
+                    "owner_ids": owner_ids,
+                },
+            )
+        except Exception:
+            return None
+
+        aggregated: dict[str, Decimal] = {}
+        for owner_user_id, fact_amount in result.all():
+            aggregated[owner_user_id] = Decimal(str(fact_amount or 0))
+        return aggregated
+
+    async def _aggregate_closed_economy_fact_from_requests_by_owner_ids(
+        self,
+        *,
+        owner_ids: list[str],
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> dict[str, Decimal]:
+        savings_amount = func.coalesce(Request.initial_amount - Request.final_amount, 0)
+        stmt = (
+            select(
+                Request.id_user,
+                func.coalesce(func.sum(savings_amount), 0),
+            )
+            .where(
+                Request.status == "closed",
+                Request.id_user.in_(owner_ids),
+                Request.closed_at.is_not(None),
+                Request.closed_at >= start_dt,
+                Request.closed_at < end_dt,
+            )
+            .group_by(Request.id_user)
+        )
+        result = await self._session.execute(stmt)
+        return {
+            owner_user_id: Decimal(str(fact_amount or 0))
+            for owner_user_id, fact_amount in result.all()
+        }
+
+    def _quote_identifier(self, value: str) -> str:
+        escaped = value.replace('"', '""')
+        return f'"{escaped}"'
 
     async def decrement_deleted_alert(self, *, request_id: int) -> RequestOfferStats | None:
         stmt = select(RequestOfferStats).where(RequestOfferStats.request_id == request_id)

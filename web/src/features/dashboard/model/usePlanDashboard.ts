@@ -1,0 +1,174 @@
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  closePlan,
+  createRootPlan,
+  createSubplan,
+  delegatePlan,
+  deletePlan,
+  getPlanDashboard,
+  getPlanDelegateCandidates,
+  updatePlan,
+  type PlanDashboardResult,
+  type PlanDelegateCandidate,
+} from '@shared/api/plans';
+
+const getCurrentPeriod = () => {
+  const now = new Date();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  return `${now.getFullYear()}-${month}`;
+};
+
+const monthToStartDate = (period: string) => `${period}-01`;
+
+export const usePlanDashboard = () => {
+  const [period, setPeriod] = useState<string>(getCurrentPeriod);
+  const [data, setData] = useState<PlanDashboardResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const loadDashboard = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const next = await getPlanDashboard(period);
+      setData(next);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить план');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [period]);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  const withMutation = useCallback(async (action: () => Promise<void>) => {
+    setIsMutating(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await action();
+      await loadDashboard();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Операция с планом не выполнена');
+    } finally {
+      setIsMutating(false);
+    }
+  }, [loadDashboard]);
+
+  const createRoot = useCallback(async (name: string, planAmount: number, periodStart?: string) => {
+    await withMutation(async () => {
+      await createRootPlan({
+        period,
+        period_start: periodStart ?? monthToStartDate(period),
+        name,
+        plan_amount: planAmount,
+      });
+      setSuccessMessage('Корневой план создан');
+    });
+  }, [period, withMutation]);
+
+  const createSubplanNode = useCallback(async (parentPlanId: number, name: string, amount: number) => {
+    await withMutation(async () => {
+      await createSubplan({
+        parent_plan_id: parentPlanId,
+        name,
+        period_start: undefined,
+        plan_amount: amount,
+      });
+      setSuccessMessage('Подплан создан');
+    });
+  }, [withMutation]);
+
+  const createSubplanNodeWithStart = useCallback(async (
+    parentPlanId: number,
+    name: string,
+    amount: number,
+    periodStart?: string
+  ) => {
+    await withMutation(async () => {
+      await createSubplan({
+        parent_plan_id: parentPlanId,
+        name,
+        period_start: periodStart,
+        plan_amount: amount,
+      });
+      setSuccessMessage('Подплан создан');
+    });
+  }, [withMutation]);
+
+  const delegate = useCallback(async (
+    parentPlanId: number,
+    childUserId: string,
+    childPlanAmount: number,
+    childPeriodStart?: string
+  ) => {
+    await withMutation(async () => {
+      await delegatePlan({
+        parent_plan_id: parentPlanId,
+        child_user_id: childUserId,
+        child_period_start: childPeriodStart,
+        child_plan_amount: childPlanAmount,
+      });
+      setSuccessMessage('План делегирован');
+    });
+  }, [withMutation]);
+
+  const updatePlanNode = useCallback(async (planId: number, payload: { planAmount?: number; name?: string }) => {
+    await withMutation(async () => {
+      await updatePlan(planId, {
+        plan_amount: payload.planAmount,
+        name: payload.name,
+      });
+      setSuccessMessage('План обновлен');
+    });
+  }, [withMutation]);
+
+  const removeChildPlan = useCallback(async (planId: number) => {
+    await withMutation(async () => {
+      await deletePlan(planId);
+      setSuccessMessage('План удален');
+    });
+  }, [withMutation]);
+
+  const closePlanNode = useCallback(async (planId: number) => {
+    await withMutation(async () => {
+      await closePlan(planId);
+      setSuccessMessage('План закрыт');
+    });
+  }, [withMutation]);
+
+  const loadDelegateCandidates = useCallback(async (parentPlanId: number): Promise<PlanDelegateCandidate[]> => {
+    return await getPlanDelegateCandidates(parentPlanId);
+  }, []);
+
+  const summary = useMemo(() => data?.summary ?? null, [data]);
+
+  return {
+    period,
+    setPeriod,
+    data,
+    tree: data?.tree ?? null,
+    trees: data?.trees ?? (data?.tree ? [data.tree] : []),
+    summary,
+    canCreateRootPlan: data?.can_create_root_plan ?? false,
+    rootPlanExists: data?.root_plan_exists ?? false,
+    isLoading,
+    isMutating,
+    errorMessage,
+    successMessage,
+    setSuccessMessage,
+    reload: loadDashboard,
+    createRoot,
+    createSubplanNode,
+    createSubplanNodeWithStart,
+    delegate,
+    updatePlanNode,
+    removeChildPlan,
+    closePlanNode,
+    loadDelegateCandidates,
+  };
+};

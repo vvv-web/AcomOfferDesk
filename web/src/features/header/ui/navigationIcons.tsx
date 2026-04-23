@@ -22,6 +22,7 @@ const iconByKey: Record<string, ReactNode> = {
   logout: <LogoutRounded fontSize="small" />,
   dashboard: <SpaceDashboardRounded fontSize="small" />,
   savings: <AttachMoneyRounded fontSize="small" />,
+  plan: <DescriptionOutlined fontSize="small" />,
   employees: <GroupRounded fontSize="small" />,
   economists: <GroupRounded fontSize="small" />,
   contractors: <GroupRounded fontSize="small" />,
@@ -34,6 +35,7 @@ const iconByKey: Record<string, ReactNode> = {
   normative: <DescriptionOutlined fontSize="small" />,
   'dashboard-process': <SpaceDashboardRounded fontSize="small" />,
   'dashboard-savings': <AttachMoneyRounded fontSize="small" />,
+  'dashboard-plan': <DescriptionOutlined fontSize="small" />,
 };
 
 export const getHeaderNavigationIcon = (key: string) => iconByKey[key] ?? <InsertDriveFileOutlined fontSize="small" />;

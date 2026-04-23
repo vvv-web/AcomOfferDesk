@@ -29,6 +29,7 @@ export type RequestEntity = {
   owner_user_id: string;
   owner_full_name?: string | null;
   chosen_offer_id: EntityId | null;
+  id_plan?: EntityId | null;
   unread_messages_count?: number;
   stats?: RequestStats;
   files: FileEntity[];

@@ -220,7 +220,7 @@ class ChatSocketClient {
 
   private async sendRequest(type: string, data: Record<string, unknown>): Promise<AckPayload> {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      throw new Error('Realtime-соединение недоступно');
+      throw new Error('Соединение в реальном времени недоступно');
     }
 
     const requestId = createRequestId();
@@ -233,7 +233,7 @@ class ChatSocketClient {
     return await new Promise<AckPayload>((resolve, reject) => {
       const timeoutId = window.setTimeout(() => {
         this.pendingRequests.delete(requestId);
-        reject(new Error('Сервер не подтвердил websocket-запрос вовремя'));
+        reject(new Error('Сервер не подтвердил WebSocket-запрос вовремя'));
       }, REQUEST_TIMEOUT_MS);
 
       this.pendingRequests.set(requestId, { resolve, reject, timeoutId });

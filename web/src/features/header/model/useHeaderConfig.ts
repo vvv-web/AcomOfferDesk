@@ -30,6 +30,7 @@ export const useHeaderConfig = () => {
   const offerRequestIdParam = searchParams.get('requestId');
   const isPmDashboard = location.pathname === '/pm-dashboard';
   const isPmSavings = location.pathname === '/pm-dashboard/savings';
+  const isPmPlan = location.pathname === '/pm-dashboard/plan';
   const isRequestCreatePage = location.pathname === '/requests/create';
 
   const breadcrumbs = useMemo(() => {
@@ -56,6 +57,13 @@ export const useHeaderConfig = () => {
       return [
         { key: 'pm-dashboard', label: 'Дашборд', to: '/pm-dashboard' },
         { key: 'pm-savings', label: 'Экономия' },
+      ];
+    }
+
+    if (isPmPlan) {
+      return [
+        { key: 'pm-dashboard', label: 'Дашборд', to: '/pm-dashboard' },
+        { key: 'pm-plan', label: 'План' },
       ];
     }
 
@@ -91,7 +99,7 @@ export const useHeaderConfig = () => {
     }
 
     return [];
-  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
+  }, [contractorRequestMatch, isContractor, isPmDashboard, isPmPlan, isPmSavings, isRequestCreatePage, location.pathname, offerMatch, offerRequestIdParam, requestMatch]);
 
   return useMemo(
     () =>
@@ -108,6 +116,7 @@ export const useHeaderConfig = () => {
         adminUsersTab,
         onNavigateToDashboard: () => navigate('/pm-dashboard'),
         onNavigateToSavings: () => navigate('/pm-dashboard/savings'),
+        onNavigateToPlan: () => navigate('/pm-dashboard/plan'),
         onNavigateToRequests: () => navigate('/requests'),
         onNavigateToRequestCreate: () => navigate('/requests/create', { state: { backgroundLocation: location } }),
         onNavigateToAdmin: () => navigate('/admin'),

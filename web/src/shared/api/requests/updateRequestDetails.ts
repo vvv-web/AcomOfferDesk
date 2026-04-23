@@ -9,6 +9,7 @@ export type UpdateRequestDetailsPayload = {
   owner_user_id?: string;
   initial_amount?: number;
   final_amount?: number;
+  id_plan?: number | null;
 };
 
 type UpdateRequestResponse = {
@@ -45,6 +46,10 @@ export const updateRequestDetails = async (
 
   if (payload.final_amount !== undefined) {
     body.final_amount = payload.final_amount;
+  }
+
+  if (payload.id_plan !== undefined) {
+    body.id_plan = payload.id_plan;
   }
 
   return fetchJson<UpdateRequestResponse>(

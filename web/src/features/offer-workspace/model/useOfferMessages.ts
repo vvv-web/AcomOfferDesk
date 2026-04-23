@@ -314,7 +314,7 @@ export const useOfferMessages = ({
       return;
     }
     if (connectionState !== 'connected') {
-      throw new Error('Realtime-соединение недоступно');
+      throw new Error('Соединение в реальном времени недоступно');
     }
 
     setIsSending(true);

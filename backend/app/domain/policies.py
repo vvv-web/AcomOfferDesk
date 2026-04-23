@@ -291,6 +291,20 @@ class UserPolicy:
             message="Only superadmin, lead economist and project manager can view responsibility dashboard",
         )
 
+    @staticmethod
+    def can_view_plan(current_user: CurrentUser) -> bool:
+        return current_user.role_id in {
+            settings.superadmin_role_id,
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }
+
+    @staticmethod
+    def ensure_can_view_plan(current_user: CurrentUser) -> None:
+        if not UserPolicy.can_view_plan(current_user):
+            raise Forbidden("Only superadmin, project manager, lead economist and economist can view plan")
+
 
 class RequestPolicy:
     @staticmethod

@@ -69,7 +69,8 @@ export const SuperadminSidebarHeader = ({
   const topItems = (config.sidebarItems ?? []).filter((item) => !item.isBottomItem && item.key !== 'logout');
   const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
   const hasSavingsTab = config.tabs.some((tabItem) => tabItem.key === 'savings');
-  const isDashboardPopupOpen = collapsed && hasSavingsTab && Boolean(dashboardMenuAnchorEl);
+  const hasPlanTab = config.tabs.some((tabItem) => tabItem.key === 'plan');
+  const isDashboardPopupOpen = collapsed && (hasSavingsTab || hasPlanTab) && Boolean(dashboardMenuAnchorEl);
 
   return (
     <Stack
@@ -139,8 +140,10 @@ export const SuperadminSidebarHeader = ({
             }
 
             if (tab.key === 'dashboard') {
-              const isDashboardOrSavingsActive = config.activeTab === 'dashboard' || config.activeTab === 'savings';
-              const shouldShowDashboardChildren = !collapsed && hasSavingsTab && (isDashboardMenuHovered || isDashboardOrSavingsActive);
+              const isDashboardRelatedActive =
+                config.activeTab === 'dashboard' || config.activeTab === 'savings' || config.activeTab === 'plan';
+              const shouldShowDashboardChildren =
+                !collapsed && (hasSavingsTab || hasPlanTab) && (isDashboardMenuHovered || isDashboardRelatedActive);
 
               return (
                 <Stack
@@ -159,7 +162,7 @@ export const SuperadminSidebarHeader = ({
                 >
                   <Box
                     onClick={(event) => {
-                      if (collapsed && hasSavingsTab) {
+                      if (collapsed && (hasSavingsTab || hasPlanTab)) {
                         setDashboardMenuAnchorEl((currentAnchorEl) =>
                           currentAnchorEl ? null : (event.currentTarget as HTMLElement)
                         );
@@ -173,7 +176,7 @@ export const SuperadminSidebarHeader = ({
                       label={tab.label}
                       icon={getHeaderNavigationIcon(tab.key)}
                       collapsed={collapsed}
-                      active={collapsed ? isDashboardOrSavingsActive : false}
+                      active={collapsed ? isDashboardRelatedActive : false}
                     />
                   </Box>
                   {shouldShowDashboardChildren ? (
@@ -191,6 +194,13 @@ export const SuperadminSidebarHeader = ({
                         collapsed={false}
                         active={config.activeTab === 'savings'}
                         onClick={() => config.onTabChange?.('savings')}
+                      />
+                      <SidebarMenuButton
+                        label="План"
+                        icon={getHeaderNavigationIcon('plan')}
+                        collapsed={false}
+                        active={config.activeTab === 'plan'}
+                        onClick={() => config.onTabChange?.('plan')}
                       />
                     </Stack>
                   ) : null}
@@ -256,6 +266,14 @@ export const SuperadminSidebarHeader = ({
             }}
           >
             Экономия
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              config.onTabChange?.('plan');
+              setDashboardMenuAnchorEl(null);
+            }}
+          >
+            План
           </MenuItem>
         </Menu>
 
