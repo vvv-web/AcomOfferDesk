@@ -136,7 +136,14 @@ const buildContractorMobileNavItems = (): HeaderMobileNavItem[] => [
 ];
 
 const buildLeadMobileNavItems = (): HeaderMobileNavItem[] => [
-  { key: 'plan', label: 'План', to: '/pm-dashboard/plan' },
+  {
+    key: 'dashboard',
+    label: 'Дашборд',
+    to: '/pm-dashboard/plan',
+    children: [
+      { key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' },
+    ],
+  },
   { key: 'requests', label: 'Заявки', to: '/requests' },
   { key: 'economists', label: 'Экономисты', to: '/admin' },
   buildMoreNavItem({
@@ -395,13 +402,14 @@ export const buildHeaderConfig = ({
       breadcrumbs,
       mobileNavItems: buildLeadMobileNavItems(),
       tabs: [
+        { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
         { key: 'plan', value: 'plan', label: 'План' },
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'economists', value: 'economists', label: 'Экономисты' }
       ],
       activeTab: pathname === '/pm-dashboard/plan' ? 'plan' : pathname === '/admin' ? 'economists' : 'requests',
       onTabChange: (value) => {
-        if (value === 'plan') {
+        if (value === 'dashboard' || value === 'plan') {
           onNavigateToPlan();
           return;
         }

@@ -70,6 +70,7 @@ export const SuperadminSidebarHeader = ({
   const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
   const hasSavingsTab = config.tabs.some((tabItem) => tabItem.key === 'savings');
   const hasPlanTab = config.tabs.some((tabItem) => tabItem.key === 'plan');
+  const hasDashboardProcessTab = hasSavingsTab;
   const isDashboardPopupOpen = collapsed && (hasSavingsTab || hasPlanTab) && Boolean(dashboardMenuAnchorEl);
 
   return (
@@ -138,6 +139,9 @@ export const SuperadminSidebarHeader = ({
             if (tab.key === 'savings') {
               return null;
             }
+            if (tab.key === 'plan' && config.tabs.some((tabItem) => tabItem.key === 'dashboard')) {
+              return null;
+            }
 
             if (tab.key === 'dashboard') {
               const isDashboardRelatedActive =
@@ -181,27 +185,33 @@ export const SuperadminSidebarHeader = ({
                   </Box>
                   {shouldShowDashboardChildren ? (
                     <Stack spacing={0.35} sx={{ pl: 1.25 }}>
-                      <SidebarMenuButton
-                        label="Процесс работы"
-                        icon={getHeaderNavigationIcon('dashboard')}
-                        collapsed={false}
-                        active={config.activeTab === 'dashboard'}
-                        onClick={() => config.onTabChange?.('dashboard')}
-                      />
-                      <SidebarMenuButton
-                        label="Экономия"
-                        icon={getHeaderNavigationIcon('savings')}
-                        collapsed={false}
-                        active={config.activeTab === 'savings'}
-                        onClick={() => config.onTabChange?.('savings')}
-                      />
-                      <SidebarMenuButton
-                        label="План"
-                        icon={getHeaderNavigationIcon('plan')}
-                        collapsed={false}
-                        active={config.activeTab === 'plan'}
-                        onClick={() => config.onTabChange?.('plan')}
-                      />
+                      {hasDashboardProcessTab ? (
+                        <SidebarMenuButton
+                          label="Процесс работы"
+                          icon={getHeaderNavigationIcon('dashboard')}
+                          collapsed={false}
+                          active={config.activeTab === 'dashboard'}
+                          onClick={() => config.onTabChange?.('dashboard')}
+                        />
+                      ) : null}
+                      {hasSavingsTab ? (
+                        <SidebarMenuButton
+                          label="Экономия"
+                          icon={getHeaderNavigationIcon('savings')}
+                          collapsed={false}
+                          active={config.activeTab === 'savings'}
+                          onClick={() => config.onTabChange?.('savings')}
+                        />
+                      ) : null}
+                      {hasPlanTab ? (
+                        <SidebarMenuButton
+                          label="План"
+                          icon={getHeaderNavigationIcon('plan')}
+                          collapsed={false}
+                          active={config.activeTab === 'plan'}
+                          onClick={() => config.onTabChange?.('plan')}
+                        />
+                      ) : null}
                     </Stack>
                   ) : null}
                 </Stack>
@@ -251,30 +261,36 @@ export const SuperadminSidebarHeader = ({
           anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
           transformOrigin={{ vertical: 'center', horizontal: 'left' }}
         >
-          <MenuItem
-            onClick={() => {
-              config.onTabChange?.('dashboard');
-              setDashboardMenuAnchorEl(null);
-            }}
-          >
-            Процесс работы
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              config.onTabChange?.('savings');
-              setDashboardMenuAnchorEl(null);
-            }}
-          >
-            Экономия
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              config.onTabChange?.('plan');
-              setDashboardMenuAnchorEl(null);
-            }}
-          >
-            План
-          </MenuItem>
+          {hasDashboardProcessTab ? (
+            <MenuItem
+              onClick={() => {
+                config.onTabChange?.('dashboard');
+                setDashboardMenuAnchorEl(null);
+              }}
+            >
+              Процесс работы
+            </MenuItem>
+          ) : null}
+          {hasSavingsTab ? (
+            <MenuItem
+              onClick={() => {
+                config.onTabChange?.('savings');
+                setDashboardMenuAnchorEl(null);
+              }}
+            >
+              Экономия
+            </MenuItem>
+          ) : null}
+          {hasPlanTab ? (
+            <MenuItem
+              onClick={() => {
+                config.onTabChange?.('plan');
+                setDashboardMenuAnchorEl(null);
+              }}
+            >
+              План
+            </MenuItem>
+          ) : null}
         </Menu>
 
         <Stack

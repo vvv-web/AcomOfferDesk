@@ -324,14 +324,15 @@ class PlanService:
         plan = await self._plans.get_by_id_for_update(plan_id=plan_id)
         if plan is None:
             raise NotFound("Plan not found")
-        if plan.id_parent_plan is None:
-            raise Conflict("Root plan cannot be deleted")
 
         await self._ensure_can_manage_node(current_user=current_user, plan_owner_user_id=plan.id_user)
         self._ensure_plan_is_open(plan)
         child_nodes = await self._plans.list_children(parent_plan_id=plan.id)
         if child_nodes:
-            raise Conflict("Cannot delete plan node that has child nodes")
+            raise Conflict("Cannot delete plan that has subplans or delegated children")
+        delegated_sum = await self._plans.sum_children_plan_amount(parent_plan_id=plan.id)
+        if delegated_sum > Decimal("0.00"):
+            raise Conflict("Cannot delete plan with delegated distribution")
         await self._plans.delete(plan=plan)
 
     async def close_plan(
@@ -680,6 +681,12 @@ class PlanService:
         has_subordinates = plan.id_user in managers_with_subordinates
         can_create_subplan = can_manage and has_subordinates and not is_closed
         can_delegate = can_manage and has_subordinates and not is_closed
+        can_delete = (
+            can_manage
+            and not is_closed
+            and not child_nodes
+            and delegated_amount <= Decimal("0.00")
+        )
         return PlanTreeNode(
             plan_id=plan.id,
             plan_name=plan.name,
@@ -704,7 +711,7 @@ class PlanService:
                 create_subplan=can_create_subplan,
                 delegate_plan=can_delegate,
                 edit_plan=can_manage and not is_closed,
-                delete_child_plan=can_manage and not is_closed and not child_nodes and plan.id_parent_plan is not None,
+                delete_child_plan=can_delete,
                 activate_plan=False,
                 close_plan=can_manage and not is_closed and plan.period_start <= date.today(),
                 view_plan=True,
