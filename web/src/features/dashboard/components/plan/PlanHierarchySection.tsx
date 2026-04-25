@@ -7,9 +7,9 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded';
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
+import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
-import useMediaQuery from '@mui/material/useMediaQuery';
 import {
   Avatar,
   Box,
@@ -17,7 +17,6 @@ import {
   Card,
   CardContent,
   Chip,
-  Collapse,
   Divider,
   IconButton,
   InputAdornment,
@@ -29,12 +28,13 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PlanTreeNode } from '@shared/api/plans';
 import { formatAmount } from '@shared/lib/formatters';
-import { hierarchyTitleIcon, planSectionCardSx } from './PlanOverviewSections';
+import { planSectionCardSx } from './PlanOverviewSections';
 import type { PlanSideSummaryData } from './planDashboardUtils';
 import { formatPercent, getInitials } from './planDashboardUtils';
 
@@ -62,24 +62,34 @@ export const PlanNodeMetricChips = ({ node }: PlanNodeMetricGridProps) => {
   ];
 
   return (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(7, minmax(0, 1fr))' },
+        gap: 0.6,
+      }}
+    >
       {metricItems.map((metric) => (
-        <Stack
+        <Box
           key={metric.label}
-          direction="row"
-          spacing={0.35}
-          alignItems="baseline"
-          sx={{ minWidth: 0 }}
+          sx={{
+            borderRadius: 1.5,
+            px: 0.35,
+            py: 0.3,
+            bgcolor: 'transparent',
+            border: 'none',
+            minWidth: 0,
+          }}
         >
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.05, whiteSpace: 'nowrap' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11, lineHeight: 1.15 }}>
             {metric.label}
           </Typography>
-          <Typography variant="caption" fontWeight={700} sx={{ overflowWrap: 'anywhere', lineHeight: 1.05 }}>
+          <Typography variant="caption" fontWeight={700} sx={{ display: 'block', fontSize: 12.5, lineHeight: 1.2, mt: 0.2 }}>
             {metric.value}
           </Typography>
-        </Stack>
+        </Box>
       ))}
-    </Stack>
+    </Box>
   );
 };
 
@@ -108,16 +118,17 @@ export const PlanTreeNodeCard = ({
   const progressValue = Math.max(0, Math.min(100, node.progress_percent));
   const isRoot = depth === 0;
   const isSyntheticRoot = isRoot && node.children.some((child) => child.user_id === node.user_id);
+
   const iconButtonSx = {
     width: 28,
     height: 28,
-    borderRadius: '9px',
-    border: '1px solid rgba(59, 130, 246, 0.24)',
-    color: 'primary.main',
-    bgcolor: 'background.paper',
+    borderRadius: '8px',
+    border: '1px solid #dbe2ea',
+    color: '#7c8da1',
+    bgcolor: '#ffffff',
     '&:hover': {
-      bgcolor: alpha(theme.palette.primary.main, 0.1),
-      borderColor: alpha(theme.palette.primary.main, 0.34),
+      bgcolor: '#f8fafc',
+      borderColor: '#e2e8f0',
     },
   } as const;
 
@@ -149,7 +160,7 @@ export const PlanTreeNodeCard = ({
     node.available_actions.close_plan
       ? {
           key: 'close',
-          title: 'Заблокировать',
+          title: 'Закрыть план',
           icon: <LockOutlinedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onClosePlan(node),
         }
@@ -168,27 +179,33 @@ export const PlanTreeNodeCard = ({
   const hiddenActions = isCompactActions && actions.length > 2 ? actions.slice(1) : [];
 
   return (
-    <Box sx={{ position: 'relative', pl: depth === 0 ? 0 : 4 }}>
+    <Box
+      sx={{
+        position: 'relative',
+        pl: depth === 0 ? 0 : { xs: 2.4, md: 3.2 },
+        backgroundColor: 'transparent',
+      }}
+    >
       {depth > 0 ? (
         <>
           <Box
             sx={{
               position: 'absolute',
-              top: -14,
+              top: -16,
               bottom: 0,
-              left: 15,
-              width: 2,
-              bgcolor: 'rgba(148, 163, 184, 0.16)',
+              left: { xs: 8, md: 15 },
+              width: 1,
+              bgcolor: '#ffffff',
             }}
           />
           <Box
             sx={{
               position: 'absolute',
-              top: 32,
-              left: 15,
-              width: 18,
-              height: 2,
-              bgcolor: 'rgba(148, 163, 184, 0.16)',
+              top: 28,
+              left: { xs: 8, md: 15 },
+              width: { xs: 12, md: 18 },
+              height: 1,
+              bgcolor: '#ffffff',
             }}
           />
         </>
@@ -200,33 +217,43 @@ export const PlanTreeNodeCard = ({
             size="small"
             onClick={() => onToggle(node.plan_id)}
             sx={{
-              mt: 1,
-              width: 24,
-              height: 24,
-              border: '1px solid rgba(148, 163, 184, 0.24)',
-              bgcolor: 'background.paper',
+              mt: 1.1,
+              width: 28,
+              height: 28,
+              border: '1px solid #dbe2ea',
+              bgcolor: '#ffffff',
               transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
               transition: 'transform 0.2s ease',
             }}
           >
-            <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
+            <ChevronRightRoundedIcon sx={{ fontSize: 18, color: '#7c8da1' }} />
           </IconButton>
         ) : (
           <Box sx={{ width: 28, flexShrink: 0 }} />
         )}
 
-        <Card sx={{ ...planSectionCardSx, width: '100%' }}>
-          <CardContent sx={{ p: { xs: 1, md: 1.1 }, '&:last-child': { pb: { xs: 1, md: 1.1 } } }}>
-            <Stack spacing={0.7}>
-              <Stack direction={{ xs: 'column', lg: 'row' }} spacing={0.7} justifyContent="space-between">
-                <Stack direction="row" spacing={1} minWidth={0}>
+        <Card
+          sx={{
+            ...planSectionCardSx,
+            width: '100%',
+            position: 'relative',
+            zIndex: 1,
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            boxShadow: 'none',
+          }}
+        >
+          <CardContent sx={{ p: { xs: 0.95, md: 1.1 }, '&:last-child': { pb: { xs: 0.95, md: 1.1 } } }}>
+            <Stack spacing={0.75} sx={{ position: 'relative', zIndex: 3 }}>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.8} justifyContent="space-between">
+                <Stack direction="row" spacing={0.85} minWidth={0}>
                   {isSyntheticRoot ? (
                     <Box
                       sx={{
-                        width: 34,
-                        height: 34,
+                        width: 36,
+                        height: 36,
                         borderRadius: '12px',
-                        bgcolor: alpha(theme.palette.primary.main, 0.1),
+                        bgcolor: '#dbeafe',
                         color: 'primary.main',
                         display: 'flex',
                         alignItems: 'center',
@@ -239,58 +266,66 @@ export const PlanTreeNodeCard = ({
                   ) : (
                     <Avatar
                       sx={{
-                        width: 34,
-                        height: 34,
-                        bgcolor: alpha(theme.palette.primary.main, 0.12),
+                        width: 36,
+                        height: 36,
+                        bgcolor: '#dbeafe',
                         color: 'primary.main',
                         fontWeight: 800,
-                        fontSize: 14,
+                        fontSize: 13,
                       }}
                     >
                       {getInitials(node.user_name)}
                     </Avatar>
                   )}
 
-                  <Stack spacing={0.35} minWidth={0} flex={1}>
-                    <Stack
-                      direction="row"
-                      spacing={0.75}
-                      alignItems="center"
-                      flexWrap="wrap"
-                      useFlexGap
-                    >
-                      <Typography variant="caption" fontWeight={800} sx={{ overflowWrap: 'anywhere', lineHeight: 1.2, fontSize: 13 }}>
+                  <Stack spacing={0.45} minWidth={0} flex={1}>
+                    <Stack direction="row" spacing={0.65} alignItems="center" flexWrap="wrap" useFlexGap>
+                      <Typography variant="body2" fontWeight={800} sx={{ overflowWrap: 'anywhere', lineHeight: 1.2, fontSize: 15 }}>
                         {isSyntheticRoot ? node.plan_name : node.user_name}
                       </Typography>
-                      {!isSyntheticRoot ? (
-                        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                          {node.user_role}
-                        </Typography>
-                      ) : (
+                      {isSyntheticRoot ? (
                         <Chip
                           size="small"
                           label="Корневой узел"
                           sx={{
-                            bgcolor: alpha(theme.palette.primary.main, 0.08),
+                            bgcolor: '#dbeafe',
                             color: 'primary.main',
                             height: 20,
+                            '& .MuiChip-label': { px: 0.9, fontWeight: 600, fontSize: 11.5 },
+                          }}
+                        />
+                      ) : (
+                        <Chip
+                          size="small"
+                          label={node.user_role}
+                          sx={{
+                            bgcolor: '#ffffff',
+                            color: 'text.secondary',
+                            border: '1px solid #e5e7eb',
+                            height: 20,
+                            '& .MuiChip-label': { px: 0.85, fontSize: 11.5 },
                           }}
                         />
                       )}
                     </Stack>
 
-                    <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', lineHeight: 1.05 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', lineHeight: 1.15, fontSize: 11.5 }}>
                       {isSyntheticRoot ? 'Общий узел периода и распределения' : node.plan_name}
                     </Typography>
                   </Stack>
                 </Stack>
 
-                <Stack spacing={0.5} alignItems={{ xs: 'stretch', lg: 'flex-end' }}>
-                  <Typography variant="caption" fontWeight={800} sx={{ textAlign: { xs: 'left', lg: 'right' }, fontSize: 11 }}>
-                    {formatAmount(node.fact_amount_subtree)} / {formatAmount(node.plan_amount)} | {formatPercent(node.progress_percent)}
-                  </Typography>
+                <Stack direction="row" spacing={0.9} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" sx={{ minWidth: { md: 320 } }}>
+                  <Stack spacing={0.2} alignItems={{ xs: 'flex-start', md: 'flex-end' }}>
+                    <Typography variant="body2" fontWeight={800} sx={{ textAlign: { xs: 'left', md: 'right' }, fontSize: 14 }}>
+                      {formatAmount(node.fact_amount_subtree)} / {formatAmount(node.plan_amount)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ textAlign: { xs: 'left', md: 'right' }, fontSize: 11.5 }}>
+                      Выполнение: {formatPercent(node.progress_percent)}
+                    </Typography>
+                  </Stack>
                   {actions.length > 0 ? (
-                    <Stack direction="row" spacing={0.5} justifyContent={{ xs: 'flex-start', lg: 'flex-end' }} flexWrap="wrap" useFlexGap>
+                    <Stack direction="row" spacing={0.45} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="nowrap">
                       {visibleInlineActions.map((action) => (
                         <Tooltip key={action.key} title={action.title}>
                           <IconButton size="small" onClick={action.onClick} sx={iconButtonSx}>
@@ -325,39 +360,44 @@ export const PlanTreeNodeCard = ({
                         </>
                       ) : null}
                     </Stack>
-                  ) : (
-                    <Typography variant="caption" color="text.secondary">
-                      Нет доступных действий
-                    </Typography>
-                  )}
+                  ) : null}
                 </Stack>
               </Stack>
 
-              <Stack spacing={0.45}>
-                <LinearProgress
-                  variant="determinate"
-                  value={progressValue}
-                  sx={{
-                    height: 4,
-                    borderRadius: 999,
-                    bgcolor: alpha(theme.palette.primary.main, 0.09),
-                    '& .MuiLinearProgress-bar': {
+              <Box
+                sx={{
+                  borderRadius: 2,
+                  px: 0.2,
+                  py: 0.15,
+                  bgcolor: 'transparent',
+                  border: 'none',
+                }}
+              >
+                <Stack spacing={0.55}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={progressValue}
+                    sx={{
+                      height: 6,
                       borderRadius: 999,
-                      background: progressValue >= 100
-                        ? theme.palette.success.main
-                        : `linear-gradient(90deg, ${theme.palette.primary.main}, ${alpha(theme.palette.primary.main, 0.72)})`,
-                    },
-                  }}
-                />
-                <Stack direction="row" justifyContent="space-between" spacing={1} flexWrap="wrap" useFlexGap>
-                  <Typography variant="caption" color="text.secondary">
-                    Период: {node.period_start} - {node.period_end}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Остаток: {formatAmount(node.remaining_amount)}
-                  </Typography>
+                      bgcolor: '#ffffff',
+                      border: '1px solid #e5e7eb',
+                      '& .MuiLinearProgress-bar': {
+                        borderRadius: 999,
+                        backgroundColor: progressValue >= 100 ? theme.palette.success.main : theme.palette.primary.main,
+                      },
+                    }}
+                  />
+                  <Stack direction="row" justifyContent="space-between" spacing={0.8} flexWrap="wrap" useFlexGap>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
+                      Период: {node.period_start} - {node.period_end}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
+                      Остаток: {formatAmount(node.remaining_amount)}
+                    </Typography>
+                  </Stack>
                 </Stack>
-              </Stack>
+              </Box>
 
               <PlanNodeMetricChips node={node} />
             </Stack>
@@ -365,22 +405,20 @@ export const PlanTreeNodeCard = ({
         </Card>
       </Stack>
 
-      {hasChildren ? (
-        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-          <Stack spacing={0.75} sx={{ pt: 0.75 }}>
-            {node.children.map((child) => (
-              <PlanTreeNodeCard
-                key={child.plan_id}
-                node={child}
-                depth={depth + 1}
-                expandedNodeIds={expandedNodeIds}
-                forceExpanded={forceExpanded}
-                onToggle={onToggle}
-                handlers={handlers}
-              />
-            ))}
-          </Stack>
-        </Collapse>
+      {hasChildren && isExpanded ? (
+        <Stack spacing={0.85} sx={{ pt: 0.85, backgroundColor: 'transparent', position: 'relative', zIndex: 0 }}>
+          {node.children.map((child) => (
+            <PlanTreeNodeCard
+              key={child.plan_id}
+              node={child}
+              depth={depth + 1}
+              expandedNodeIds={expandedNodeIds}
+              forceExpanded={forceExpanded}
+              onToggle={onToggle}
+              handlers={handlers}
+            />
+          ))}
+        </Stack>
       ) : null}
     </Box>
   );
@@ -395,18 +433,20 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
   const navigate = useNavigate();
 
   return (
-    <Stack spacing={1.25}>
+    <Stack spacing={1.1}>
       <Card sx={planSectionCardSx}>
         <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
           <Stack spacing={1.1}>
             <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={0.9} alignItems="center">
                 <PeopleAltOutlinedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
                 <Typography variant="subtitle1" fontWeight={800}>
                   Подчиненные без плана
                 </Typography>
               </Stack>
-              {unplannedSubordinates.length > 0 ? <Chip size="small" label={String(unplannedSubordinates.length)} /> : null}
+              {unplannedSubordinates.length > 0 ? (
+                <Chip size="small" label={String(unplannedSubordinates.length)} sx={{ bgcolor: '#dbeafe' }} />
+              ) : null}
             </Stack>
 
             {unplannedSubordinates.length === 0 ? (
@@ -416,16 +456,21 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
             ) : (
               <Stack spacing={1}>
                 {unplannedSubordinates.slice(0, 3).map((employee) => (
-                  <Box key={employee.id}>
-                    <Typography variant="body2" fontWeight={700}>
-                      {employee.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {employee.role}
-                    </Typography>
-                  </Box>
+                  <Stack key={employee.id} direction="row" spacing={0.9} alignItems="center">
+                    <Avatar sx={{ width: 34, height: 34, bgcolor: '#fde68a', color: '#b45309', fontSize: 13, fontWeight: 800 }}>
+                      {getInitials(employee.name)}
+                    </Avatar>
+                    <Box minWidth={0}>
+                      <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                        {employee.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {employee.role}
+                      </Typography>
+                    </Box>
+                  </Stack>
                 ))}
-                <Button variant="outlined" fullWidth>
+                <Button variant="outlined" fullWidth startIcon={<PersonAddAlt1RoundedIcon />}>
                   Назначить план
                 </Button>
               </Stack>
@@ -437,33 +482,39 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
       <Card sx={planSectionCardSx}>
         <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
           <Stack spacing={1.1}>
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={0.9} alignItems="center">
               <TrendingUpRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
               <Typography variant="subtitle1" fontWeight={800}>
                 Загрузка (личная)
               </Typography>
             </Stack>
 
-            <Stack spacing={1.1}>
+            <Stack spacing={1.15}>
               <Box>
                 <Typography variant="body2" fontWeight={700}>
                   Ваша личная загрузка
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {data.personalFactAmount !== null && data.personalFactAmount !== undefined
-                    ? `${formatAmount(data.personalFactAmount)} / ${formatAmount(data.personalPlanAmount ?? 0)}`
-                    : '—'}
-                </Typography>
+                <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mt: 0.45, mb: 0.55 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {data.personalFactAmount !== null && data.personalFactAmount !== undefined
+                      ? `${formatAmount(data.personalFactAmount)} / ${formatAmount(data.personalPlanAmount ?? 0)}`
+                      : '—'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {data.personalProgressPercent !== null && data.personalProgressPercent !== undefined
+                      ? formatPercent(data.personalProgressPercent)
+                      : '—'}
+                  </Typography>
+                </Stack>
                 <LinearProgress
                   variant="determinate"
                   value={Math.max(0, Math.min(100, data.personalProgressPercent ?? 0))}
-                  sx={{ mt: 0.6, height: 6, borderRadius: 999 }}
+                  sx={{
+                    height: 7,
+                    borderRadius: 999,
+                    bgcolor: '#dbeafe',
+                  }}
                 />
-                <Typography variant="caption" color="text.secondary">
-                  {data.personalProgressPercent !== null && data.personalProgressPercent !== undefined
-                    ? formatPercent(data.personalProgressPercent)
-                    : '—'}
-                </Typography>
               </Box>
 
               <Divider />
@@ -472,26 +523,32 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
                 <Typography variant="body2" fontWeight={700}>
                   Средняя загрузка подчиненных
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {data.averageSubordinatesFactAmount !== null && data.averageSubordinatesFactAmount !== undefined
-                    ? `${formatAmount(data.averageSubordinatesFactAmount)} / ${formatAmount(data.averageSubordinatesPlanAmount ?? 0)}`
-                    : '—'}
-                </Typography>
+                <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mt: 0.45, mb: 0.55 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {data.averageSubordinatesFactAmount !== null && data.averageSubordinatesFactAmount !== undefined
+                      ? `${formatAmount(data.averageSubordinatesFactAmount)} / ${formatAmount(data.averageSubordinatesPlanAmount ?? 0)}`
+                      : '—'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {data.averageSubordinatesProgressPercent !== null && data.averageSubordinatesProgressPercent !== undefined
+                      ? formatPercent(data.averageSubordinatesProgressPercent)
+                      : '—'}
+                  </Typography>
+                </Stack>
                 <LinearProgress
                   variant="determinate"
                   value={Math.max(0, Math.min(100, data.averageSubordinatesProgressPercent ?? 0))}
-                  sx={{ mt: 0.6, height: 6, borderRadius: 999 }}
                   color="success"
+                  sx={{
+                    height: 7,
+                    borderRadius: 999,
+                    bgcolor: '#bbf7d0',
+                  }}
                 />
-                <Typography variant="caption" color="text.secondary">
-                  {data.averageSubordinatesProgressPercent !== null && data.averageSubordinatesProgressPercent !== undefined
-                    ? formatPercent(data.averageSubordinatesProgressPercent)
-                    : '—'}
-                </Typography>
               </Box>
             </Stack>
 
-            <Button variant="text" endIcon={<ChevronRightRoundedIcon />} onClick={() => navigate('/pm-dashboard')}>
+            <Button variant="text" endIcon={<ChevronRightRoundedIcon />} onClick={() => navigate('/pm-dashboard')} sx={{ justifyContent: 'flex-start', px: 0 }}>
               Перейти к сотрудникам
             </Button>
           </Stack>
@@ -529,27 +586,41 @@ export const PlanHierarchySection = ({
   const hasItems = trees.length > 0;
 
   return (
-    <Card sx={{ ...planSectionCardSx, overflow: 'visible' }}>
-      <CardContent sx={{ p: { xs: 1, md: 1.1 }, '&:last-child': { pb: { xs: 1, md: 1.1 } } }}>
-        <Stack spacing={1}>
+    <Card sx={{ ...planSectionCardSx, overflow: 'visible', boxShadow: 'none', border: '1px solid #e5e7eb', backgroundColor: '#ffffff' }}>
+      <CardContent sx={{ p: { xs: 1.1, md: 1.25 }, '&:last-child': { pb: { xs: 1.1, md: 1.25 } } }}>
+        <Stack spacing={1.1}>
           <Stack
             direction={{ xs: 'column', lg: 'row' }}
             justifyContent="space-between"
             spacing={1}
             alignItems={{ xs: 'stretch', lg: 'center' }}
           >
-            <Stack direction="row" spacing={1} alignItems="center">
-              {hierarchyTitleIcon}
-              <Typography variant="subtitle1" fontWeight={800}>
-                Иерархия плана
-              </Typography>
-            </Stack>
+            <Typography variant="subtitle1" fontWeight={800}>
+              Иерархия плана
+            </Typography>
 
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'stretch', md: 'center' }}>
-              <Button variant="outlined" size="small" onClick={onExpandAll} startIcon={<ManageSearchRoundedIcon />} sx={{ minHeight: 30 }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.9} alignItems={{ xs: 'stretch', md: 'center' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={onExpandAll}
+                startIcon={<ManageSearchRoundedIcon />}
+                sx={{
+                  minHeight: 36,
+                  whiteSpace: 'nowrap',
+                  borderColor: '#e2e8f0',
+                  color: '#4b74b8',
+                  '&:hover': { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' },
+                }}
+              >
                 Развернуть все
               </Button>
-              <Button variant="text" size="small" onClick={onCollapseAll} sx={{ minHeight: 30 }}>
+              <Button
+                variant="text"
+                size="small"
+                onClick={onCollapseAll}
+                sx={{ minHeight: 36, whiteSpace: 'nowrap', color: '#64748b', '&:hover': { backgroundColor: '#f8fafc' } }}
+              >
                 Свернуть все
               </Button>
               <TextField
@@ -557,7 +628,10 @@ export const PlanHierarchySection = ({
                 placeholder="Поиск по узлам"
                 value={searchValue}
                 onChange={(event) => onSearchChange(event.target.value)}
-                sx={{ minWidth: { xs: '100%', md: 220 } }}
+                sx={{
+                  minWidth: { xs: '100%', md: 240 },
+                  '& .MuiOutlinedInput-root': { minHeight: 36, backgroundColor: '#ffffff' },
+                }}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -572,14 +646,14 @@ export const PlanHierarchySection = ({
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr)', xl: 'minmax(0, 1fr) 300px' },
+              gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 1fr) 308px' },
               gap: 1.25,
               alignItems: 'start',
             }}
           >
-            <Stack spacing={1}>
+            <Stack spacing={0.95}>
               {!hasItems ? (
-                <Card variant="outlined" sx={{ borderRadius: 4 }}>
+                <Card variant="outlined" sx={{ borderRadius: 3, borderColor: '#e2e8f0' }}>
                   <CardContent>
                     <Typography variant="body2" color="text.secondary">
                       По текущему фильтру не найдено ни одного узла плана.
@@ -601,7 +675,7 @@ export const PlanHierarchySection = ({
               )}
             </Stack>
 
-            <Box sx={{ position: { xs: 'static', xl: 'sticky' }, top: { xl: 16 } }}>
+            <Box sx={{ position: { xs: 'static', xl: 'sticky' }, top: { xl: 16 }, zIndex: 2 }}>
               <PlanSideSummary data={sideSummary} />
             </Box>
           </Box>

@@ -207,8 +207,10 @@ export const AppFooter = ({ compact = false }: AppFooterProps) => {
           px: { xs: 1.1, md: 1.45 },
           py: { xs: 0.7, md: 0.8 },
           borderRadius: { xs: 2, md: 2.5 },
-          backgroundColor: 'rgba(255, 255, 255, 0.82)',
-          boxShadow: '0 4px 14px rgba(15, 35, 75, 0.06)'
+          backgroundColor: '#ffffff',
+          boxShadow: '0 4px 14px rgba(15, 35, 75, 0.04)',
+          position: 'relative',
+          zIndex: 0,
         }}
       >
         {shouldUseCompactLayout ? (

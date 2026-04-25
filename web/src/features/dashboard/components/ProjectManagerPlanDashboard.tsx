@@ -1,19 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useAuth } from '@app/providers/AuthProvider';
+import type { PlanDelegateCandidate, PlanTreeNode } from '@shared/api/plans';
 import { Alert, Box, Button, Card, CardContent, Skeleton, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useAuth } from '@app/providers/AuthProvider';
-import type { PlanDelegateCandidate, PlanTreeNode } from '@shared/api/plans';
 import { usePlanDashboard } from '../model/usePlanDashboard';
 import { PlanDialogs } from './plan/PlanDialogs';
 import { PlanHierarchySection } from './plan/PlanHierarchySection';
-import {
-  PlanAnalyticsCards,
-  PlanKpiRow,
-  PlanPageHeader,
-  planSectionCardSx,
-} from './plan/PlanOverviewSections';
+import { PlanAnalyticsCards, PlanKpiRow, PlanPageHeader, planSectionCardSx } from './plan/PlanOverviewSections';
 import {
   delegateSchema,
   editSchema,
@@ -36,8 +31,8 @@ import {
   countUniqueParticipants,
   deriveSummaryFromTrees,
   filterPlanTree,
-  findSubtreeByUserId,
   findPlanNodeByPlanId,
+  findSubtreeByUserId,
   formatPeriodLabel,
   getExpandableNodeIds,
   normalizePlanTreesForPresentation,
@@ -46,7 +41,7 @@ import {
 
 const emptyCardSx = {
   ...planSectionCardSx,
-  background: 'rgba(255,255,255,0.98)',
+  backgroundColor: '#ffffff',
 };
 
 export const ProjectManagerPlanDashboard = () => {
@@ -116,6 +111,7 @@ export const ProjectManagerPlanDashboard = () => {
     if (!delegateNode) {
       return;
     }
+
     let isMounted = true;
     setIsCandidatesLoading(true);
     loadDelegateCandidates(delegateNode.plan_id)
@@ -156,12 +152,15 @@ export const ProjectManagerPlanDashboard = () => {
     if (selectedScopeUserId === ALL_SUBORDINATES_SCOPE) {
       return trees;
     }
+
     return trees
       .map((rootNode) => findSubtreeByUserId(rootNode, selectedScopeUserId))
       .filter((node): node is PlanTreeNode => node !== null);
   }, [selectedScopeUserId, trees]);
+
   const planOptions = useMemo(() => buildPlanFilterOptions(scopedTrees), [scopedTrees]);
   const selectedPlanExists = selectedPlanId === null || planOptions.some((option) => option.planId === selectedPlanId);
+
   useEffect(() => {
     if (!selectedPlanExists) {
       setSelectedPlanId(null);
@@ -192,6 +191,7 @@ export const ProjectManagerPlanDashboard = () => {
     if (!searchValue.trim()) {
       return sourceTrees;
     }
+
     return sourceTrees
       .map((node) => filterPlanTree(node, searchValue))
       .filter((node): node is PlanTreeNode => node !== null);
@@ -233,13 +233,43 @@ export const ProjectManagerPlanDashboard = () => {
     onClosePlan: (planNode: PlanTreeNode) => setCloseNode(planNode),
   };
 
+  const applyPlanSelection = (planId: number | null) => {
+    setSelectedPlanId(planId);
+    if (planId === null) {
+      setExpandedNodeIds((prev) => {
+        const next = { ...prev };
+        expandableNodeIds.forEach((id) => {
+          next[id] = true;
+        });
+        return next;
+      });
+      return;
+    }
+
+    const subtree = findPlanNodeByPlanId(presentationTrees, planId);
+    if (!subtree) {
+      return;
+    }
+    const subtreeExpandable = getExpandableNodeIds([subtree]);
+    setExpandedNodeIds(
+      subtreeExpandable.reduce<Record<number, boolean>>((acc, id) => {
+        acc[id] = true;
+        return acc;
+      }, {})
+    );
+  };
+
+  const togglePlanSelection = (planId: number) => {
+    applyPlanSelection(selectedPlanId === planId ? null : planId);
+  };
+
   return (
     <Stack
       spacing={1.85}
       sx={{
-        background: '#f6f8fc',
-        borderRadius: 3,
-        p: { xs: 0.75, md: 1 },
+        backgroundColor: '#ffffff',
+        borderRadius: 4,
+        p: { xs: 0.85, md: 1.1 },
       }}
     >
       <PlanPageHeader
@@ -269,7 +299,7 @@ export const ProjectManagerPlanDashboard = () => {
 
       {isLoading ? (
         <Card sx={emptyCardSx}>
-          <CardContent sx={{ p: { xs: 1.25, md: 1.5 } }}>
+          <CardContent sx={{ p: { xs: 1.35, md: 1.6 } }}>
             <Stack spacing={1}>
               <Skeleton variant="rounded" width="100%" height={96} />
               <Box
@@ -291,32 +321,37 @@ export const ProjectManagerPlanDashboard = () => {
 
       {!isLoading && !rootPlanExists ? (
         <Card sx={emptyCardSx}>
-          <CardContent sx={{ py: 5 }}>
+          <CardContent sx={{ py: 5.5 }}>
             <Stack spacing={1.25} alignItems="center" textAlign="center">
               <Box
                 sx={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: '24px',
-                  bgcolor: alpha('#3b82f6', 0.1),
+                  width: 82,
+                  height: 82,
+                  borderRadius: '28px',
+                  bgcolor: alpha('#3b82f6', 0.08),
                   color: 'primary.main',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 28,
+                  fontSize: 32,
                   fontWeight: 800,
                 }}
               >
                 ₽
               </Box>
               <Typography variant="h5" fontWeight={800}>
-                План на выбранный период не создан
+                План на выбранный период еще не создан
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 560 }}>
-                Создайте общий план и распределите его между подчиненными.
+                Создайте общий план и распределите его между подчиненными, чтобы страница заполнилась метриками и иерархией.
               </Typography>
               {canCreateRootPlan ? (
-                <Button variant="contained" onClick={() => setIsRootDialogOpen(true)} disabled={isMutating}>
+                <Button
+                  variant="contained"
+                  onClick={() => setIsRootDialogOpen(true)}
+                  disabled={isMutating}
+                  sx={{ minWidth: 180 }}
+                >
                   Добавить план
                 </Button>
               ) : null}
@@ -337,20 +372,9 @@ export const ProjectManagerPlanDashboard = () => {
             executionSlices={executionSlices}
             selectedPlanId={selectedPlanId}
             requestFactMetrics={requestFactMetrics}
-            onExecutionSliceClick={(planId) => {
-              setSelectedPlanId(planId);
-              const subtree = findPlanNodeByPlanId(presentationTrees, planId);
-              if (!subtree) {
-                return;
-              }
-              const subtreeExpandable = getExpandableNodeIds([subtree]);
-              setExpandedNodeIds(
-                subtreeExpandable.reduce<Record<number, boolean>>((acc, id) => {
-                  acc[id] = true;
-                  return acc;
-                }, {})
-              );
-            }}
+            onExecutionSliceClick={togglePlanSelection}
+            onDistributionItemClick={togglePlanSelection}
+            onClearPlanSelection={() => applyPlanSelection(null)}
           />
 
           <PlanHierarchySection

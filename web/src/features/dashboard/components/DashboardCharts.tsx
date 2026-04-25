@@ -142,7 +142,7 @@ export const CircularProcessChart = ({ totals, statusColors }: { totals: StatusT
     <Card
       sx={{
         borderRadius: 2,
-        background: 'linear-gradient(135deg, rgba(231,240,255,0.92), rgba(255,255,255,0.98))',
+        ackground: 'linear-gradient(135deg, rgba(231,240,255,0.92), rgba(255,255,255,0.98))',
         border: '1px solid',
         borderColor: 'divider'
       }}

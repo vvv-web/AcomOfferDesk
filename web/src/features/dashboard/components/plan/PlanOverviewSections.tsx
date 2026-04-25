@@ -8,7 +8,6 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import PieChartOutlineRoundedIcon from '@mui/icons-material/PieChartOutlineRounded';
 import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
-import { alpha } from '@mui/material/styles';
 import {
   Box,
   Button,
@@ -23,22 +22,34 @@ import {
   Stack,
   TextField,
   Typography,
-  useTheme,
 } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import { formatAmount } from '@shared/lib/formatters';
-import type { PlanDistributionItem, PlanRequestFactMetrics, SubordinateFilterOption } from './planDashboardUtils';
-import type { PlanExecutionSlice, PlanFilterOption } from './planDashboardUtils';
+import type {
+  PlanDistributionItem,
+  PlanExecutionSlice,
+  PlanFilterOption,
+  PlanRequestFactMetrics,
+  SubordinateFilterOption,
+} from './planDashboardUtils';
 import { ALL_SUBORDINATES_SCOPE, formatPercent } from './planDashboardUtils';
 
 const sectionCardSx = {
-  borderRadius: 1.5,
-  boxShadow: '0 3px 10px rgba(15, 23, 42, 0.04)',
-  border: '1px solid rgba(148, 163, 184, 0.18)',
-  backgroundColor: '#fff',
+  borderRadius: 3,
+  boxShadow: '0 6px 18px rgba(15, 23, 42, 0.03)',
+  border: '1px solid rgba(226, 232, 240, 0.95)',
+  backgroundColor: '#ffffff',
 };
 
 const toRadians = (angle: number) => (Math.PI / 180) * angle;
-const describeSectorPath = (centerX: number, centerY: number, radius: number, startAngle: number, endAngle: number) => {
+
+const describeSectorPath = (
+  centerX: number,
+  centerY: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+) => {
   const safeSweep = Math.min(Math.max(endAngle - startAngle, 0), 359.999);
   const startX = centerX + radius * Math.cos(toRadians(startAngle));
   const startY = centerY + radius * Math.sin(toRadians(startAngle));
@@ -82,12 +93,48 @@ export const PlanProgressVisual = ({
     return { ...slice, startAngle, endAngle };
   });
 
+  const legendItems = slices.length > 0
+    ? slices.map((slice) => ({
+        key: slice.key,
+        label: slice.label,
+        value: formatPercent(slice.progressPercent),
+        color: slice.color,
+        selected: selectedPlanId === slice.planId,
+        onClick: () => onSliceClick(slice.planId),
+      }))
+    : [
+        {
+          key: 'fact',
+          label: 'Факт',
+          value: formatAmount(factAmount),
+          color: theme.palette.success.main,
+          selected: false,
+          onClick: undefined,
+        },
+        {
+          key: 'rest',
+          label: 'Остаток',
+          value: formatAmount(remainingAmount),
+          color: theme.palette.warning.main,
+          selected: false,
+          onClick: undefined,
+        },
+        {
+          key: 'goal',
+          label: 'Цель',
+          value: formatAmount(totalAmount),
+          color: theme.palette.primary.main,
+          selected: false,
+          onClick: undefined,
+        },
+      ];
+
   return (
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: { xs: '126px minmax(0, 1fr)', sm: '136px minmax(0, 1fr)' },
-        gap: 0.5,
+        gridTemplateColumns: { xs: '1fr', sm: '140px minmax(0, 1fr)' },
+        gap: { xs: 1.1, sm: 1.25 },
         alignItems: 'center',
       }}
     >
@@ -95,10 +142,11 @@ export const PlanProgressVisual = ({
         <Box
           sx={{
             position: 'relative',
-            width: 116,
-            height: 116,
+            width: 124,
+            height: 124,
             borderRadius: '50%',
-            boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 8px 18px rgba(31,42,68,0.12)',
+            backgroundColor: '#ffffff',
+            boxShadow: 'inset 0 0 0 1px rgba(59,130,246,0.08)',
           }}
         >
           <Box component="svg" viewBox="0 0 200 200" sx={{ width: '100%', height: '100%' }}>
@@ -127,13 +175,17 @@ export const PlanProgressVisual = ({
                 fill={segment.color}
                 stroke="#ffffff"
                 strokeWidth={2}
-                style={{ cursor: 'pointer', opacity: selectedPlanId === null || segment.planId === -1 || selectedPlanId === segment.planId ? 1 : 0.65 }}
+                style={{
+                  cursor: 'pointer',
+                  opacity:
+                    selectedPlanId === null || segment.planId < 0 || selectedPlanId === segment.planId ? 1 : 0.64,
+                }}
                 onClick={() => (segment.planId > 0 ? onSliceClick(segment.planId) : undefined)}
               />
             ))}
           </Box>
           <Stack
-            spacing={0.25}
+            spacing={0.3}
             alignItems="center"
             justifyContent="center"
             sx={{
@@ -141,74 +193,37 @@ export const PlanProgressVisual = ({
               inset: 16,
               borderRadius: '50%',
               backgroundColor: 'background.paper',
-              boxShadow: '0 0 0 1px rgba(47,111,214,0.10)',
+              boxShadow: '0 0 0 1px rgba(59,130,246,0.08)',
               textAlign: 'center',
             }}
           >
-            <Typography variant="subtitle1" fontWeight={800} sx={{ fontSize: 26, lineHeight: 1.02 }}>
+            <Typography variant="subtitle1" fontWeight={800} sx={{ fontSize: 18, lineHeight: 1.05 }}>
               {safeValue.toFixed(2)}%
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
               Выполнено
             </Typography>
           </Stack>
         </Box>
       </Box>
 
-      <Stack spacing={0.6}>
-        <Stack spacing={0.55}>
-          {(slices.length > 0
-            ? slices.map((slice) => ({
-                key: slice.key,
-                label: slice.label,
-                value: formatPercent(slice.progressPercent),
-                color: slice.color,
-                selected: selectedPlanId === slice.planId,
-                onClick: () => onSliceClick(slice.planId),
-              }))
-            : [
-                {
-                  key: 'fact',
-                  label: 'Факт',
-                  value: formatAmount(factAmount),
-                  color: theme.palette.success.main,
-                  selected: false,
-                  onClick: undefined,
-                },
-                {
-                  key: 'rest',
-                  label: 'Остаток',
-                  value: formatAmount(remainingAmount),
-                  color: theme.palette.warning.main,
-                  selected: false,
-                  onClick: undefined,
-                },
-                {
-                  key: 'goal',
-                  label: 'Цель',
-                  value: formatAmount(totalAmount),
-                  color: theme.palette.primary.main,
-                  selected: false,
-                  onClick: undefined,
-                },
-              ]).map((item) => (
-            <Stack key={item.label} direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+      <Stack spacing={1}>
+        <Stack spacing={0.8}>
+          {legendItems.map((item) => (
+            <Stack key={item.key} direction="row" justifyContent="space-between" spacing={1} alignItems="center">
               <Stack
                 direction="row"
-                spacing={0.65}
+                spacing={0.75}
                 alignItems="center"
                 onClick={item.onClick}
-                sx={{
-                  cursor: item.onClick ? 'pointer' : 'default',
-                  opacity: item.selected ? 1 : 0.9,
-                }}
+                sx={{ cursor: item.onClick ? 'pointer' : 'default', opacity: item.selected ? 1 : 0.94 }}
               >
                 <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: item.color }} />
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.75, lineHeight: 1.05 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.1 }}>
                   {item.label}
                 </Typography>
               </Stack>
-              <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10.75, lineHeight: 1.05 }}>
+              <Typography variant="caption" fontWeight={700} sx={{ fontSize: 12, lineHeight: 1.1 }}>
                 {item.value}
               </Typography>
             </Stack>
@@ -217,20 +232,21 @@ export const PlanProgressVisual = ({
 
         <Box
           sx={{
-            borderRadius: 3,
-            px: 1,
-            py: 0.85,
-            bgcolor: alpha(theme.palette.primary.main, 0.06),
+            borderRadius: 2.5,
+            px: 1.1,
+            py: 0.95,
+            bgcolor: '#f7fbff',
+            border: '1px solid rgba(219, 234, 254, 0.9)',
           }}
         >
-          <Stack spacing={0.35}>
-            <Stack direction="row" spacing={0.6} alignItems="center">
+          <Stack spacing={0.4}>
+            <Stack direction="row" spacing={0.7} alignItems="center">
               <DonutLargeRoundedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
-              <Typography variant="caption" fontWeight={700} sx={{ fontSize: 11 }}>
+              <Typography variant="caption" fontWeight={700} sx={{ fontSize: 12 }}>
                 Цель: {formatAmount(totalAmount)}
               </Typography>
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
               Период: {periodLabel}
             </Typography>
           </Stack>
@@ -268,29 +284,37 @@ export const PlanPageHeader = ({
   onAddPlan,
 }: PlanPageHeaderProps) => {
   return (
-    <Box
-      sx={{
-        px: { xs: 0.25, md: 0.5 },
-        py: 0.1,
-      }}
-    >
+    <Box sx={{ px: { xs: 0, md: 0.15 }, py: 0.25 }}>
       <Stack
-        direction={{ xs: 'column', lg: 'row' }}
-        spacing={0.75}
+        direction={{ xs: 'column', xl: 'row' }}
+        spacing={1.2}
         justifyContent="space-between"
-        alignItems={{ xs: 'stretch', lg: 'center' }}
+        alignItems={{ xs: 'stretch', xl: 'flex-start' }}
       >
-        <Stack spacing={0.35} sx={{ minWidth: 0 }}>
-          <Typography variant="h5" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+        <Stack spacing={0.4} sx={{ minWidth: 0, pt: 0.2 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'text.secondary',
+              fontSize: 12,
+              letterSpacing: '0.02em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Панель управления планами
+          </Typography>
+          <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1.1, fontSize: { xs: 30, md: 34 } }}>
             План экономии
           </Typography>
         </Stack>
 
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
-          spacing={0.75}
+          spacing={1}
           alignItems={{ xs: 'stretch', sm: 'center' }}
           justifyContent={{ sm: 'flex-end' }}
+          useFlexGap
+          flexWrap="wrap"
         >
           <TextField
             type="month"
@@ -299,7 +323,13 @@ export const PlanPageHeader = ({
             value={period}
             onChange={(event) => onPeriodChange(event.target.value)}
             InputLabelProps={{ shrink: true }}
-            sx={{ minWidth: { xs: '100%', sm: 152 } }}
+            sx={{
+              minWidth: { xs: '100%', sm: 174 },
+              '& .MuiOutlinedInput-root': {
+                minHeight: 46,
+                bgcolor: 'rgba(255,255,255,0.96)',
+              },
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -309,7 +339,16 @@ export const PlanPageHeader = ({
             }}
           />
 
-          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 200 } }}>
+          <FormControl
+            size="small"
+            sx={{
+              minWidth: { xs: '100%', sm: 232 },
+              '& .MuiOutlinedInput-root': {
+                minHeight: 46,
+                bgcolor: 'rgba(255,255,255,0.96)',
+              },
+            }}
+          >
             <InputLabel id="plan-scope-label">Сотрудник</InputLabel>
             <Select
               labelId="plan-scope-label"
@@ -326,7 +365,16 @@ export const PlanPageHeader = ({
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 } }}>
+          <FormControl
+            size="small"
+            sx={{
+              minWidth: { xs: '100%', sm: 220, md: 244 },
+              '& .MuiOutlinedInput-root': {
+                minHeight: 46,
+                bgcolor: 'rgba(255,255,255,0.96)',
+              },
+            }}
+          >
             <InputLabel id="plan-filter-label">План</InputLabel>
             <Select
               labelId="plan-filter-label"
@@ -349,7 +397,12 @@ export const PlanPageHeader = ({
               onClick={onAddPlan}
               disabled={isMutating}
               startIcon={<AddRoundedIcon />}
-              sx={{ minWidth: { xs: '100%', sm: 140 }, height: 33, borderRadius: 2 }}
+              sx={{
+                minWidth: { xs: '100%', sm: 188 },
+                minHeight: 46,
+                borderRadius: 2.5,
+                px: 2,
+              }}
             >
               Добавить план
             </Button>
@@ -382,7 +435,7 @@ export const PlanKpiRow = ({
       label: 'Общий план',
       value: formatAmount(totalPlanAmount),
       icon: <FlagRoundedIcon sx={{ color: 'primary.main' }} />,
-      accent: alpha(theme.palette.primary.main, 0.12),
+      accent: alpha(theme.palette.primary.main, 0.1),
     },
     {
       label: 'Факт',
@@ -405,7 +458,7 @@ export const PlanKpiRow = ({
     {
       label: 'Участники',
       value: String(participantCount),
-      icon: <GroupRoundedIcon sx={{ color: 'primary.main' }} />,
+      icon: <GroupRoundedIcon sx={{ color: 'info.main' }} />,
       accent: alpha(theme.palette.info.main, 0.12),
     },
   ];
@@ -419,18 +472,18 @@ export const PlanKpiRow = ({
           sm: 'repeat(2, minmax(0, 1fr))',
           lg: 'repeat(5, minmax(0, 1fr))',
         },
-        gap: 0.75,
+        gap: 0.85,
       }}
     >
       {items.map((item) => (
         <Card key={item.label} sx={sectionCardSx}>
-          <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
-            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minHeight: 30 }}>
+          <CardContent sx={{ p: 1.4, '&:last-child': { pb: 1.4 } }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 38 }}>
               <Box
                 sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '8px',
+                  width: 42,
+                  height: 42,
+                  borderRadius: '16px',
                   bgcolor: item.accent,
                   display: 'flex',
                   alignItems: 'center',
@@ -440,11 +493,15 @@ export const PlanKpiRow = ({
               >
                 {item.icon}
               </Box>
-              <Stack spacing={0.15} minWidth={0}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.5, lineHeight: 1 }}>
+              <Stack spacing={0.2} minWidth={0}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.1 }}>
                   {item.label}
                 </Typography>
-                <Typography variant="subtitle2" fontWeight={800} sx={{ lineHeight: 1.05, overflowWrap: 'anywhere', fontSize: 12.75 }}>
+                <Typography
+                  variant="subtitle2"
+                  fontWeight={800}
+                  sx={{ lineHeight: 1.05, overflowWrap: 'anywhere', fontSize: { xs: 20, xl: 18 } }}
+                >
                   {item.value}
                 </Typography>
               </Stack>
@@ -467,6 +524,8 @@ type PlanAnalyticsCardsProps = {
   selectedPlanId: number | null;
   requestFactMetrics: PlanRequestFactMetrics;
   onExecutionSliceClick: (planId: number) => void;
+  onDistributionItemClick: (planId: number) => void;
+  onClearPlanSelection: () => void;
 };
 
 export const PlanAnalyticsCards = ({
@@ -480,6 +539,8 @@ export const PlanAnalyticsCards = ({
   selectedPlanId,
   requestFactMetrics,
   onExecutionSliceClick,
+  onDistributionItemClick,
+  onClearPlanSelection,
 }: PlanAnalyticsCardsProps) => {
   const theme = useTheme();
 
@@ -508,15 +569,152 @@ export const PlanAnalyticsCards = ({
       sx={{
         display: 'grid',
         gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' },
-        gap: 0.5,
+        gap: 0.85,
       }}
     >
       <Card sx={sectionCardSx}>
-        <CardContent sx={{ p: 0.95, height: { xs: 'auto', xl: 208 }, '&:last-child': { pb: 0.95 } }}>
+        <CardContent sx={{ p: 1.35, height: { xs: 'auto', xl: 228 }, '&:last-child': { pb: 1.35 } }}>
+          <Stack spacing={1.1} sx={{ height: '100%' }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+              <Typography variant="subtitle1" fontWeight={800}>
+                Распределение плана по сотрудникам
+              </Typography>
+              {selectedPlanId !== null ? (
+                <Button size="small" variant="text" onClick={onClearPlanSelection}>
+                  Сбросить
+                </Button>
+              ) : null}
+            </Stack>
+            {distributionItems.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                Нет данных для распределения по текущей выборке.
+              </Typography>
+            ) : (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: '160px minmax(0, 1fr)' },
+                  gap: 1.15,
+                  alignItems: 'center',
+                }}
+              >
+                <Stack spacing={0.5} alignItems="center">
+                  <Box sx={{ position: 'relative', width: 136, height: 136 }}>
+                    <Box
+                      component="svg"
+                      viewBox="0 0 200 200"
+                      sx={{
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '50%',
+                        backgroundColor: '#ffffff',
+                        boxShadow: 'inset 0 0 0 1px rgba(59,130,246,0.08)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {distributionSegments.map((item) => (
+                        <path
+                          key={item.key}
+                          d={describeSectorPath(100, 100, ringRadius * 1.9, item.startAngle, item.endAngle)}
+                          fill={item.color}
+                          stroke={selectedPlanId === item.planId && item.planId !== null ? theme.palette.primary.main : '#ffffff'}
+                          strokeWidth={selectedPlanId === item.planId && item.planId !== null ? 3 : 2}
+                          style={{
+                            cursor: item.planId ? 'pointer' : 'default',
+                            opacity: selectedPlanId === null || item.planId === null || selectedPlanId === item.planId ? 1 : 0.64,
+                          }}
+                          onClick={() => (item.planId ? onDistributionItemClick(item.planId) : undefined)}
+                        />
+                      ))}
+                    </Box>
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        inset: 20,
+                        borderRadius: '50%',
+                        backgroundColor: 'background.paper',
+                        boxShadow: '0 0 0 1px rgba(59,130,246,0.08)',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                    <Stack
+                      spacing={0.15}
+                      alignItems="center"
+                      justifyContent="center"
+                      sx={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                    >
+                      <Typography variant="h5" fontWeight={800} sx={{ textAlign: 'center', px: 1, fontSize: 18, lineHeight: 1.05 }}>
+                        {formatAmount(totalPlanAmount)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11, textTransform: 'lowercase' }}>
+                        всего
+                      </Typography>
+                    </Stack>
+                  </Box>
+                </Stack>
+
+                <Stack spacing={0.7} sx={{ overflow: 'auto' }}>
+                  {distributionItems.map((item) => (
+                    <Stack key={item.key} spacing={0.45}>
+                      <Stack direction="row" spacing={0.8} alignItems="center" minWidth={0}>
+                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: item.color, flexShrink: 0 }} />
+                        <Typography variant="body2" noWrap fontWeight={700} sx={{ fontSize: 12.5, lineHeight: 1.2 }}>
+                          {item.label}
+                        </Typography>
+                      </Stack>
+                      <Stack
+                        direction="row"
+                        spacing={1.1}
+                        alignItems="center"
+                        onClick={() => (item.planId ? onDistributionItemClick(item.planId) : undefined)}
+                        sx={{
+                          cursor: item.planId ? 'pointer' : 'default',
+                          opacity: selectedPlanId === null || item.planId === null || selectedPlanId === item.planId ? 1 : 0.72,
+                        }}
+                      >
+                        <LinearProgress
+                          variant="determinate"
+                          value={item.percent}
+                          sx={{
+                            flex: 1,
+                            height: 8,
+                            borderRadius: 999,
+                            bgcolor: '#e5e7eb',
+                            '& .MuiLinearProgress-bar': {
+                              borderRadius: 999,
+                              backgroundColor: item.color,
+                            },
+                          }}
+                        />
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12.5, minWidth: 52 }}>
+                          {formatPercent(item.percent)}
+                        </Typography>
+                        <Typography variant="body2" fontWeight={800} sx={{ fontSize: 12.5, minWidth: 108, textAlign: 'right' }}>
+                          {formatAmount(item.planAmount)}
+                        </Typography>
+                      </Stack>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card sx={sectionCardSx}>
+        <CardContent sx={{ p: 1.35, height: { xs: 'auto', xl: 228 }, '&:last-child': { pb: 1.35 } }}>
           <Stack spacing={1.15} sx={{ height: '100%' }}>
-            <Typography variant="subtitle1" fontWeight={800}>
-              Выполнение плана
-            </Typography>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+              <Typography variant="subtitle1" fontWeight={800}>
+                Выполнение плана
+              </Typography>
+              {selectedPlanId !== null ? (
+                <Button size="small" variant="text" onClick={onClearPlanSelection}>
+                  Сбросить
+                </Button>
+              ) : null}
+            </Stack>
             <PlanProgressVisual
               value={totalProgressPercent}
               factAmount={totalFactAmount}
@@ -532,109 +730,12 @@ export const PlanAnalyticsCards = ({
       </Card>
 
       <Card sx={sectionCardSx}>
-        <CardContent sx={{ p: 0.95, height: { xs: 'auto', xl: 208 }, '&:last-child': { pb: 0.95 } }}>
-          <Stack spacing={1.1} sx={{ height: '100%' }}>
-            <Typography variant="subtitle1" fontWeight={800}>
-              Распределение плана по сотрудникам
-            </Typography>
-            {distributionItems.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                Нет данных для распределения по текущей выборке.
-              </Typography>
-            ) : (
-              <Box sx={{ display: 'grid', gridTemplateColumns: '134px minmax(0, 1fr)', gap: 0.8, alignItems: 'center' }}>
-                <Stack spacing={0.5} alignItems="center">
-                  <Box sx={{ position: 'relative', width: 120, height: 120 }}>
-                    <Box
-                      component="svg"
-                      viewBox="0 0 200 200"
-                      sx={{
-                        width: '100%',
-                        height: '100%',
-                        borderRadius: '50%',
-                        boxShadow: 'inset 0 0 0 1px rgba(47,111,214,0.16), 0 8px 18px rgba(31,42,68,0.12)',
-                      }}
-                    >
-                      {distributionSegments.map((item) => (
-                        <path
-                          key={item.key}
-                          d={describeSectorPath(100, 100, ringRadius * 1.9, item.startAngle, item.endAngle)}
-                          fill={item.color}
-                          stroke="#ffffff"
-                          strokeWidth={2}
-                        />
-                      ))}
-                    </Box>
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        inset: 18,
-                        borderRadius: '50%',
-                        backgroundColor: 'background.paper',
-                        boxShadow: '0 0 0 1px rgba(47,111,214,0.10)',
-                      }}
-                    />
-                    <Stack spacing={0.1} alignItems="center" justifyContent="center" sx={{ position: 'absolute', inset: 0 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Всего
-                      </Typography>
-                      <Typography variant="caption" fontWeight={800} sx={{ textAlign: 'center', px: 1, fontSize: 11.5 }}>
-                        {formatAmount(totalPlanAmount)}
-                      </Typography>
-                    </Stack>
-                  </Box>
-                </Stack>
-                <Stack spacing={0.5} sx={{ overflow: 'auto' }}>
-                  {distributionItems.map((item) => (
-                    <Stack key={item.key} spacing={0.2}>
-                      <Stack direction="row" justifyContent="space-between" spacing={0.7} alignItems="center">
-                        <Stack direction="row" spacing={0.8} alignItems="center" minWidth={0}>
-                          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: item.color, flexShrink: 0 }} />
-                          <Typography variant="caption" noWrap sx={{ fontSize: 11 }}>
-                            {item.label}
-                          </Typography>
-                        </Stack>
-                        <Typography variant="caption" color="text.secondary" whiteSpace="nowrap" sx={{ fontSize: 10.5 }}>
-                          {formatAmount(item.factAmount)} / {formatAmount(item.planAmount)}
-                        </Typography>
-                      </Stack>
-                      <LinearProgress
-                        variant="determinate"
-                        value={item.progressPercent}
-                        sx={{
-                          height: 6,
-                          borderRadius: 999,
-                          bgcolor: alpha(theme.palette.primary.main, 0.08),
-                          '& .MuiLinearProgress-bar': {
-                            borderRadius: 999,
-                            backgroundColor: item.color,
-                          },
-                        }}
-                      />
-                      <Stack direction="row" justifyContent="space-between" spacing={0.7}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.5 }}>
-                          100% плана
-                        </Typography>
-                        <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10.5 }}>
-                          {formatPercent(item.progressPercent)}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Box>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card sx={sectionCardSx}>
-        <CardContent sx={{ p: 0.95, height: { xs: 'auto', xl: 208 }, '&:last-child': { pb: 0.95 } }}>
+        <CardContent sx={{ p: 1.35, height: { xs: 'auto', xl: 228 }, '&:last-child': { pb: 1.35 } }}>
           <Stack spacing={1.1} sx={{ height: '100%' }}>
             <Typography variant="subtitle1" fontWeight={800}>
               Заявки, формирующие факт
             </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 0.55 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 0.85 }}>
               {requestRows.map((row) => (
                 <Stack
                   key={row.label}
@@ -643,18 +744,19 @@ export const PlanAnalyticsCards = ({
                   spacing={1}
                   alignItems="center"
                   sx={{
-                    borderRadius: 1.5,
-                    px: 0.75,
-                    py: 0.55,
-                    bgcolor: alpha(theme.palette.primary.main, 0.04),
+                    borderRadius: 2.5,
+                    px: 0.95,
+                    py: 0.8,
+                    bgcolor: '#ffffff',
+                    border: '1px solid rgba(226, 232, 240, 0.8)',
                   }}
                 >
-                  <Stack direction="row" spacing={0.55} alignItems="center" minWidth={0}>
+                  <Stack direction="row" spacing={0.6} alignItems="center" minWidth={0}>
                     <Box
                       sx={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: '8px',
+                        width: 30,
+                        height: 30,
+                        borderRadius: '10px',
                         bgcolor: alpha(theme.palette.primary.main, 0.1),
                         color: 'primary.main',
                         display: 'flex',
@@ -663,13 +765,13 @@ export const PlanAnalyticsCards = ({
                         flexShrink: 0,
                       }}
                     >
-                      <ReceiptLongRoundedIcon sx={{ fontSize: 13 }} />
+                      <ReceiptLongRoundedIcon sx={{ fontSize: 16 }} />
                     </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.75, lineHeight: 1.05 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11.5, lineHeight: 1.15 }}>
                       {row.label}
                     </Typography>
                   </Stack>
-                  <Typography variant="caption" fontWeight={800} whiteSpace="nowrap" sx={{ fontSize: 10.75, lineHeight: 1.05 }}>
+                  <Typography variant="caption" fontWeight={800} whiteSpace="nowrap" sx={{ fontSize: 12, lineHeight: 1.1 }}>
                     {row.value === null || row.value === undefined
                       ? '—'
                       : row.format === 'amount'
@@ -689,4 +791,4 @@ export const PlanAnalyticsCards = ({
 };
 
 export const planSectionCardSx = sectionCardSx;
-export const hierarchyTitleIcon = <AccountTreeRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />;
+export const hierarchyTitleIcon = <AccountTreeRoundedIcon sx={{ color: 'primary.main', fontSize: 22 }} />;

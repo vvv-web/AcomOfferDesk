@@ -9,6 +9,7 @@ export type SubordinateFilterOption = {
 
 export type PlanDistributionItem = {
   key: string;
+  planId: number | null;
   label: string;
   amount: number;
   percent: number;
@@ -231,8 +232,9 @@ export const buildDistributionItems = (trees: PlanTreeNode[]): PlanDistributionI
   }
 
   const sorted = [...baseNodes].sort((left, right) => right.plan_amount - left.plan_amount);
-  const leadingItems = sorted.slice(0, 4).map((node, index) => ({
+  const leadingItems: PlanDistributionItem[] = sorted.slice(0, 4).map((node, index) => ({
     key: String(node.plan_id),
+    planId: node.plan_id,
     label: node.user_name,
     amount: node.plan_amount,
     percent: toPercent(node.plan_amount, total),
@@ -246,6 +248,7 @@ export const buildDistributionItems = (trees: PlanTreeNode[]): PlanDistributionI
   if (remainingAmount > 0) {
     leadingItems.push({
       key: 'other',
+      planId: null,
       label: 'Другие',
       amount: remainingAmount,
       percent: toPercent(remainingAmount, total),
@@ -261,7 +264,7 @@ export const buildDistributionItems = (trees: PlanTreeNode[]): PlanDistributionI
           )
         )
       ),
-      color: distributionPalette[4],
+      color: '#cbd5e1',
     });
   }
 

@@ -39,6 +39,7 @@ export const AppLayout = () => {
             sx={{
               flex: 1,
               minWidth: 0,
+              backgroundColor: '#ffffff',
               px: 1,
               pt: 1.25,
               pb: MOBILE_BOTTOM_NAV_CONTENT_PADDING,
@@ -94,13 +95,16 @@ export const AppLayout = () => {
             sx={{
               minWidth: 0,
               minHeight: '100vh',
+              backgroundColor: '#ffffff',
               px: { xs: 1.5, md: 2 },
               py: { xs: 1.5, md: 2 },
               overflowY: 'auto',
+              position: 'relative',
+              isolation: ' isolate',
             }}
           >
             {breadcrumbItems.length > 0 ? <BreadcrumbsNav items={breadcrumbItems} /> : null}
-            <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1 }}>
+            <Box component="main" sx={{ minWidth: 0, pb: 0.5, flex: 1, position: 'relative', zIndex: 1 }}>
               <Outlet />
             </Box>
 
