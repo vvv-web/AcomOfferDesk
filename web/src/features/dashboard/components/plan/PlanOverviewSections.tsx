@@ -1,8 +1,9 @@
 import AccountTreeRoundedIcon from "@mui/icons-material/AccountTreeRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import DonutLargeRoundedIcon from "@mui/icons-material/DonutLargeRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import PieChartOutlineRoundedIcon from "@mui/icons-material/PieChartOutlineRounded";
@@ -14,24 +15,25 @@ import {
   Card,
   CardContent,
   FormControl,
-  InputAdornment,
   InputLabel,
   LinearProgress,
   MenuItem,
+  Popover,
   Select,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
+import { useState, type MouseEvent } from "react";
 import { formatAmount } from "@shared/lib/formatters";
+import { DatePickerField } from "@shared/components/DatePickerField";
 import type {
   PlanDistributionItem,
   PlanExecutionSlice,
   PlanRequestFactMetrics,
   SubordinateFilterOption,
 } from "./planDashboardUtils";
-import { ALL_SUBORDINATES_SCOPE, formatPercent } from "./planDashboardUtils";
+import { formatPercent } from "./planDashboardUtils";
 
 const sectionCardSx = {
   borderRadius: 2,
@@ -57,6 +59,72 @@ const formatCompactAmount = (value: number) => {
     return `${trimTrailingZeros((value / 1_000).toFixed(abs >= 100_000 ? 0 : 1))} тыс`;
   }
   return formatAmount(value);
+};
+
+const getMonthBounds = (monthValue: string) => {
+  const [rawYear, rawMonth] = monthValue.split("-");
+  const year = Number.parseInt(rawYear ?? "", 10);
+  const month = Number.parseInt(rawMonth ?? "", 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return null;
+  }
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { monthStart, monthEnd };
+};
+
+const getYearBounds = (yearValue: string) => {
+  const year = Number.parseInt(yearValue, 10);
+  if (!Number.isFinite(year)) {
+    return null;
+  }
+  return {
+    yearStart: `${year}-01-01`,
+    yearEnd: `${year}-12-31`,
+  };
+};
+
+const monthOptions = [
+  { value: "01", label: "Январь" },
+  { value: "02", label: "Февраль" },
+  { value: "03", label: "Март" },
+  { value: "04", label: "Апрель" },
+  { value: "05", label: "Май" },
+  { value: "06", label: "Июнь" },
+  { value: "07", label: "Июль" },
+  { value: "08", label: "Август" },
+  { value: "09", label: "Сентябрь" },
+  { value: "10", label: "Октябрь" },
+  { value: "11", label: "Ноябрь" },
+  { value: "12", label: "Декабрь" },
+];
+
+const toRuDate = (value: string) => {
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("ru-RU");
+};
+
+const buildPeriodButtonLabel = (dateFrom: string, dateTo: string) => {
+  const yearFrom = dateFrom.slice(0, 4);
+  const yearTo = dateTo.slice(0, 4);
+  const monthFrom = dateFrom.slice(5, 7);
+  const monthTo = dateTo.slice(5, 7);
+
+  if (
+    yearFrom === yearTo &&
+    dateFrom === `${yearFrom}-01-01` &&
+    dateTo === `${yearFrom}-12-31`
+  ) {
+    return `${yearFrom} год`;
+  }
+
+  if (yearFrom === yearTo && monthFrom === monthTo) {
+    const month = monthOptions.find((item) => item.value === monthFrom)?.label ?? monthFrom;
+    return `${month} ${yearFrom}`;
+  }
+
+  return `${toRuDate(dateFrom)} — ${toRuDate(dateTo)}`;
 };
 
 const describeSectorPath = (
@@ -99,25 +167,13 @@ export const PlanProgressVisual = ({
   const theme = useTheme();
   const safeValue = Math.max(0, Math.min(100, value));
   const pieRadius = 88;
-  const totalSlicesValue = slices.reduce(
-    (sum, slice) => sum + Math.max(slice.value, 0),
-    0,
-  );
-  let currentAngle = -90;
-  const pieSegments = (totalSlicesValue > 0 ? slices : []).map((slice) => {
-    const sweep = (Math.max(slice.value, 0) / totalSlicesValue) * 360;
-    const startAngle = currentAngle;
-    const endAngle = currentAngle + sweep;
-    currentAngle = endAngle;
-    return { ...slice, startAngle, endAngle };
-  });
 
   const legendItems =
     slices.length > 0
       ? slices.map((slice) => ({
           key: slice.key,
           label: slice.label,
-          value: formatPercent(slice.progressPercent),
+          value: formatAmount(slice.factAmount),
           color: slice.color,
           selected: selectedPlanId === slice.planId,
           onClick: () => onSliceClick(slice.planId),
@@ -125,7 +181,7 @@ export const PlanProgressVisual = ({
       : [
           {
             key: "fact",
-            label: "Факт",
+            label: "Экономия",
             value: formatAmount(factAmount),
             color: theme.palette.success.main,
             selected: false,
@@ -148,6 +204,8 @@ export const PlanProgressVisual = ({
             onClick: undefined,
           },
         ];
+
+  const progressAngle = (safeValue / 100) * 360;
 
   return (
     <Box
@@ -177,25 +235,22 @@ export const PlanProgressVisual = ({
             viewBox="0 0 200 200"
             sx={{ width: "100%", height: "100%" }}
           >
-            {(pieSegments.length > 0
-              ? pieSegments
-              : [
-                  {
-                    key: "fact",
-                    color: theme.palette.primary.main,
-                    startAngle: -90,
-                    endAngle: -90 + (safeValue / 100) * 360,
-                    planId: -1,
-                  },
-                  {
-                    key: "rest",
-                    color: alpha(theme.palette.primary.main, 0.18),
-                    startAngle: -90 + (safeValue / 100) * 360,
-                    endAngle: 270,
-                    planId: -2,
-                  },
-                ]
-            ).map((segment) => (
+            {[
+              {
+                key: "progress-bg",
+                color: alpha(theme.palette.primary.main, 0.18),
+                startAngle: -90,
+                endAngle: 270,
+                planId: -2,
+              },
+              {
+                key: "progress-fg",
+                color: theme.palette.primary.main,
+                startAngle: -90,
+                endAngle: -90 + progressAngle,
+                planId: -1,
+              },
+            ].map((segment) => (
               <path
                 key={segment.key}
                 d={describeSectorPath(
@@ -209,17 +264,8 @@ export const PlanProgressVisual = ({
                 stroke="#ffffff"
                 strokeWidth={2}
                 style={{
-                  cursor: "pointer",
-                  opacity:
-                    selectedPlanId === null ||
-                    segment.planId < 0 ||
-                    selectedPlanId === segment.planId
-                      ? 1
-                      : 0.64,
+                  cursor: "default",
                 }}
-                onClick={() =>
-                  segment.planId > 0 ? onSliceClick(segment.planId) : undefined
-                }
               />
             ))}
           </Box>
@@ -313,9 +359,7 @@ export const PlanProgressVisual = ({
             border: "1px solid rgba(219, 234, 254, 0.9)",
           }}
         >
-          
           <Stack spacing={0.4}>
-            
             <Stack direction="row" spacing={0.7} alignItems="center">
               
               <DonutLargeRoundedIcon
@@ -344,44 +388,90 @@ export const PlanProgressVisual = ({
 };
 
 type PlanPageHeaderProps = {
-  period: string;
-  selectedScopeUserId: string;
-  subordinateOptions: SubordinateFilterOption[];
+  dateFrom: string;
+  dateTo: string;
+  selectedLeadUserId: string;
+  leadOptions: SubordinateFilterOption[];
+  allLeadsValue: string;
   canCreateRootPlan: boolean;
   isMutating: boolean;
-  onPeriodChange: (value: string) => void;
-  onScopeChange: (value: string) => void;
+  onDateFromChange: (value: string) => void;
+  onDateToChange: (value: string) => void;
+  onLeadChange: (value: string) => void;
   onAddPlan: () => void;
 };
 
 export const PlanPageHeader = ({
-  period,
-  selectedScopeUserId,
-  subordinateOptions,
+  dateFrom,
+  dateTo,
+  selectedLeadUserId,
+  leadOptions,
+  allLeadsValue,
   canCreateRootPlan,
   isMutating,
-  onPeriodChange,
-  onScopeChange,
+  onDateFromChange,
+  onDateToChange,
+  onLeadChange,
   onAddPlan,
 }: PlanPageHeaderProps) => {
+  const [periodAnchorEl, setPeriodAnchorEl] = useState<HTMLElement | null>(null);
+  const [periodMode, setPeriodMode] = useState<"year" | "month" | "range">("month");
+  const [draftDateFrom, setDraftDateFrom] = useState(dateFrom);
+  const [draftDateTo, setDraftDateTo] = useState(dateTo);
+  const isPeriodOpen = Boolean(periodAnchorEl);
+  const currentYear = new Date().getFullYear();
+  const selectedYear = draftDateFrom?.slice(0, 4) || String(currentYear);
+  const selectedMonth = draftDateFrom?.slice(5, 7) || "01";
+  const yearOptions = Array.from({ length: 13 }, (_, index) =>
+    String(currentYear - 8 + index),
+  );
+  const selectedPeriodLabel = buildPeriodButtonLabel(dateFrom, dateTo);
+
+  const openPeriodPopover = (event: MouseEvent<HTMLElement>) => {
+    setDraftDateFrom(dateFrom);
+    setDraftDateTo(dateTo);
+    setPeriodAnchorEl(event.currentTarget);
+  };
+
+  const handlePeriodModeChange = (nextMode: "year" | "month" | "range") => {
+    setPeriodMode(nextMode);
+    if (nextMode === "year") {
+      const bounds = getYearBounds(selectedYear);
+      if (bounds) {
+        setDraftDateFrom(bounds.yearStart);
+        setDraftDateTo(bounds.yearEnd);
+      }
+      return;
+    }
+    if (nextMode === "month") {
+      const bounds = getMonthBounds(`${selectedYear}-${selectedMonth}`);
+      if (bounds) {
+        setDraftDateFrom(bounds.monthStart);
+        setDraftDateTo(bounds.monthEnd);
+      }
+    }
+  };
+
+  const applyPeriodSelection = () => {
+    onDateFromChange(draftDateFrom);
+    onDateToChange(draftDateTo);
+    setPeriodAnchorEl(null);
+  };
+
   return (
     <Box sx={{ px: { xs: 0, md: 0.15 }, py: 0 }}>
-      
       <Stack
         direction={{ xs: "column", xl: "row" }}
         spacing={1.1}
         justifyContent="space-between"
         alignItems={{ xs: "stretch", xl: "center" }}
       >
-        
         <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-          
           <Typography
             variant="h5"
             fontWeight={800}
             sx={{ lineHeight: 1.1, fontSize: { xs: 25, md: 26 } }}
           >
-            
             План экономии
           </Typography>
         </Stack>
@@ -393,32 +483,183 @@ export const PlanPageHeader = ({
           useFlexGap
           flexWrap="wrap"
         >
-          
-          <TextField
-            type="month"
-            size="small"
-            label="Период"
-            value={period}
-            onChange={(event) => onPeriodChange(event.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{
-              minWidth: { xs: "100%", sm: 190 },
-              "& .MuiOutlinedInput-root": {
-                minHeight: 40,
-                bgcolor: "rgba(255,255,255,0.96)",
-              },
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  
-                  <CalendarMonthRoundedIcon
-                    sx={{ color: "text.secondary", fontSize: 18 }}
-                  />
-                </InputAdornment>
-              ),
-            }}
-          />
+          <Box sx={{ minWidth: { xs: "100%", sm: 390 } }}>
+            <Button
+              fullWidth
+              variant="outlined"
+              onClick={openPeriodPopover}
+              sx={{ justifyContent: "space-between", minHeight: 40 }}
+            >
+              {selectedPeriodLabel}
+              {isPeriodOpen ? <ExpandLessRoundedIcon fontSize="small" /> : <ExpandMoreRoundedIcon fontSize="small" />}
+            </Button>
+            <Popover
+              open={isPeriodOpen}
+              anchorEl={periodAnchorEl}
+              onClose={() => setPeriodAnchorEl(null)}
+              anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+              transformOrigin={{ vertical: "top", horizontal: "left" }}
+              slotProps={{
+                paper: {
+                  sx: {
+                    p: 2.25,
+                    mt: 0.75,
+                    minWidth: { xs: 320, sm: 440 },
+                    borderRadius: 3,
+                    border: "1px solid rgba(148, 163, 184, 0.28)",
+                    boxShadow: "0 16px 40px rgba(15, 23, 42, 0.16)",
+                  },
+                },
+              }}
+            >
+              <Stack spacing={1.5}>
+                <Stack spacing={0.45}>
+                  <Typography variant="body2" fontWeight={700}>
+                    Период отчета
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Выберите год, месяц или произвольный диапазон дат
+                  </Typography>
+                </Stack>
+                <Stack direction="row" spacing={0.8} useFlexGap flexWrap="wrap">
+                  <Button
+                    size="small"
+                    variant={periodMode === "year" ? "contained" : "outlined"}
+                    onClick={() => handlePeriodModeChange("year")}
+                    sx={{ borderRadius: "999px", px: 1.4 }}
+                  >
+                    За год
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={periodMode === "month" ? "contained" : "outlined"}
+                    onClick={() => handlePeriodModeChange("month")}
+                    sx={{ borderRadius: "999px", px: 1.4 }}
+                  >
+                    Месяц/год
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={periodMode === "range" ? "contained" : "outlined"}
+                    onClick={() => handlePeriodModeChange("range")}
+                    sx={{ borderRadius: "999px", px: 1.4 }}
+                  >
+                    Диапазон дат
+                  </Button>
+                </Stack>
+
+                {periodMode === "year" ? (
+                  <FormControl size="small" sx={{ maxWidth: 220 }}>
+                    <InputLabel id="plan-period-year-only-label">Год</InputLabel>
+                    <Select
+                      labelId="plan-period-year-only-label"
+                      label="Год"
+                      value={selectedYear}
+                      onChange={(event) => {
+                        const bounds = getYearBounds(event.target.value);
+                        if (!bounds) {
+                          return;
+                        }
+                        setDraftDateFrom(bounds.yearStart);
+                        setDraftDateTo(bounds.yearEnd);
+                      }}
+                    >
+                      {yearOptions.map((year) => (
+                        <MenuItem key={year} value={year}>
+                          {year}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                ) : periodMode === "month" ? (
+                  <Stack direction="row" spacing={1.1}>
+                    <FormControl size="small" sx={{ flex: 1 }}>
+                      <InputLabel id="plan-period-year-label">Год</InputLabel>
+                      <Select
+                        labelId="plan-period-year-label"
+                        label="Год"
+                        value={selectedYear}
+                        onChange={(event) => {
+                          const bounds = getMonthBounds(
+                            `${event.target.value}-${selectedMonth}`,
+                          );
+                          if (!bounds) {
+                            return;
+                          }
+                          setDraftDateFrom(bounds.monthStart);
+                          setDraftDateTo(bounds.monthEnd);
+                        }}
+                      >
+                        {yearOptions.map((year) => (
+                          <MenuItem key={year} value={year}>
+                            {year}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ flex: 1.25 }}>
+                      <InputLabel id="plan-period-month-label">Месяц</InputLabel>
+                      <Select
+                        labelId="plan-period-month-label"
+                        label="Месяц"
+                        value={selectedMonth}
+                        onChange={(event) => {
+                          const bounds = getMonthBounds(
+                            `${selectedYear}-${event.target.value}`,
+                          );
+                          if (!bounds) {
+                            return;
+                          }
+                          setDraftDateFrom(bounds.monthStart);
+                          setDraftDateTo(bounds.monthEnd);
+                        }}
+                      >
+                        {monthOptions.map((month) => (
+                          <MenuItem key={month.value} value={month.value}>
+                            {month.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                ) : (
+                  <Stack direction="row" spacing={1.1}>
+                    <DatePickerField
+                      label="С"
+                      value={draftDateFrom}
+                      onChange={(value) => {
+                        if (!value) {
+                          return;
+                        }
+                        setDraftDateFrom(value);
+                      }}
+                      allowClear={false}
+                      showDropdownIcon
+                      sx={{ flex: 1 }}
+                    />
+                    <DatePickerField
+                      label="По"
+                      value={draftDateTo}
+                      onChange={(value) => {
+                        if (!value) {
+                          return;
+                        }
+                        setDraftDateTo(value);
+                      }}
+                      allowClear={false}
+                      showDropdownIcon
+                      sx={{ flex: 1 }}
+                    />
+                  </Stack>
+                )}
+                <Stack direction="row" justifyContent="flex-end" sx={{ pt: 0.25 }}>
+                  <Button size="small" onClick={applyPeriodSelection}>
+                    Готово
+                  </Button>
+                </Stack>
+              </Stack>
+            </Popover>
+          </Box>
           <FormControl
             size="small"
             sx={{
@@ -429,19 +670,15 @@ export const PlanPageHeader = ({
               },
             }}
           >
-            
-            <InputLabel id="plan-scope-label">Сотрудник</InputLabel>
+            <InputLabel id="plan-scope-label">Выбор модуля по руководителю</InputLabel>
             <Select
               labelId="plan-scope-label"
-              label="Сотрудник"
-              value={selectedScopeUserId}
-              onChange={(event) => onScopeChange(event.target.value)}
+              label="Выбор модуля по руководителю"
+              value={selectedLeadUserId}
+              onChange={(event) => onLeadChange(event.target.value)}
             >
-              
-              <MenuItem value={ALL_SUBORDINATES_SCOPE}>
-                Мои + все подчиненные
-              </MenuItem>
-              {subordinateOptions.map((option) => (
+              <MenuItem value={allLeadsValue}>Все руководители</MenuItem>
+              {leadOptions.map((option) => (
                 <MenuItem key={option.userId} value={option.userId}>
                   {option.label}
                 </MenuItem>
@@ -461,7 +698,6 @@ export const PlanPageHeader = ({
                 px: 2,
               }}
             >
-              
               Добавить план
             </Button>
           ) : null}
@@ -496,7 +732,7 @@ export const PlanKpiRow = ({
       accent: alpha(theme.palette.primary.main, 0.1),
     },
     {
-      label: "Факт",
+      label: "Экономия",
       value: formatAmount(totalFactAmount),
       icon: <CheckCircleOutlineRoundedIcon sx={{ color: "success.main" }} />,
       accent: alpha(theme.palette.success.main, 0.12),
@@ -1053,3 +1289,4 @@ export const planSectionCardSx = sectionCardSx;
 export const hierarchyTitleIcon = (
   <AccountTreeRoundedIcon sx={{ color: "primary.main", fontSize: 22 }} />
 );
+

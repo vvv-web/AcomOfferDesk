@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import date
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
@@ -90,8 +91,10 @@ def _map_summary(summary: PlanDashboardSummary) -> PlanDashboardSummarySchema:
     return PlanDashboardSummarySchema(
         total_plan_amount=_to_float(summary.total_plan_amount),
         total_fact_amount=_to_float(summary.total_fact_amount),
+        total_period_fact_amount=_to_float(summary.total_period_fact_amount),
         total_remaining_amount=_to_float(summary.total_remaining_amount),
         total_progress_percent=_to_float(summary.total_progress_percent),
+        total_period_progress_percent=_to_float(summary.total_period_progress_percent),
     )
 
 
@@ -130,13 +133,37 @@ def _build_service(uow: UnitOfWork) -> PlanService:
 
 @router.get("/plans", response_model=PlanDashboardResponse)
 async def get_plan_dashboard(
-    period: str = Query(..., min_length=7, max_length=7),
+    period: str | None = Query(default=None, min_length=7, max_length=7),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> PlanDashboardResponse:
+    if date_from is not None or date_to is not None:
+        if date_from is None or date_to is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Both date_from and date_to are required",
+            )
+    elif period is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Either period or date_from/date_to must be provided",
+        )
+
     async with uow:
         service = _build_service(uow)
-        dashboard = await service.get_dashboard_plan_tab(period=period, current_user=current_user)
+        if date_from is not None and date_to is not None:
+            dashboard = await service.get_dashboard_plan_tab_by_range(
+                date_from=date_from,
+                date_to=date_to,
+                current_user=current_user,
+            )
+        else:
+            dashboard = await service.get_dashboard_plan_tab(
+                period=period or "",
+                current_user=current_user,
+            )
 
     return PlanDashboardResponse(
         data=PlanDashboardDataSchema(
@@ -149,7 +176,16 @@ async def get_plan_dashboard(
             tree=(_map_tree_node(dashboard.tree) if dashboard.tree else None),
             trees=[_map_tree_node(item) for item in dashboard.trees],
         ),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans?period={period}", method="GET")),
+        _links=LinkSet(
+            self=Link(
+                href=(
+                    f"/api/v1/plans?date_from={date_from.isoformat()}&date_to={date_to.isoformat()}"
+                    if date_from is not None and date_to is not None
+                    else f"/api/v1/plans?period={period}"
+                ),
+                method="GET",
+            )
+        ),
     )
 
 
@@ -240,20 +276,34 @@ async def list_delegate_candidates(
 
 @router.get("/plans/options", response_model=PlanOptionsResponse)
 async def list_plan_options(
-    period: str = Query(..., min_length=7, max_length=7),
+    period: str | None = Query(default=None, min_length=7, max_length=7),
+    owner_user_id: str | None = Query(default=None, min_length=1),
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> PlanOptionsResponse:
     async with uow:
         service = _build_service(uow)
-        items = await service.list_plan_options(period=period, current_user=current_user)
+        items = await service.list_plan_options(
+            period=period,
+            owner_user_id=owner_user_id,
+            current_user=current_user,
+        )
 
     return PlanOptionsResponse(
         data=PlanOptionsDataSchema(
-            period=period,
+            period=period or "",
             items=[_map_option(item) for item in items],
         ),
-        _links=LinkSet(self=Link(href=f"/api/v1/plans/options?period={period}", method="GET")),
+        _links=LinkSet(
+            self=Link(
+                href=(
+                    f"/api/v1/plans/options?owner_user_id={owner_user_id}"
+                    if owner_user_id
+                    else (f"/api/v1/plans/options?period={period}" if period else "/api/v1/plans/options")
+                ),
+                method="GET",
+            )
+        ),
     )
 
 

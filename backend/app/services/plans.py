@@ -94,8 +94,10 @@ class PlanTreeNode:
 class PlanDashboardSummary:
     total_plan_amount: Decimal
     total_fact_amount: Decimal
+    total_period_fact_amount: Decimal
     total_remaining_amount: Decimal
     total_progress_percent: Decimal
+    total_period_progress_percent: Decimal
 
 
 @dataclass(frozen=True)
@@ -333,6 +335,11 @@ class PlanService:
         delegated_sum = await self._plans.sum_children_plan_amount(parent_plan_id=plan.id)
         if delegated_sum > Decimal("0.00"):
             raise Conflict("Cannot delete plan with delegated distribution")
+        active_fact = await self._plans.aggregate_active_request_facts_by_plan_ids(plan_ids=[plan.id])
+        fact_amount = active_fact.get(plan.id, Decimal("0.00"))
+        persisted_fact_amount = Decimal(str(plan.fact_amount or 0))
+        if fact_amount > Decimal("0.00") or persisted_fact_amount > Decimal("0.00"):
+            raise Conflict("Cannot delete plan with completed requests")
         await self._plans.delete(plan=plan)
 
     async def close_plan(
@@ -404,7 +411,10 @@ class PlanService:
     ) -> PlanDashboardData:
         UserPolicy.ensure_can_view_plan(current_user)
         month_start, month_end = parse_month_period(period)
-        period_plans = await self._plans.list_by_month_bucket(month_start=month_start, month_end=month_end)
+        period_plans = await self._load_relevant_period_plans(
+            period_start=month_start,
+            period_end=month_end,
+        )
         my_entry_plans = self._find_entry_plans_for_user(period_plans=period_plans, user_id=current_user.user_id)
 
         can_create_root_plan = current_user.role_id in {settings.superadmin_role_id, settings.project_manager_role_id}
@@ -412,8 +422,10 @@ class PlanService:
             empty_summary = PlanDashboardSummary(
                 total_plan_amount=Decimal("0.00"),
                 total_fact_amount=Decimal("0.00"),
+                total_period_fact_amount=Decimal("0.00"),
                 total_remaining_amount=Decimal("0.00"),
                 total_progress_percent=Decimal("0.00"),
+                total_period_progress_percent=Decimal("0.00"),
             )
             return PlanDashboardData(
                 period=format_month_period(month_start),
@@ -431,7 +443,7 @@ class PlanService:
             root_plans=my_entry_plans,
             current_user=current_user,
         )
-        summary = self._summary_from_trees(trees)
+        summary = await self._summary_from_trees(trees, period_start=month_start, period_end=month_end)
         return PlanDashboardData(
             period=format_month_period(month_start),
             period_start=month_start,
@@ -443,20 +455,143 @@ class PlanService:
             trees=trees,
         )
 
+    async def get_dashboard_plan_tab_by_range(
+        self,
+        *,
+        date_from: date,
+        date_to: date,
+        current_user: CurrentUser,
+    ) -> PlanDashboardData:
+        UserPolicy.ensure_can_view_plan(current_user)
+        if date_from > date_to:
+            raise Conflict("date_from must be less than or equal to date_to")
+
+        period_plans = await self._load_relevant_period_plans(
+            period_start=date_from,
+            period_end=date_to,
+        )
+        my_entry_plans = self._find_entry_plans_for_user(
+            period_plans=period_plans,
+            user_id=current_user.user_id,
+        )
+        can_create_root_plan = current_user.role_id in {
+            settings.superadmin_role_id,
+            settings.project_manager_role_id,
+        }
+        if not my_entry_plans:
+            empty_summary = PlanDashboardSummary(
+                total_plan_amount=Decimal("0.00"),
+                total_fact_amount=Decimal("0.00"),
+                total_period_fact_amount=Decimal("0.00"),
+                total_remaining_amount=Decimal("0.00"),
+                total_progress_percent=Decimal("0.00"),
+                total_period_progress_percent=Decimal("0.00"),
+            )
+            return PlanDashboardData(
+                period=f"{date_from.isoformat()}..{date_to.isoformat()}",
+                period_start=date_from,
+                period_end=date_to,
+                can_create_root_plan=can_create_root_plan,
+                root_plan_exists=False,
+                summary=empty_summary,
+                tree=None,
+                trees=[],
+            )
+
+        trees = await self._build_trees_for_roots(
+            period_plans=period_plans,
+            root_plans=my_entry_plans,
+            current_user=current_user,
+        )
+        summary = await self._summary_from_trees(trees, period_start=date_from, period_end=date_to)
+        return PlanDashboardData(
+            period=f"{date_from.isoformat()}..{date_to.isoformat()}",
+            period_start=date_from,
+            period_end=date_to,
+            can_create_root_plan=can_create_root_plan,
+            root_plan_exists=True,
+            summary=summary,
+            tree=(trees[0] if trees else None),
+            trees=trees,
+        )
+
+    async def _load_relevant_period_plans(
+        self,
+        *,
+        period_start: date,
+        period_end: date,
+    ) -> list[EconomyPlan]:
+        range_plans = await self._plans.list_by_period_start_range(
+            range_start=period_start,
+            range_end=period_end,
+        )
+        started_plans = await self._plans.list_started_before_or_on(
+            period_end=period_end,
+        )
+        carry_over_open_plans = [
+            plan
+            for plan in started_plans
+            if (not self._is_plan_closed(plan)) and plan.period_start <= period_end
+        ]
+        activity_plans = await self._plans.list_by_closed_requests_period(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        combined_by_id: dict[int, EconomyPlan] = {
+            plan.id: plan
+            for plan in [*range_plans, *carry_over_open_plans, *activity_plans]
+        }
+        if not combined_by_id:
+            return []
+        return await self._extend_with_missing_ancestors(
+            plans=list(combined_by_id.values()),
+        )
+
+    async def _extend_with_missing_ancestors(
+        self,
+        *,
+        plans: list[EconomyPlan],
+    ) -> list[EconomyPlan]:
+        by_id: dict[int, EconomyPlan] = {plan.id: plan for plan in plans}
+        missing_parent_ids = {
+            plan.id_parent_plan
+            for plan in by_id.values()
+            if plan.id_parent_plan is not None and plan.id_parent_plan not in by_id
+        }
+        while missing_parent_ids:
+            fetched_parents = await self._plans.list_by_ids(
+                plan_ids=list(missing_parent_ids),
+            )
+            if not fetched_parents:
+                break
+            for parent_plan in fetched_parents:
+                by_id[parent_plan.id] = parent_plan
+            missing_parent_ids = {
+                plan.id_parent_plan
+                for plan in by_id.values()
+                if plan.id_parent_plan is not None and plan.id_parent_plan not in by_id
+            }
+        return sorted(by_id.values(), key=lambda item: item.id)
+
     async def list_plan_options(
         self,
         *,
-        period: str,
+        period: str | None,
+        owner_user_id: str | None,
         current_user: CurrentUser,
     ) -> list[PlanOption]:
         UserPolicy.ensure_can_view_plan(current_user)
-        month_start, month_end = parse_month_period(period)
-        period_plans = await self._plans.list_by_month_bucket(month_start=month_start, month_end=month_end)
-        if not period_plans:
+        _ = period
+        target_user_id = owner_user_id or current_user.user_id
+        user_plans = await self._plans.list_by_user(user_id=target_user_id)
+        if not user_plans:
+            return []
+        open_user_plans = [plan for plan in user_plans if not self._is_plan_closed(plan)]
+        if not open_user_plans:
             return []
 
         users_rows = await self._users.list_by_ids_with_profiles_and_roles(
-            user_ids=list({plan.id_user for plan in period_plans}),
+            user_ids=list({plan.id_user for plan in open_user_plans}),
         )
         user_meta_by_id = {
             user.id: {
@@ -475,7 +610,7 @@ class PlanService:
                     "id_parent": parent_id,
                 }
         options: list[PlanOption] = []
-        for plan in period_plans:
+        for plan in open_user_plans:
             if not self._can_manage_node_sync(
                 current_user=current_user,
                 plan_owner_user_id=plan.id_user,
@@ -534,16 +669,30 @@ class PlanService:
             for user, profile, role in subordinates
         ]
 
-    def _summary_from_tree(self, tree: PlanTreeNode) -> PlanDashboardSummary:
-        return self._summary_from_trees([tree])
+    async def _summary_from_tree(
+        self,
+        tree: PlanTreeNode,
+        *,
+        period_start: date,
+        period_end: date,
+    ) -> PlanDashboardSummary:
+        return await self._summary_from_trees([tree], period_start=period_start, period_end=period_end)
 
-    def _summary_from_trees(self, trees: list[PlanTreeNode]) -> PlanDashboardSummary:
+    async def _summary_from_trees(
+        self,
+        trees: list[PlanTreeNode],
+        *,
+        period_start: date,
+        period_end: date,
+    ) -> PlanDashboardSummary:
         if not trees:
             return PlanDashboardSummary(
                 total_plan_amount=Decimal("0.00"),
                 total_fact_amount=Decimal("0.00"),
+                total_period_fact_amount=Decimal("0.00"),
                 total_remaining_amount=Decimal("0.00"),
                 total_progress_percent=Decimal("0.00"),
+                total_period_progress_percent=Decimal("0.00"),
             )
         total_plan_amount = sum((tree.plan_amount for tree in trees), Decimal("0.00")).quantize(
             Decimal("0.01"),
@@ -558,12 +707,34 @@ class PlanService:
             rounding=ROUND_HALF_UP,
         )
         total_progress_percent = percent(total_fact_amount, total_plan_amount)
+        tree_plan_ids = self._collect_tree_plan_ids(trees)
+        period_fact_by_plan_id = await self._plans.aggregate_closed_request_facts_by_plan_ids(
+            plan_ids=tree_plan_ids,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        total_period_fact_amount = sum(period_fact_by_plan_id.values(), Decimal("0.00")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        total_period_progress_percent = percent(total_period_fact_amount, total_plan_amount)
         return PlanDashboardSummary(
             total_plan_amount=total_plan_amount,
             total_fact_amount=total_fact_amount,
+            total_period_fact_amount=total_period_fact_amount,
             total_remaining_amount=total_remaining_amount,
             total_progress_percent=total_progress_percent,
+            total_period_progress_percent=total_period_progress_percent,
         )
+
+    def _collect_tree_plan_ids(self, trees: list[PlanTreeNode]) -> list[int]:
+        plan_ids: set[int] = set()
+        stack = list(trees)
+        while stack:
+            node = stack.pop()
+            plan_ids.add(node.plan_id)
+            stack.extend(node.children)
+        return list(plan_ids)
 
     async def _build_trees_for_roots(
         self,
@@ -686,6 +857,8 @@ class PlanService:
             and not is_closed
             and not child_nodes
             and delegated_amount <= Decimal("0.00")
+            and fact_amount_self <= Decimal("0.00")
+            and fact_amount_subtree <= Decimal("0.00")
         )
         return PlanTreeNode(
             plan_id=plan.id,
@@ -822,7 +995,13 @@ class PlanService:
         return candidate_start
 
     def _is_plan_closed(self, plan: EconomyPlan) -> bool:
-        return plan.period_end <= date.today()
+        # Plan is considered closed only after explicit close action.
+        # By default, period_end is month end for period_start; automatic date rollover
+        # must not lock editing for historical months.
+        if plan.period_end is None:
+            return False
+        _month_start, month_end = month_bounds_for_date(plan.period_start)
+        return plan.period_end != month_end
 
     def _ensure_plan_is_open(self, plan: EconomyPlan) -> None:
         if self._is_plan_closed(plan):

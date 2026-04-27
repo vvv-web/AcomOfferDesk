@@ -34,8 +34,10 @@ export type PlanTreeNode = {
 export type PlanDashboardSummary = {
   total_plan_amount: number;
   total_fact_amount: number;
+  total_period_fact_amount: number;
   total_remaining_amount: number;
   total_progress_percent: number;
+  total_period_progress_percent: number;
 };
 
 export type PlanDashboardData = {

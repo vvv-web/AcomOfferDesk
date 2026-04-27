@@ -43,8 +43,10 @@ class PlanTreeNodeSchema(BaseModel):
 class PlanDashboardSummarySchema(BaseModel):
     total_plan_amount: float
     total_fact_amount: float
+    total_period_fact_amount: float = 0
     total_remaining_amount: float
     total_progress_percent: float
+    total_period_progress_percent: float = 0
 
 
 class PlanDashboardDataSchema(BaseModel):

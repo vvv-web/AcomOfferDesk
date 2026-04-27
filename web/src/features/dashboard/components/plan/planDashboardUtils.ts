@@ -39,7 +39,9 @@ export type PlanRequestFactMetrics = {
   totalRequests?: number | null;
   distributedRequests?: number | null;
   requestFactAmount?: number | null;
+  periodFactAmount?: number | null;
   completionPercent?: number | null;
+  periodCompletionPercent?: number | null;
   unallocatedRequests?: number | null;
   unallocatedAmount?: number | null;
 };
@@ -186,8 +188,10 @@ export const deriveSummaryFromTrees = (trees: PlanTreeNode[]): PlanDashboardSumm
   return {
     total_plan_amount: totalPlanAmount,
     total_fact_amount: totalFactAmount,
+    total_period_fact_amount: 0,
     total_remaining_amount: totalRemainingAmount,
     total_progress_percent: toPercent(totalFactAmount, totalPlanAmount),
+    total_period_progress_percent: 0,
   };
 };
 
@@ -271,11 +275,17 @@ export const buildDistributionItems = (trees: PlanTreeNode[]): PlanDistributionI
   return leadingItems;
 };
 
-export const buildRequestFactMetrics = (summary: PlanDashboardSummary | null): PlanRequestFactMetrics => ({
+export const buildRequestFactMetrics = (
+  summary: PlanDashboardSummary | null,
+  periodFactAmount?: number | null,
+  periodCompletionPercent?: number | null
+): PlanRequestFactMetrics => ({
   totalRequests: null,
   distributedRequests: null,
   requestFactAmount: summary?.total_fact_amount ?? 0,
+  periodFactAmount: periodFactAmount ?? summary?.total_period_fact_amount ?? 0,
   completionPercent: summary?.total_progress_percent ?? 0,
+  periodCompletionPercent: periodCompletionPercent ?? summary?.total_period_progress_percent ?? 0,
   unallocatedRequests: null,
   unallocatedAmount: null,
 });

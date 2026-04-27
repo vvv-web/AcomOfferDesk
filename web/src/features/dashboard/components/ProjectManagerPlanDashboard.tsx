@@ -35,13 +35,11 @@ import {
   type SubplanFormValues,
 } from "./plan/planDashboardForms";
 import {
-  ALL_SUBORDINATES_SCOPE,
   buildDistributionItems,
   buildExecutionSlices,
   buildPlanFilterOptions,
   buildRequestFactMetrics,
   buildSideSummaryData,
-  collectSubordinateOptions,
   countUniqueParticipants,
   deriveSummaryFromTrees,
   filterPlanTree,
@@ -58,13 +56,107 @@ const emptyCardSx = {
   backgroundColor: "#ffffff",
 };
 
+const ALL_LEAD_MANAGERS_SCOPE = "__all_lead_managers__";
+
+type PlanLeadOption = {
+  userId: string;
+  label: string;
+};
+
+const toDateInputValue = (value: Date) => {
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getMonthStartFromPeriod = (period: string) => `${period}-01`;
+
+const getMonthEndFromPeriod = (period: string) => {
+  const [yearString, monthString] = period.split("-");
+  const year = Number.parseInt(yearString ?? "", 10);
+  const month = Number.parseInt(monthString ?? "", 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return toDateInputValue(new Date());
+  }
+  return toDateInputValue(new Date(year, month, 0));
+};
+
+const toRuDate = (value: string) => {
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("ru-RU");
+};
+
+const buildRangePeriodLabel = (dateFrom: string, dateTo: string) => {
+  const yearFrom = dateFrom.slice(0, 4);
+  const yearTo = dateTo.slice(0, 4);
+  const monthFrom = dateFrom.slice(5, 7);
+  const monthTo = dateTo.slice(5, 7);
+
+  if (
+    yearFrom === yearTo &&
+    dateFrom === `${yearFrom}-01-01` &&
+    dateTo === `${yearFrom}-12-31`
+  ) {
+    return yearFrom;
+  }
+
+  if (yearFrom === yearTo && monthFrom === monthTo) {
+    return formatPeriodLabel(`${yearFrom}-${monthFrom}`);
+  }
+
+  return `${toRuDate(dateFrom)} — ${toRuDate(dateTo)}`;
+};
+
+const flattenPlanNodes = (nodes: PlanTreeNode[]): PlanTreeNode[] => {
+  const result: PlanTreeNode[] = [];
+  const walk = (node: PlanTreeNode) => {
+    result.push(node);
+    node.children.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return result;
+};
+
+const collectLeadOptions = (nodes: PlanTreeNode[]): PlanLeadOption[] => {
+  const optionsByUserId = new Map<string, PlanLeadOption>();
+  flattenPlanNodes(nodes).forEach((node) => {
+    const roleLabel = node.user_role.toLowerCase();
+    if (!roleLabel.includes("ведущ")) {
+      return;
+    }
+    if (!optionsByUserId.has(node.user_id)) {
+      optionsByUserId.set(node.user_id, {
+        userId: node.user_id,
+        label: `${node.user_name} (${node.user_role})`,
+      });
+    }
+  });
+
+  return Array.from(optionsByUserId.values()).sort((left, right) =>
+    left.label.localeCompare(right.label, "ru"),
+  );
+};
+
+const collectOwnerIdsFromSubtree = (node: PlanTreeNode): Set<string> => {
+  const userIds = new Set<string>();
+  const walk = (current: PlanTreeNode) => {
+    userIds.add(current.user_id);
+    current.children.forEach(walk);
+  };
+  walk(node);
+  return userIds;
+};
+
 export const ProjectManagerPlanDashboard = () => {
   const { session } = useAuth();
   const {
     period,
     setPeriod,
-    summary,
+    setDateFrom: setDashboardDateFrom,
+    setDateTo: setDashboardDateTo,
     trees,
+    summary: dashboardSummary,
     isLoading,
     isMutating,
     canCreateRootPlan,
@@ -91,8 +183,10 @@ export const ProjectManagerPlanDashboard = () => {
   const [editNode, setEditNode] = useState<PlanTreeNode | null>(null);
   const [deleteNode, setDeleteNode] = useState<PlanTreeNode | null>(null);
   const [closeNode, setCloseNode] = useState<PlanTreeNode | null>(null);
-  const [selectedScopeUserId, setSelectedScopeUserId] = useState<string>(
-    ALL_SUBORDINATES_SCOPE,
+  const [dateFrom, setDateFrom] = useState<string>(() => getMonthStartFromPeriod(period));
+  const [dateTo, setDateTo] = useState<string>(() => getMonthEndFromPeriod(period));
+  const [selectedLeadUserId, setSelectedLeadUserId] = useState<string>(
+    ALL_LEAD_MANAGERS_SCOPE,
   );
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [searchValue, setSearchValue] = useState("");
@@ -143,6 +237,18 @@ export const ProjectManagerPlanDashboard = () => {
   ]);
 
   useEffect(() => {
+    const nextPeriod = dateFrom.slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(nextPeriod) && nextPeriod !== period) {
+      setPeriod(nextPeriod);
+    }
+  }, [dateFrom, period, setPeriod]);
+
+  useEffect(() => {
+    setDashboardDateFrom(dateFrom);
+    setDashboardDateTo(dateTo);
+  }, [dateFrom, dateTo, setDashboardDateFrom, setDashboardDateTo]);
+
+  useEffect(() => {
     if (!delegateNode) {
       return;
     }
@@ -171,31 +277,47 @@ export const ProjectManagerPlanDashboard = () => {
     };
   }, [delegateNode, loadDelegateCandidates]);
 
-  const subordinateOptions = useMemo(
-    () => collectSubordinateOptions(trees),
-    [trees],
+  const leadOptions = useMemo(() => collectLeadOptions(trees), [trees]);
+  const periodLabel = useMemo(
+    () => buildRangePeriodLabel(dateFrom, dateTo),
+    [dateFrom, dateTo],
   );
-  const periodLabel = useMemo(() => formatPeriodLabel(period), [period]);
 
-  const selectedScopeExists =
-    selectedScopeUserId === ALL_SUBORDINATES_SCOPE ||
-    subordinateOptions.some((option) => option.userId === selectedScopeUserId);
+  const selectedLeadExists =
+    selectedLeadUserId === ALL_LEAD_MANAGERS_SCOPE ||
+    leadOptions.some((option) => option.userId === selectedLeadUserId);
 
   useEffect(() => {
-    if (!selectedScopeExists) {
-      setSelectedScopeUserId(ALL_SUBORDINATES_SCOPE);
+    if (!selectedLeadExists) {
+      setSelectedLeadUserId(ALL_LEAD_MANAGERS_SCOPE);
     }
-  }, [selectedScopeExists]);
+  }, [selectedLeadExists]);
+
+  const periodFilteredTrees = trees;
+
+  const selectedLeadOwnerIds = useMemo(() => {
+    if (selectedLeadUserId === ALL_LEAD_MANAGERS_SCOPE) {
+      return null;
+    }
+
+    const leadNode = periodFilteredTrees
+      .map((rootNode) => findSubtreeByUserId(rootNode, selectedLeadUserId))
+      .find((node): node is PlanTreeNode => node !== null);
+
+    return leadNode
+      ? collectOwnerIdsFromSubtree(leadNode)
+      : new Set<string>([selectedLeadUserId]);
+  }, [periodFilteredTrees, selectedLeadUserId]);
 
   const scopedTrees = useMemo(() => {
-    if (selectedScopeUserId === ALL_SUBORDINATES_SCOPE) {
-      return trees;
+    if (!selectedLeadOwnerIds) {
+      return periodFilteredTrees;
     }
 
-    return trees
-      .map((rootNode) => findSubtreeByUserId(rootNode, selectedScopeUserId))
+    return periodFilteredTrees
+      .map((rootNode) => findSubtreeByUserId(rootNode, selectedLeadUserId))
       .filter((node): node is PlanTreeNode => node !== null);
-  }, [selectedScopeUserId, trees]);
+  }, [periodFilteredTrees, selectedLeadOwnerIds, selectedLeadUserId]);
 
   const planOptions = useMemo(
     () => buildPlanFilterOptions(scopedTrees),
@@ -253,11 +375,8 @@ export const ProjectManagerPlanDashboard = () => {
   }, [presentationTrees, searchValue, selectedPlanTree]);
 
   const scopedSummary = useMemo(
-    () =>
-      selectedScopeUserId === ALL_SUBORDINATES_SCOPE && summary
-        ? summary
-        : deriveSummaryFromTrees(scopedTrees),
-    [scopedTrees, selectedScopeUserId, summary],
+    () => deriveSummaryFromTrees(scopedTrees),
+    [scopedTrees],
   );
   const participantCount = useMemo(
     () => countUniqueParticipants(scopedTrees),
@@ -272,8 +391,13 @@ export const ProjectManagerPlanDashboard = () => {
     [scopedTrees],
   );
   const requestFactMetrics = useMemo(
-    () => buildRequestFactMetrics(scopedSummary),
-    [scopedSummary],
+    () =>
+      buildRequestFactMetrics(
+        scopedSummary,
+        dashboardSummary?.total_period_fact_amount ?? null,
+        dashboardSummary?.total_period_progress_percent ?? null,
+      ),
+    [dashboardSummary?.total_period_fact_amount, dashboardSummary?.total_period_progress_percent, scopedSummary],
   );
   const sideSummary = useMemo(
     () => buildSideSummaryData(scopedTrees, session?.userId ?? null),
@@ -352,13 +476,16 @@ export const ProjectManagerPlanDashboard = () => {
     >
       
       <PlanPageHeader
-        period={period}
-        selectedScopeUserId={selectedScopeUserId}
-        subordinateOptions={subordinateOptions}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        selectedLeadUserId={selectedLeadUserId}
+        leadOptions={leadOptions}
+        allLeadsValue={ALL_LEAD_MANAGERS_SCOPE}
         canCreateRootPlan={canCreateRootPlan}
         isMutating={isMutating}
-        onPeriodChange={setPeriod}
-        onScopeChange={setSelectedScopeUserId}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
+        onLeadChange={setSelectedLeadUserId}
         onAddPlan={() => setIsRootDialogOpen(true)}
       />
       {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}

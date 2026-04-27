@@ -19,9 +19,21 @@ const getCurrentPeriod = () => {
 };
 
 const monthToStartDate = (period: string) => `${period}-01`;
+const monthToEndDate = (period: string) => {
+  const [yearString, monthString] = period.split('-');
+  const year = Number.parseInt(yearString ?? '', 10);
+  const month = Number.parseInt(monthString ?? '', 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return `${period}-28`;
+  }
+  const day = new Date(year, month, 0).getDate();
+  return `${period}-${String(day).padStart(2, '0')}`;
+};
 
 export const usePlanDashboard = () => {
   const [period, setPeriod] = useState<string>(getCurrentPeriod);
+  const [dateFrom, setDateFrom] = useState<string>(() => monthToStartDate(getCurrentPeriod()));
+  const [dateTo, setDateTo] = useState<string>(() => monthToEndDate(getCurrentPeriod()));
   const [data, setData] = useState<PlanDashboardResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
@@ -32,14 +44,14 @@ export const usePlanDashboard = () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const next = await getPlanDashboard(period);
+      const next = await getPlanDashboard({ period, dateFrom, dateTo });
       setData(next);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить план');
     } finally {
       setIsLoading(false);
     }
-  }, [period]);
+  }, [period, dateFrom, dateTo]);
 
   useEffect(() => {
     void loadDashboard();
@@ -150,6 +162,10 @@ export const usePlanDashboard = () => {
   return {
     period,
     setPeriod,
+    dateFrom,
+    dateTo,
+    setDateFrom,
+    setDateTo,
     data,
     tree: data?.tree ?? null,
     trees: data?.trees ?? (data?.tree ? [data.tree] : []),

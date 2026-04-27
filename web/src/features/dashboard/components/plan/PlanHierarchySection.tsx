@@ -1,6 +1,6 @@
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
-import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import Diversity3OutlinedIcon from "@mui/icons-material/Diversity3Outlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
@@ -191,7 +191,7 @@ export const PlanTreeNodeCard = ({
       ? {
           key: "close",
           title: "Закрыть план",
-          icon: <DeleteOutlinedIcon sx={{ fontSize: 18 }} />,
+          icon: <CheckRoundedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onClosePlan(node),
         }
       : null,

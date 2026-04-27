@@ -1,12 +1,19 @@
 ﻿import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
   Collapse,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Popover,
+  Select,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
@@ -14,10 +21,12 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getResponsibilityDashboard,
+  type ResponsibilityEmployeeNode,
   type ResponsibilityClosedSavingsItem,
   type ResponsibilitySavingsItem,
   type ResponsibilitySavingsSummary,
 } from '@shared/api/users/getResponsibilityDashboard';
+import { ROLE } from '@shared/constants/roles';
 import { formatDate, formatAmount, formatSignedAmount } from '@shared/lib/formatters';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 
@@ -27,6 +36,143 @@ const emptySavings: ResponsibilitySavingsSummary = {
   total_savings_amount: 0,
   closed_items: [],
   items: [],
+};
+
+const toDateInputValue = (value: Date) => {
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, '0');
+  const day = `${value.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getCurrentMonthStart = () => {
+  const now = new Date();
+  return toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+};
+
+const getCurrentDate = () => toDateInputValue(new Date());
+
+type ScopeFilterOption = {
+  userId: string;
+  label: string;
+};
+
+type LeadEconomistOption = ScopeFilterOption;
+const ALL_LEAD_ECONOMISTS_SCOPE = '__all_lead_economists__';
+
+const flattenEmployeeTree = (nodes: ResponsibilityEmployeeNode[]): ResponsibilityEmployeeNode[] => {
+  const result: ResponsibilityEmployeeNode[] = [];
+  const walk = (node: ResponsibilityEmployeeNode) => {
+    result.push(node);
+    node.children.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return result;
+};
+
+const collectLeadEconomistOptions = (nodes: ResponsibilityEmployeeNode[]): LeadEconomistOption[] =>
+  flattenEmployeeTree(nodes)
+    .filter((node) => node.role_id === ROLE.LEAD_ECONOMIST)
+    .map((node) => ({
+      userId: node.user_id,
+      label: `${node.full_name ?? node.user_id} (${node.role_name})`,
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label, 'ru'));
+
+const findEmployeeNodeById = (
+  nodes: ResponsibilityEmployeeNode[],
+  userId: string
+): ResponsibilityEmployeeNode | null => {
+  for (const node of nodes) {
+    if (node.user_id === userId) {
+      return node;
+    }
+    const fromChild = findEmployeeNodeById(node.children, userId);
+    if (fromChild) {
+      return fromChild;
+    }
+  }
+  return null;
+};
+
+const collectSubtreeUserIds = (node: ResponsibilityEmployeeNode): Set<string> => {
+  const userIds = new Set<string>();
+  const walk = (current: ResponsibilityEmployeeNode) => {
+    userIds.add(current.user_id);
+    current.children.forEach(walk);
+  };
+  walk(node);
+  return userIds;
+};
+
+const PeriodRangeField = ({
+  dateFrom,
+  dateTo,
+  onDateFromChange,
+  onDateToChange,
+}: {
+  dateFrom: string;
+  dateTo: string;
+  onDateFromChange: (value: string) => void;
+  onDateToChange: (value: string) => void;
+}) => {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const isOpen = Boolean(anchorEl);
+
+  return (
+    <Box sx={{ minWidth: { xs: "100%", sm: 390 } }}>
+      <Button
+        fullWidth
+        variant="outlined"
+        onClick={(event) => setAnchorEl(event.currentTarget)}
+        sx={{ justifyContent: "space-between", minHeight: 40 }}
+      >
+        Выбор периода
+        {isOpen ? <ExpandLessRoundedIcon fontSize="small" /> : <ExpandMoreRoundedIcon fontSize="small" />}
+      </Button>
+      <Popover
+        open={isOpen}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        slotProps={{ paper: { sx: { p: 1.25, mt: 0.5 } } }}
+      >
+        <Stack direction="row" spacing={1}>
+          <TextField
+            type="date"
+            size="small"
+            label="С"
+            value={dateFrom}
+            onChange={(event) => onDateFromChange(event.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{
+              flex: 1,
+              "& .MuiOutlinedInput-root": {
+                minHeight: 40,
+                bgcolor: "rgba(255,255,255,0.96)",
+              },
+            }}
+          />
+          <TextField
+            type="date"
+            size="small"
+            label="По"
+            value={dateTo}
+            onChange={(event) => onDateToChange(event.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{
+              flex: 1,
+              "& .MuiOutlinedInput-root": {
+                minHeight: 40,
+                bgcolor: "rgba(255,255,255,0.96)",
+              },
+            }}
+          />
+        </Stack>
+      </Popover>
+    </Box>
+  );
 };
 
 type SummaryListItem = {
@@ -40,7 +186,7 @@ type SummaryListItem = {
 const toSummaryListItem = (item: ResponsibilitySavingsItem | ResponsibilityClosedSavingsItem): SummaryListItem => ({
   key: `request-${item.request_id}`,
   title: `Заявка #${item.request_id}`,
-  subtitle: `${item.owner_full_name || item.owner_user_id}${item.closed_at ? ` · ${formatDate(item.closed_at)}` : ''}`,
+  subtitle: `${item.owner_full_name || item.owner_user_id}${item.closed_at ? ` В· ${formatDate(item.closed_at)}` : ''}`,
   amount: typeof item.savings_amount === 'number' ? formatSignedAmount(item.savings_amount) : undefined,
   amountColor:
     typeof item.savings_amount === 'number'
@@ -320,10 +466,16 @@ const SavingsRatioChart = ({
 };
 
 const SavingsTzMetrics = ({
+  leadOptions,
+  selectedLeadUserId,
+  onLeadUserChange,
   totalTzAmount,
   savingsAmount,
   lostSavingsAmount,
 }: {
+  leadOptions: LeadEconomistOption[];
+  selectedLeadUserId: string;
+  onLeadUserChange: (value: string) => void;
   totalTzAmount: number;
   savingsAmount: number;
   lostSavingsAmount: number;
@@ -343,6 +495,23 @@ const SavingsTzMetrics = ({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Проценты рассчитываются от общей суммы по ТЗ закрытых заявок.
         </Typography>
+        <FormControl size="small" fullWidth sx={{ mb: 2 }}>
+          <InputLabel id="tz-lead-economist-label">Выбор модуля по руководителю</InputLabel>
+          <Select
+            labelId="tz-lead-economist-label"
+            label="Выбор модуля по руководителю"
+            value={selectedLeadUserId}
+            onChange={(event) => onLeadUserChange(event.target.value)}
+            disabled={leadOptions.length === 0}
+          >
+            <MenuItem value={ALL_LEAD_ECONOMISTS_SCOPE}>Все руководители</MenuItem>
+            {leadOptions.map((option) => (
+              <MenuItem key={option.userId} value={option.userId}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <Stack spacing={1.25}>
           <Card variant="outlined" sx={{ borderRadius: 2 }}>
             <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
@@ -391,6 +560,11 @@ const SavingsTzMetrics = ({
 export const ProjectManagerSavingsDashboard = () => {
   const isMobileViewport = useIsMobileViewport();
   const [savings, setSavings] = useState<ResponsibilitySavingsSummary>(emptySavings);
+  const [employeeTree, setEmployeeTree] = useState<ResponsibilityEmployeeNode[]>([]);
+  const [dateFrom, setDateFrom] = useState<string>(getCurrentMonthStart);
+  const [dateTo, setDateTo] = useState<string>(getCurrentDate);
+  const [selectedGlobalLeadUserId, setSelectedGlobalLeadUserId] = useState<string>(ALL_LEAD_ECONOMISTS_SCOPE);
+  const [selectedLeadUserId, setSelectedLeadUserId] = useState<string>(ALL_LEAD_ECONOMISTS_SCOPE);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [expandedCards, setExpandedCards] = useState({
@@ -415,6 +589,7 @@ export const ProjectManagerSavingsDashboard = () => {
 
     try {
       const response = await getResponsibilityDashboard();
+      setEmployeeTree(response.tree);
       setSavings(response.savings);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить статистику экономии');
@@ -427,19 +602,139 @@ export const ProjectManagerSavingsDashboard = () => {
     void loadSavings();
   }, [loadSavings]);
 
+  const leadEconomistOptions = useMemo(
+    () => collectLeadEconomistOptions(employeeTree),
+    [employeeTree]
+  );
+  const selectedGlobalLeadExists =
+    selectedGlobalLeadUserId === ALL_LEAD_ECONOMISTS_SCOPE ||
+    leadEconomistOptions.some((option) => option.userId === selectedGlobalLeadUserId);
+  const selectedLeadExists = leadEconomistOptions.some((option) => option.userId === selectedLeadUserId);
+
+  useEffect(() => {
+    if (!selectedGlobalLeadExists) {
+      setSelectedGlobalLeadUserId(ALL_LEAD_ECONOMISTS_SCOPE);
+    }
+  }, [selectedGlobalLeadExists]);
+
+  useEffect(() => {
+    if (leadEconomistOptions.length === 0) {
+      setSelectedLeadUserId(ALL_LEAD_ECONOMISTS_SCOPE);
+      return;
+    }
+    if (!selectedLeadExists && selectedLeadUserId !== ALL_LEAD_ECONOMISTS_SCOPE) {
+      setSelectedLeadUserId(ALL_LEAD_ECONOMISTS_SCOPE);
+    }
+  }, [leadEconomistOptions, selectedLeadExists, selectedLeadUserId]);
+
+  const selectedGlobalLeadOwnerIds = useMemo(() => {
+    if (selectedGlobalLeadUserId === ALL_LEAD_ECONOMISTS_SCOPE) {
+      return null;
+    }
+
+    const node = findEmployeeNodeById(employeeTree, selectedGlobalLeadUserId);
+    return node ? collectSubtreeUserIds(node) : new Set<string>([selectedGlobalLeadUserId]);
+  }, [employeeTree, selectedGlobalLeadUserId]);
+
+  const dateRange = useMemo(() => {
+    const fromTime = Date.parse(`${dateFrom}T00:00:00`);
+    const toTime = Date.parse(`${dateTo}T23:59:59.999`);
+
+    if (!Number.isFinite(fromTime) || !Number.isFinite(toTime) || fromTime > toTime) {
+      return null;
+    }
+
+    return {
+      start: fromTime,
+      end: toTime,
+    };
+  }, [dateFrom, dateTo]);
+
+  const isInSelectedPeriod = useCallback(
+    (closedAt: string | null) => {
+      if (!dateRange || !closedAt) {
+        return false;
+      }
+
+      const closedAtTime = new Date(closedAt).getTime();
+      if (!Number.isFinite(closedAtTime)) {
+        return false;
+      }
+
+      return closedAtTime >= dateRange.start && closedAtTime <= dateRange.end;
+    },
+    [dateRange]
+  );
+
+  const matchesGlobalFilters = useCallback(
+    (ownerUserId: string, closedAt: string | null) => {
+      if (!isInSelectedPeriod(closedAt)) {
+        return false;
+      }
+      if (selectedGlobalLeadOwnerIds && !selectedGlobalLeadOwnerIds.has(ownerUserId)) {
+        return false;
+      }
+      return true;
+    },
+    [isInSelectedPeriod, selectedGlobalLeadOwnerIds]
+  );
+
+  const filteredClosedItems = useMemo(
+    () => (savings.closed_items ?? []).filter((item) => matchesGlobalFilters(item.owner_user_id, item.closed_at)),
+    [matchesGlobalFilters, savings.closed_items]
+  );
+
+  const filteredSavingsItems = useMemo(
+    () => savings.items.filter((item) => matchesGlobalFilters(item.owner_user_id, item.closed_at)),
+    [matchesGlobalFilters, savings.items]
+  );
+
+  const periodFilteredClosedItems = useMemo(
+    () => (savings.closed_items ?? []).filter((item) => isInSelectedPeriod(item.closed_at)),
+    [isInSelectedPeriod, savings.closed_items]
+  );
+
+  const periodFilteredSavingsItems = useMemo(
+    () => savings.items.filter((item) => isInSelectedPeriod(item.closed_at)),
+    [isInSelectedPeriod, savings.items]
+  );
+
+  const selectedLeadOwnerIds = useMemo(() => {
+    if (!selectedLeadUserId || selectedLeadUserId === ALL_LEAD_ECONOMISTS_SCOPE) {
+      return null;
+    }
+
+    const leadNode = findEmployeeNodeById(employeeTree, selectedLeadUserId);
+    return leadNode ? collectSubtreeUserIds(leadNode) : new Set<string>([selectedLeadUserId]);
+  }, [employeeTree, selectedLeadUserId]);
+
+  const tzClosedItems = useMemo(() => {
+    if (!selectedLeadOwnerIds) {
+      return periodFilteredClosedItems;
+    }
+    return periodFilteredClosedItems.filter((item) => selectedLeadOwnerIds.has(item.owner_user_id));
+  }, [periodFilteredClosedItems, selectedLeadOwnerIds]);
+
+  const tzSavingsItems = useMemo(() => {
+    if (!selectedLeadOwnerIds) {
+      return periodFilteredSavingsItems;
+    }
+    return periodFilteredSavingsItems.filter((item) => selectedLeadOwnerIds.has(item.owner_user_id));
+  }, [periodFilteredSavingsItems, selectedLeadOwnerIds]);
+
   const itemsByClosed = useMemo(
     () =>
-      [...(savings.closed_items ?? [])].sort((left, right) => {
+      [...filteredClosedItems].sort((left, right) => {
         const leftTime = left.closed_at ? new Date(left.closed_at).getTime() : 0;
         const rightTime = right.closed_at ? new Date(right.closed_at).getTime() : 0;
         return rightTime - leftTime;
       }),
-    [savings.closed_items]
+    [filteredClosedItems]
   );
 
   const itemsWithSavings = useMemo(
-    () => [...savings.items].sort((left, right) => Math.abs(right.savings_amount) - Math.abs(left.savings_amount)),
-    [savings.items]
+    () => [...filteredSavingsItems].sort((left, right) => Math.abs(right.savings_amount) - Math.abs(left.savings_amount)),
+    [filteredSavingsItems]
   );
 
   const positiveItems = useMemo(() => itemsWithSavings.filter((item) => item.savings_amount > 0), [itemsWithSavings]);
@@ -447,7 +742,7 @@ export const ProjectManagerSavingsDashboard = () => {
   const negativeItems = useMemo(() => itemsWithSavings.filter((item) => item.savings_amount < 0), [itemsWithSavings]);
 
   const summary = useMemo(() => {
-    return savings.items.reduce(
+    return filteredSavingsItems.reduce(
       (acc, item) => {
         if (item.savings_amount > 0) {
           acc.totalSavings += item.savings_amount;
@@ -459,16 +754,31 @@ export const ProjectManagerSavingsDashboard = () => {
       },
       { totalSavings: 0, lostSavings: 0 }
     );
-  }, [savings.items]);
+  }, [filteredSavingsItems]);
 
   const totalTzAmount = useMemo(
-    () =>
-      (savings.closed_items ?? []).reduce((acc, item) => {
+    () => {
+      return tzClosedItems.reduce((acc, item) => {
         const amount = item.initial_amount ?? 0;
         return acc + (Number.isFinite(amount) ? amount : 0);
-      }, 0),
-    [savings.closed_items]
+      }, 0);
+    },
+    [tzClosedItems]
   );
+
+  const tzSummary = useMemo(() => {
+    return tzSavingsItems.reduce(
+      (acc, item) => {
+        if (item.savings_amount > 0) {
+          acc.totalSavings += item.savings_amount;
+        } else {
+          acc.lostSavings += Math.abs(item.savings_amount);
+        }
+        return acc;
+      },
+      { totalSavings: 0, lostSavings: 0 }
+    );
+  }, [tzSavingsItems]);
 
   const closedItemsList = useMemo(() => itemsByClosed.map((item) => toClosedSummaryListItem(item)), [itemsByClosed]);
 
@@ -484,9 +794,62 @@ export const ProjectManagerSavingsDashboard = () => {
 
   return (
     <Stack spacing={2.5}>
+      <Stack
+        direction={{ xs: 'column', xl: 'row' }}
+        spacing={1.1}
+        justifyContent="space-between"
+        alignItems={{ xs: 'stretch', xl: 'center' }}
+      >
+        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+          <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1.1, fontSize: { xs: 25, md: 26 } }}>
+            Экономия
+          </Typography>
+        </Stack>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          justifyContent={{ sm: 'flex-end' }}
+          useFlexGap
+          flexWrap="wrap"
+        >
+          <PeriodRangeField
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+          />
+          <FormControl
+            size="small"
+            sx={{
+              minWidth: { xs: '100%', sm: 256 },
+              '& .MuiOutlinedInput-root': {
+                minHeight: 40,
+                bgcolor: 'rgba(255,255,255,0.96)',
+              },
+            }}
+          >
+            <InputLabel id="savings-scope-label">Выбор модуля по руководителю</InputLabel>
+            <Select
+              labelId="savings-scope-label"
+              label="Выбор модуля по руководителю"
+              value={selectedGlobalLeadUserId}
+              onChange={(event) => setSelectedGlobalLeadUserId(event.target.value)}
+            >
+              <MenuItem value={ALL_LEAD_ECONOMISTS_SCOPE}>Все руководители</MenuItem>
+              {leadEconomistOptions.map((option) => (
+                <MenuItem key={option.userId} value={option.userId}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Stack>
+      </Stack>
+
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-        <Chip label={`Закрытых заявок: ${savings.total_closed_requests}`} color="primary" variant="outlined" size="small" />
-        <Chip label={`С расчетом экономии: ${savings.total_with_savings}`} color="info" variant="outlined" size="small" />
+        <Chip label={`Закрытых заявок: ${itemsByClosed.length}`} color="primary" variant="outlined" size="small" />
+        <Chip label={`С расчетом экономии: ${itemsWithSavings.length}`} color="info" variant="outlined" size="small" />
         <Chip label={`С экономией: ${positiveItems.length}`} color="success" variant="outlined" size="small" />
         <Chip label={`С минусом: ${negativeItems.length}`} color="error" variant="outlined" size="small" />
       </Stack>
@@ -513,7 +876,14 @@ export const ProjectManagerSavingsDashboard = () => {
             }}
           >
             <SavingsRatioChart savingsAmount={summary.totalSavings} lostSavingsAmount={summary.lostSavings} />
-            <SavingsTzMetrics totalTzAmount={totalTzAmount} savingsAmount={summary.totalSavings} lostSavingsAmount={summary.lostSavings} />
+            <SavingsTzMetrics
+              leadOptions={leadEconomistOptions}
+              selectedLeadUserId={selectedLeadUserId}
+              onLeadUserChange={setSelectedLeadUserId}
+              totalTzAmount={totalTzAmount}
+              savingsAmount={tzSummary.totalSavings}
+              lostSavingsAmount={tzSummary.lostSavings}
+            />
           </Box>
 
           <Box
@@ -525,7 +895,7 @@ export const ProjectManagerSavingsDashboard = () => {
           >
             <SummaryListCard
               title="Закрытые заявки"
-              value={String(savings.total_closed_requests)}
+              value={String(itemsByClosed.length)}
               items={closedItemsList}
               emptyText="Нет закрытых заявок с детализацией."
               isExpanded={expandedCards.closed}
@@ -533,7 +903,7 @@ export const ProjectManagerSavingsDashboard = () => {
             />
             <SummaryListCard
               title="С расчетом экономии"
-              value={String(savings.total_with_savings)}
+              value={String(itemsWithSavings.length)}
               items={withSavingsList}
               emptyText="Нет заявок с расчетом экономии."
               isExpanded={expandedCards.withSavings}
@@ -563,3 +933,4 @@ export const ProjectManagerSavingsDashboard = () => {
     </Stack>
   );
 };
+

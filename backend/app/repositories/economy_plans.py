@@ -104,9 +104,84 @@ class EconomyPlanRepository:
         stmt = (
             select(EconomyPlan)
             .where(
-                EconomyPlan.period_start >= month_start,
                 EconomyPlan.period_start <= month_end,
+                EconomyPlan.period_end >= month_start,
             )
+            .order_by(EconomyPlan.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_period_start_range(
+        self,
+        *,
+        range_start: date,
+        range_end: date,
+    ) -> list[EconomyPlan]:
+        stmt = (
+            select(EconomyPlan)
+            .where(
+                EconomyPlan.period_start <= range_end,
+                EconomyPlan.period_end >= range_start,
+            )
+            .order_by(EconomyPlan.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_started_before_or_on(
+        self,
+        *,
+        period_end: date,
+    ) -> list[EconomyPlan]:
+        stmt = (
+            select(EconomyPlan)
+            .where(EconomyPlan.period_start <= period_end)
+            .order_by(EconomyPlan.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_ids(self, *, plan_ids: list[int]) -> list[EconomyPlan]:
+        if not plan_ids:
+            return []
+        stmt = (
+            select(EconomyPlan)
+            .where(EconomyPlan.id.in_(plan_ids))
+            .order_by(EconomyPlan.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_closed_requests_period(
+        self,
+        *,
+        period_start: date,
+        period_end: date,
+    ) -> list[EconomyPlan]:
+        ids_stmt = text(
+            """
+            SELECT DISTINCT r.id_plan
+            FROM requests r
+            WHERE r.status = 'closed'
+              AND r.id_plan IS NOT NULL
+              AND r.closed_at IS NOT NULL
+              AND DATE(r.closed_at) >= :period_start
+              AND DATE(r.closed_at) <= :period_end
+            ORDER BY r.id_plan ASC
+            """
+        )
+        ids_result = await self._session.execute(
+            ids_stmt,
+            {"period_start": period_start, "period_end": period_end},
+        )
+        plan_ids = [int(plan_id) for plan_id in ids_result.scalars().all()]
+        return await self.list_by_ids(plan_ids=plan_ids)
+
+    async def list_by_user(self, *, user_id: str) -> list[EconomyPlan]:
+        stmt = (
+            select(EconomyPlan)
+            .where(EconomyPlan.id_user == user_id)
             .order_by(EconomyPlan.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -209,6 +284,45 @@ class EconomyPlanRepository:
             .bindparams(bindparam("plan_ids", expanding=True))
         )
         result = await self._session.execute(stmt, {"plan_ids": plan_ids})
+        return {
+            int(plan_id): Decimal(str(fact_amount or 0))
+            for plan_id, fact_amount in result.all()
+        }
+
+    async def aggregate_closed_request_facts_by_plan_ids(
+        self,
+        *,
+        plan_ids: list[int],
+        period_start: date,
+        period_end: date,
+    ) -> dict[int, Decimal]:
+        if not plan_ids:
+            return {}
+        stmt = (
+            text(
+                """
+                SELECT
+                  r.id_plan,
+                  COALESCE(SUM(COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)), 0) AS fact_amount
+                FROM requests r
+                WHERE r.status = 'closed'
+                  AND r.id_plan IN :plan_ids
+                  AND r.closed_at IS NOT NULL
+                  AND DATE(r.closed_at) >= :period_start
+                  AND DATE(r.closed_at) <= :period_end
+                GROUP BY r.id_plan
+                """
+            )
+            .bindparams(bindparam("plan_ids", expanding=True))
+        )
+        result = await self._session.execute(
+            stmt,
+            {
+                "plan_ids": plan_ids,
+                "period_start": period_start,
+                "period_end": period_end,
+            },
+        )
         return {
             int(plan_id): Decimal(str(fact_amount or 0))
             for plan_id, fact_amount in result.all()

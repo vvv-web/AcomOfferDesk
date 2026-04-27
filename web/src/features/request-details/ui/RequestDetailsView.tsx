@@ -51,17 +51,6 @@ const requestStatusToneByValue: Record<RequestStatus, 'success' | 'warning' | 'n
     cancelled: 'neutral'
 };
 
-const toPeriodKey = (isoDate: string | null | undefined): string | null => {
-    if (!isoDate) {
-        return null;
-    }
-    const [datePart] = isoDate.split('T');
-    if (!datePart || datePart.length < 7) {
-        return null;
-    }
-    return datePart.slice(0, 7);
-};
-
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
     const theme = useTheme();
@@ -81,7 +70,7 @@ export const RequestDetailsView = () => {
     const [baselinePlanId, setBaselinePlanId] = useState<string>('');
     const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
     const [isPlanOptionsLoading, setIsPlanOptionsLoading] = useState(false);
-    const [planOptionsPeriod, setPlanOptionsPeriod] = useState<string | null>(null);
+    const [planOptionsOwnerId, setPlanOptionsOwnerId] = useState<string | null>(null);
     const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
@@ -275,35 +264,32 @@ export const RequestDetailsView = () => {
     }, [fetchOwners]);
 
     useEffect(() => {
-        const deadlineForPlan = isEditMode && deadline ? deadline : requestDetails?.deadline_at;
-        const period =
-            toPeriodKey(deadlineForPlan)
-            ?? toPeriodKey(requestDetails?.created_at);
-        if (!period) {
+        const ownerForPlans = (isEditMode ? ownerUserId : requestDetails?.id_user) ?? '';
+        if (!ownerForPlans) {
             setPlanOptions([]);
-            setPlanOptionsPeriod(null);
+            setPlanOptionsOwnerId(null);
             return;
         }
-        if (planOptionsPeriod === period) {
+        if (planOptionsOwnerId === ownerForPlans) {
             return;
         }
 
         let isMounted = true;
         setIsPlanOptionsLoading(true);
-        getPlanOptions(period)
+        getPlanOptions({ ownerUserId: ownerForPlans })
             .then((items) => {
                 if (!isMounted) {
                     return;
                 }
                 setPlanOptions(items);
-                setPlanOptionsPeriod(period);
+                setPlanOptionsOwnerId(ownerForPlans);
             })
             .catch(() => {
                 if (!isMounted) {
                     return;
                 }
                 setPlanOptions([]);
-                setPlanOptionsPeriod(period);
+                setPlanOptionsOwnerId(ownerForPlans);
             })
             .finally(() => {
                 if (isMounted) {
@@ -314,7 +300,7 @@ export const RequestDetailsView = () => {
         return () => {
             isMounted = false;
         };
-    }, [deadline, isEditMode, planOptionsPeriod, requestDetails?.created_at, requestDetails?.deadline_at]);
+    }, [isEditMode, ownerUserId, planOptionsOwnerId, requestDetails?.id_user]);
 
      const getSaveValidationError = (
         currentStatus: RequestStatus,
