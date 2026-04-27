@@ -235,7 +235,7 @@ export const buildDistributionItems = (trees: PlanTreeNode[]): PlanDistributionI
   const leadingItems: PlanDistributionItem[] = sorted.slice(0, 4).map((node, index) => ({
     key: String(node.plan_id),
     planId: node.plan_id,
-    label: node.user_name,
+    label: `${node.plan_name} (${node.user_name})`,
     amount: node.plan_amount,
     percent: toPercent(node.plan_amount, total),
     planAmount: node.plan_amount,
@@ -336,7 +336,7 @@ export const buildExecutionSlices = (trees: PlanTreeNode[]): PlanExecutionSlice[
     return {
       key: String(node.plan_id),
       planId: node.plan_id,
-      label: node.user_name,
+      label: `${node.plan_name} (${node.user_name})`,
       value,
       planAmount: node.plan_amount,
       factAmount: node.fact_amount_subtree,

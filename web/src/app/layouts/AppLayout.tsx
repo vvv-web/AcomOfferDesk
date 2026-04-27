@@ -39,7 +39,7 @@ export const AppLayout = () => {
             sx={{
               flex: 1,
               minWidth: 0,
-              backgroundColor: '#ffffff',
+              backgroundColor: 'background.default',
               px: 1,
               pt: 1.25,
               pb: MOBILE_BOTTOM_NAV_CONTENT_PADDING,
@@ -95,7 +95,7 @@ export const AppLayout = () => {
             sx={{
               minWidth: 0,
               minHeight: '100vh',
-              backgroundColor: '#ffffff',
+              backgroundColor: 'background.default',
               px: { xs: 1.5, md: 2 },
               py: { xs: 1.5, md: 2 },
               overflowY: 'auto',

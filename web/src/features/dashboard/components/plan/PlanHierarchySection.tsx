@@ -1,15 +1,16 @@
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
-import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded';
-import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
-import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
-import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
+import Diversity3OutlinedIcon from "@mui/icons-material/Diversity3Outlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import LanOutlinedIcon from "@mui/icons-material/LanOutlined";
+import ManageSearchRoundedIcon from "@mui/icons-material/ManageSearchRounded";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
+import PersonAddAlt1RoundedIcon from "@mui/icons-material/PersonAddAlt1Rounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import {
   Avatar,
   Box,
@@ -27,16 +28,16 @@ import {
   TextField,
   Tooltip,
   Typography,
-} from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { PlanTreeNode } from '@shared/api/plans';
-import { formatAmount } from '@shared/lib/formatters';
-import { planSectionCardSx } from './PlanOverviewSections';
-import type { PlanSideSummaryData } from './planDashboardUtils';
-import { formatPercent, getInitials } from './planDashboardUtils';
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import type { PlanTreeNode } from "@shared/api/plans";
+import { formatAmount } from "@shared/lib/formatters";
+import { planSectionCardSx } from "./PlanOverviewSections";
+import type { PlanSideSummaryData } from "./planDashboardUtils";
+import { formatPercent, getInitials } from "./planDashboardUtils";
 
 export type PlanHierarchyHandlers = {
   onCreateSubplan: (node: PlanTreeNode) => void;
@@ -51,40 +52,60 @@ type PlanNodeMetricGridProps = {
 };
 
 export const PlanNodeMetricChips = ({ node }: PlanNodeMetricGridProps) => {
+  const theme = useTheme();
   const metricItems = [
-    { label: 'План узла', value: formatAmount(node.plan_amount) },
-    { label: 'Личный план', value: formatAmount(node.personal_plan_amount) },
-    { label: 'Распределено', value: formatAmount(node.delegated_amount) },
-    { label: 'Факт ветки', value: formatAmount(node.fact_amount_subtree) },
-    { label: 'Факт личный', value: formatAmount(node.fact_amount_self) },
-    { label: 'Остаток', value: formatAmount(node.remaining_amount) },
-    { label: 'Выполнение', value: formatPercent(node.progress_percent) },
+    { label: "План узла", value: formatAmount(node.plan_amount) },
+    { label: "Личный план", value: formatAmount(node.personal_plan_amount) },
+    { label: "Распределено", value: formatAmount(node.delegated_amount) },
+    {
+      label: "Выполнено по плану",
+      value: formatAmount(node.fact_amount_subtree),
+    },
+    { label: "Выполнено лично", value: formatAmount(node.fact_amount_self) },
+    { label: "Не распределено", value: formatAmount(node.unallocated_amount) },
+    { label: "Выполнение", value: formatPercent(node.progress_percent) },
   ];
 
   return (
     <Box
       sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(7, minmax(0, 1fr))' },
-        gap: 0.6,
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: { xs: 0.65, lg: 1.65 },
+        minHeight: 28,
+        borderTop: `1px solid ${alpha(theme.palette.divider, 0.86)}`,
+        borderRadius: "0 0 10px 10px",
+        px: { xs: 1, md: 2.25 },
+        py: 0.42,
+        bgcolor: alpha(theme.palette.background.default, 0.18),
       }}
     >
       {metricItems.map((metric) => (
         <Box
           key={metric.label}
           sx={{
-            borderRadius: 1.5,
-            px: 0.35,
-            py: 0.3,
-            bgcolor: 'transparent',
-            border: 'none',
+            display: "inline-flex",
+            alignItems: "baseline",
+            gap: 0.35,
+            px: 0,
+            py: 0,
+            bgcolor: "transparent",
             minWidth: 0,
           }}
         >
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11, lineHeight: 1.15 }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ fontSize: 10.3, lineHeight: 1.1, whiteSpace: "nowrap" }}
+          >
             {metric.label}
           </Typography>
-          <Typography variant="caption" fontWeight={700} sx={{ display: 'block', fontSize: 12.5, lineHeight: 1.2, mt: 0.2 }}>
+          <Typography
+            variant="caption"
+            fontWeight={800}
+            sx={{ fontSize: 10.8, lineHeight: 1.1, whiteSpace: "nowrap" }}
+          >
             {metric.value}
           </Typography>
         </Box>
@@ -111,239 +132,343 @@ export const PlanTreeNodeCard = ({
   handlers,
 }: PlanTreeNodeCardProps) => {
   const theme = useTheme();
-  const isCompactActions = useMediaQuery(theme.breakpoints.down('md'));
-  const [actionsAnchorEl, setActionsAnchorEl] = useState<null | HTMLElement>(null);
+  const isCompactActions = useMediaQuery(theme.breakpoints.down("md"));
+  const [actionsAnchorEl, setActionsAnchorEl] = useState<null | HTMLElement>(
+    null,
+  );
   const hasChildren = node.children.length > 0;
   const isExpanded = forceExpanded || expandedNodeIds[node.plan_id] !== false;
   const progressValue = Math.max(0, Math.min(100, node.progress_percent));
   const isRoot = depth === 0;
-  const isSyntheticRoot = isRoot && node.children.some((child) => child.user_id === node.user_id);
+  const isSyntheticRoot =
+    isRoot && node.children.some((child) => child.user_id === node.user_id);
+  const planTitle = node.plan_name?.trim() || node.user_name;
+  const showExecutorName =
+    !isSyntheticRoot &&
+    node.user_name.trim().length > 0 &&
+    node.user_name !== planTitle;
 
   const iconButtonSx = {
-    width: 28,
-    height: 28,
-    borderRadius: '8px',
-    border: '1px solid #dbe2ea',
-    color: '#7c8da1',
-    bgcolor: '#ffffff',
-    '&:hover': {
-      bgcolor: '#f8fafc',
-      borderColor: '#e2e8f0',
+    width: 30,
+    height: 30,
+    borderRadius: "9px",
+    border: `1px solid ${alpha(theme.palette.primary.main, 0.45)}`,
+    color: theme.palette.primary.main,
+    bgcolor: theme.palette.background.paper,
+    p: 0,
+    "&:hover": {
+      bgcolor: alpha(theme.palette.primary.main, 0.06),
+      borderColor: alpha(theme.palette.primary.main, 0.7),
     },
   } as const;
 
   const actions = [
     node.available_actions.create_subplan
       ? {
-          key: 'create-subplan',
-          title: 'Создать подплан',
-          icon: <AccountTreeOutlinedIcon sx={{ fontSize: 18 }} />,
+          key: "create-subplan",
+          title: "Создать подплан",
+          icon: <LanOutlinedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onCreateSubplan(node),
         }
       : null,
     node.available_actions.delegate_plan
       ? {
-          key: 'delegate',
-          title: 'Делегировать',
-          icon: <FileUploadOutlinedIcon sx={{ fontSize: 18 }} />,
+          key: "delegate",
+          title: "Делегировать",
+          icon: <Diversity3OutlinedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onDelegate(node),
         }
       : null,
     node.available_actions.edit_plan
       ? {
-          key: 'edit',
-          title: 'Редактировать',
+          key: "edit",
+          title: "Редактировать",
           icon: <EditOutlinedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onEdit(node),
         }
       : null,
     node.available_actions.close_plan
       ? {
-          key: 'close',
-          title: 'Закрыть план',
-          icon: <LockOutlinedIcon sx={{ fontSize: 18 }} />,
+          key: "close",
+          title: "Закрыть план",
+          icon: <DeleteOutlinedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onClosePlan(node),
         }
       : null,
     node.available_actions.delete_child_plan
       ? {
-          key: 'delete',
-          title: 'Удалить',
+          key: "delete",
+          title: "Удалить",
           icon: <DeleteOutlineOutlinedIcon sx={{ fontSize: 18 }} />,
           onClick: () => handlers.onDelete(node),
         }
       : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
 
-  const visibleInlineActions = isCompactActions && actions.length > 2 ? actions.slice(0, 1) : actions;
-  const hiddenActions = isCompactActions && actions.length > 2 ? actions.slice(1) : [];
+  const visibleInlineActions =
+    isCompactActions && actions.length > 2 ? actions.slice(0, 1) : actions;
+  const hiddenActions =
+    isCompactActions && actions.length > 2 ? actions.slice(1) : [];
 
   return (
     <Box
       sx={{
-        position: 'relative',
-        pl: depth === 0 ? 0 : { xs: 2.4, md: 3.2 },
-        backgroundColor: 'transparent',
+        position: "relative",
+        pl: depth === 0 ? 0 : { xs: 2, md: 2.8 },
+        backgroundColor: "transparent",
       }}
     >
-      {depth > 0 ? (
-        <>
-          <Box
-            sx={{
-              position: 'absolute',
-              top: -16,
-              bottom: 0,
-              left: { xs: 8, md: 15 },
-              width: 1,
-              bgcolor: '#ffffff',
-            }}
-          />
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 28,
-              left: { xs: 8, md: 15 },
-              width: { xs: 12, md: 18 },
-              height: 1,
-              bgcolor: '#ffffff',
-            }}
-          />
-        </>
-      ) : null}
-
-      <Stack direction="row" spacing={1} alignItems="flex-start">
-        {hasChildren ? (
-          <IconButton
-            size="small"
-            onClick={() => onToggle(node.plan_id)}
-            sx={{
-              mt: 1.1,
-              width: 28,
-              height: 28,
-              border: '1px solid #dbe2ea',
-              bgcolor: '#ffffff',
-              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
-            }}
-          >
-            <ChevronRightRoundedIcon sx={{ fontSize: 18, color: '#7c8da1' }} />
-          </IconButton>
-        ) : (
-          <Box sx={{ width: 28, flexShrink: 0 }} />
-        )}
-
+      <Stack
+        direction="row"
+        spacing={0.65}
+        alignItems="flex-start"
+        sx={{ position: "relative", zIndex: 1 }}
+      >
+        <IconButton
+          size="small"
+          onClick={() => (hasChildren ? onToggle(node.plan_id) : undefined)}
+          sx={{
+            mt: 0.1,
+            width: 36,
+            height: 36,
+            borderRadius: "11px",
+            border: `1px solid ${alpha(theme.palette.primary.main, 0.34)}`,
+            color: theme.palette.primary.main,
+            bgcolor: theme.palette.background.paper,
+            transform:
+              hasChildren && isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+            boxShadow: `0 6px 14px ${alpha(theme.palette.primary.main, 0.06)}`,
+            "&:hover": {
+              bgcolor: hasChildren
+                ? alpha(theme.palette.primary.main, 0.05)
+                : theme.palette.background.paper,
+              borderColor: alpha(
+                theme.palette.primary.main,
+                hasChildren ? 0.58 : 0.34,
+              ),
+            },
+          }}
+        >
+          <ChevronRightRoundedIcon sx={{ fontSize: 20 }} />
+        </IconButton>
         <Card
           sx={{
             ...planSectionCardSx,
-            width: '100%',
-            position: 'relative',
+            width: "100%",
+            position: "relative",
             zIndex: 1,
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            boxShadow: 'none',
+            backgroundColor: theme.palette.background.paper,
+            border: `1px solid ${alpha(theme.palette.divider, 0.86)}`,
+            boxShadow: `0 8px 18px ${alpha(theme.palette.common.black, 0.018)}`,
+            borderRadius: "10px",
+            overflow: "hidden",
           }}
         >
-          <CardContent sx={{ p: { xs: 0.95, md: 1.1 }, '&:last-child': { pb: { xs: 0.95, md: 1.1 } } }}>
-            <Stack spacing={0.75} sx={{ position: 'relative', zIndex: 3 }}>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.8} justifyContent="space-between">
-                <Stack direction="row" spacing={0.85} minWidth={0}>
+          <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
+            <Stack spacing={0} sx={{ position: "relative", zIndex: 3 }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: {
+                    xs: "1fr",
+                    md: "minmax(240px, 0.88fr) minmax(210px, 1.25fr) minmax(128px, auto) auto",
+                  },
+                  gap: { xs: 0.65, md: 0.9 },
+                  alignItems: "center",
+                  minHeight: 52,
+                  px: { xs: 1.05, md: 1.2 },
+                  py: { xs: 0.75, md: 0.7 },
+                }}
+              >
+                <Stack
+                  direction="row"
+                  spacing={0.9}
+                  minWidth={0}
+                  alignItems="center"
+                >
                   {isSyntheticRoot ? (
                     <Box
                       sx={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: '12px',
-                        bgcolor: '#dbeafe',
-                        color: 'primary.main',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        width: 38,
+                        height: 38,
+                        borderRadius: "11px",
+                        bgcolor: alpha(theme.palette.primary.main, 0.12),
+                        color: "primary.main",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                         flexShrink: 0,
                       }}
                     >
-                      <ManageSearchRoundedIcon sx={{ fontSize: 18 }} />
+                      <AccountTreeOutlinedIcon sx={{ fontSize: 18 }} />
                     </Box>
                   ) : (
                     <Avatar
                       sx={{
-                        width: 36,
-                        height: 36,
-                        bgcolor: '#dbeafe',
-                        color: 'primary.main',
+                        width: 38,
+                        height: 38,
+                        bgcolor:
+                          depth % 3 === 1
+                            ? alpha(theme.palette.primary.main, 0.13)
+                            : depth % 3 === 2
+                              ? alpha(theme.palette.success.main, 0.15)
+                              : alpha(theme.palette.warning.main, 0.16),
+                        color:
+                          depth % 3 === 1
+                            ? theme.palette.primary.main
+                            : depth % 3 === 2
+                              ? theme.palette.success.dark
+                              : theme.palette.warning.dark,
                         fontWeight: 800,
-                        fontSize: 13,
+                        fontSize: 13.5,
                       }}
                     >
                       {getInitials(node.user_name)}
                     </Avatar>
                   )}
-
-                  <Stack spacing={0.45} minWidth={0} flex={1}>
-                    <Stack direction="row" spacing={0.65} alignItems="center" flexWrap="wrap" useFlexGap>
-                      <Typography variant="body2" fontWeight={800} sx={{ overflowWrap: 'anywhere', lineHeight: 1.2, fontSize: 15 }}>
-                        {isSyntheticRoot ? node.plan_name : node.user_name}
+                  <Stack spacing={0.45} minWidth={0}>
+                    <Stack
+                      direction="row"
+                      spacing={0.6}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <Typography
+                        variant="body2"
+                        fontWeight={800}
+                        sx={{
+                          overflowWrap: "anywhere",
+                          lineHeight: 1.1,
+                          fontSize: 14.2,
+                        }}
+                      >
+                        {planTitle}
                       </Typography>
-                      {isSyntheticRoot ? (
-                        <Chip
-                          size="small"
-                          label="Корневой узел"
-                          sx={{
-                            bgcolor: '#dbeafe',
-                            color: 'primary.main',
-                            height: 20,
-                            '& .MuiChip-label': { px: 0.9, fontWeight: 600, fontSize: 11.5 },
-                          }}
-                        />
-                      ) : (
-                        <Chip
-                          size="small"
-                          label={node.user_role}
-                          sx={{
-                            bgcolor: '#ffffff',
-                            color: 'text.secondary',
-                            border: '1px solid #e5e7eb',
-                            height: 20,
-                            '& .MuiChip-label': { px: 0.85, fontSize: 11.5 },
-                          }}
-                        />
-                      )}
+                      <Chip
+                        size="small"
+                        label={
+                          isSyntheticRoot ? "Корневой узел" : node.user_role
+                        }
+                        sx={{
+                          bgcolor: isSyntheticRoot
+                            ? alpha(theme.palette.primary.main, 0.1)
+                            : alpha(theme.palette.text.secondary, 0.08),
+                          color: isSyntheticRoot
+                            ? "primary.main"
+                            : "text.secondary",
+                          height: 17,
+                          border: "none",
+                          "& .MuiChip-label": {
+                            px: 0.65,
+                            fontWeight: isSyntheticRoot ? 700 : 600,
+                            fontSize: 10.5,
+                          },
+                        }}
+                      />
                     </Stack>
-
-                    <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', lineHeight: 1.15, fontSize: 11.5 }}>
-                      {isSyntheticRoot ? 'Общий узел периода и распределения' : node.plan_name}
-                    </Typography>
+                    {showExecutorName ? (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: 11.3, lineHeight: 1.1 }}
+                      >
+                        {node.user_name}
+                      </Typography>
+                    ) : null}
                   </Stack>
                 </Stack>
-
-                <Stack direction="row" spacing={0.9} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" sx={{ minWidth: { md: 320 } }}>
-                  <Stack spacing={0.2} alignItems={{ xs: 'flex-start', md: 'flex-end' }}>
-                    <Typography variant="body2" fontWeight={800} sx={{ textAlign: { xs: 'left', md: 'right' }, fontSize: 14 }}>
-                      {formatAmount(node.fact_amount_subtree)} / {formatAmount(node.plan_amount)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ textAlign: { xs: 'left', md: 'right' }, fontSize: 11.5 }}>
-                      Выполнение: {formatPercent(node.progress_percent)}
-                    </Typography>
-                  </Stack>
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  alignItems="center"
+                  minWidth={0}
+                >
+                  <LinearProgress
+                    variant="determinate"
+                    value={progressValue}
+                    sx={{
+                      flex: 1,
+                      height: 6,
+                      borderRadius: 999,
+                      bgcolor: alpha(theme.palette.divider, 0.58),
+                      "& .MuiLinearProgress-bar": {
+                        borderRadius: 999,
+                        backgroundColor:
+                          progressValue >= 100
+                            ? theme.palette.success.main
+                            : theme.palette.primary.main,
+                      },
+                    }}
+                  />
+                  <Typography
+                    variant="caption"
+                    fontWeight={800}
+                    sx={{ minWidth: 50, textAlign: "right", fontSize: 12 }}
+                  >
+                    {formatPercent(node.progress_percent)}
+                  </Typography>
+                </Stack>
+                <Typography
+                  variant="body2"
+                  fontWeight={800}
+                  sx={{
+                    whiteSpace: "nowrap",
+                    fontSize: 13,
+                    textAlign: { xs: "left", md: "right" },
+                  }}
+                >
+                  {formatAmount(node.fact_amount_subtree)} /
+                  {formatAmount(node.plan_amount)}
+                </Typography>
+                <Stack
+                  direction="row"
+                  spacing={0.4}
+                  alignItems="center"
+                  justifyContent={{ xs: "flex-start", md: "flex-end" }}
+                >
                   {actions.length > 0 ? (
-                    <Stack direction="row" spacing={0.45} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="nowrap">
+                    <Stack
+                      direction="row"
+                      spacing={0.35}
+                      justifyContent="flex-end"
+                      flexWrap="nowrap"
+                    >
                       {visibleInlineActions.map((action) => (
                         <Tooltip key={action.key} title={action.title}>
-                          <IconButton size="small" onClick={action.onClick} sx={iconButtonSx}>
+                          <IconButton
+                            size="small"
+                            onClick={action.onClick}
+                            sx={iconButtonSx}
+                          >
                             {action.icon}
                           </IconButton>
                         </Tooltip>
                       ))}
                       {hiddenActions.length > 0 ? (
                         <>
-                          <IconButton size="small" onClick={(event) => setActionsAnchorEl(event.currentTarget)} sx={iconButtonSx}>
+                          <IconButton
+                            size="small"
+                            onClick={(event) =>
+                              setActionsAnchorEl(event.currentTarget)
+                            }
+                            sx={iconButtonSx}
+                          >
                             <MoreHorizRoundedIcon sx={{ fontSize: 18 }} />
                           </IconButton>
                           <Menu
                             anchorEl={actionsAnchorEl}
                             open={Boolean(actionsAnchorEl)}
                             onClose={() => setActionsAnchorEl(null)}
-                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                            anchorOrigin={{
+                              vertical: "bottom",
+                              horizontal: "right",
+                            }}
+                            transformOrigin={{
+                              vertical: "top",
+                              horizontal: "right",
+                            }}
                           >
                             {hiddenActions.map((action) => (
                               <MenuItem
@@ -362,43 +487,7 @@ export const PlanTreeNodeCard = ({
                     </Stack>
                   ) : null}
                 </Stack>
-              </Stack>
-
-              <Box
-                sx={{
-                  borderRadius: 2,
-                  px: 0.2,
-                  py: 0.15,
-                  bgcolor: 'transparent',
-                  border: 'none',
-                }}
-              >
-                <Stack spacing={0.55}>
-                  <LinearProgress
-                    variant="determinate"
-                    value={progressValue}
-                    sx={{
-                      height: 6,
-                      borderRadius: 999,
-                      bgcolor: '#ffffff',
-                      border: '1px solid #e5e7eb',
-                      '& .MuiLinearProgress-bar': {
-                        borderRadius: 999,
-                        backgroundColor: progressValue >= 100 ? theme.palette.success.main : theme.palette.primary.main,
-                      },
-                    }}
-                  />
-                  <Stack direction="row" justifyContent="space-between" spacing={0.8} flexWrap="wrap" useFlexGap>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
-                      Период: {node.period_start} - {node.period_end}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
-                      Остаток: {formatAmount(node.remaining_amount)}
-                    </Typography>
-                  </Stack>
-                </Stack>
               </Box>
-
               <PlanNodeMetricChips node={node} />
             </Stack>
           </CardContent>
@@ -406,7 +495,15 @@ export const PlanTreeNodeCard = ({
       </Stack>
 
       {hasChildren && isExpanded ? (
-        <Stack spacing={0.85} sx={{ pt: 0.85, backgroundColor: 'transparent', position: 'relative', zIndex: 0 }}>
+        <Stack
+          spacing={0}
+          sx={{
+            pt: 0,
+            backgroundColor: "transparent",
+            position: "relative",
+            zIndex: 0,
+          }}
+        >
           {node.children.map((child) => (
             <PlanTreeNodeCard
               key={child.plan_id}
@@ -429,26 +526,40 @@ type PlanSideSummaryProps = {
   unplannedSubordinates?: Array<{ id: string; name: string; role: string }>;
 };
 
-export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSummaryProps) => {
+export const PlanSideSummary = ({
+  data,
+  unplannedSubordinates = [],
+}: PlanSideSummaryProps) => {
   const navigate = useNavigate();
+  const theme = useTheme();
 
   return (
-    <Stack spacing={1.1}>
+    <Stack spacing={1}>
       <Card sx={planSectionCardSx}>
-        <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+        <CardContent sx={{ p: 1.15, "&:last-child": { pb: 1.15 } }}>
           <Stack spacing={1.1}>
-            <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              spacing={1}
+              alignItems="center"
+            >
               <Stack direction="row" spacing={0.9} alignItems="center">
-                <PeopleAltOutlinedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                <PeopleAltOutlinedIcon
+                  sx={{ color: "primary.main", fontSize: 20 }}
+                />
                 <Typography variant="subtitle1" fontWeight={800}>
                   Подчиненные без плана
                 </Typography>
               </Stack>
               {unplannedSubordinates.length > 0 ? (
-                <Chip size="small" label={String(unplannedSubordinates.length)} sx={{ bgcolor: '#dbeafe' }} />
+                <Chip
+                  size="small"
+                  label={String(unplannedSubordinates.length)}
+                  sx={{ bgcolor: alpha(theme.palette.primary.main, 0.16) }}
+                />
               ) : null}
             </Stack>
-
             {unplannedSubordinates.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 Нет подчиненных без плана.
@@ -456,12 +567,30 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
             ) : (
               <Stack spacing={1}>
                 {unplannedSubordinates.slice(0, 3).map((employee) => (
-                  <Stack key={employee.id} direction="row" spacing={0.9} alignItems="center">
-                    <Avatar sx={{ width: 34, height: 34, bgcolor: '#fde68a', color: '#b45309', fontSize: 13, fontWeight: 800 }}>
+                  <Stack
+                    key={employee.id}
+                    direction="row"
+                    spacing={0.9}
+                    alignItems="center"
+                  >
+                    <Avatar
+                      sx={{
+                        width: 38,
+                        height: 38,
+                        bgcolor: alpha(theme.palette.warning.main, 0.22),
+                        color: theme.palette.warning.dark,
+                        fontSize: 13,
+                        fontWeight: 800,
+                      }}
+                    >
                       {getInitials(employee.name)}
                     </Avatar>
                     <Box minWidth={0}>
-                      <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                      <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        sx={{ overflowWrap: "anywhere" }}
+                      >
                         {employee.name}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
@@ -470,7 +599,11 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
                     </Box>
                   </Stack>
                 ))}
-                <Button variant="outlined" fullWidth startIcon={<PersonAddAlt1RoundedIcon />}>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={<PersonAddAlt1RoundedIcon />}
+                >
                   Назначить план
                 </Button>
               </Stack>
@@ -478,77 +611,99 @@ export const PlanSideSummary = ({ data, unplannedSubordinates = [] }: PlanSideSu
           </Stack>
         </CardContent>
       </Card>
-
       <Card sx={planSectionCardSx}>
-        <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+        <CardContent sx={{ p: 1.15, "&:last-child": { pb: 1.15 } }}>
           <Stack spacing={1.1}>
             <Stack direction="row" spacing={0.9} alignItems="center">
-              <TrendingUpRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+              <TrendingUpRoundedIcon
+                sx={{ color: "primary.main", fontSize: 20 }}
+              />
               <Typography variant="subtitle1" fontWeight={800}>
                 Загрузка (личная)
               </Typography>
             </Stack>
-
             <Stack spacing={1.15}>
               <Box>
                 <Typography variant="body2" fontWeight={700}>
                   Ваша личная загрузка
                 </Typography>
-                <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mt: 0.45, mb: 0.55 }}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  spacing={1}
+                  sx={{ mt: 0.45, mb: 0.55 }}
+                >
                   <Typography variant="caption" color="text.secondary">
-                    {data.personalFactAmount !== null && data.personalFactAmount !== undefined
+                    {data.personalFactAmount !== null &&
+                    data.personalFactAmount !== undefined
                       ? `${formatAmount(data.personalFactAmount)} / ${formatAmount(data.personalPlanAmount ?? 0)}`
-                      : '—'}
+                      : "—"}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {data.personalProgressPercent !== null && data.personalProgressPercent !== undefined
+                    {data.personalProgressPercent !== null &&
+                    data.personalProgressPercent !== undefined
                       ? formatPercent(data.personalProgressPercent)
-                      : '—'}
+                      : "—"}
                   </Typography>
                 </Stack>
                 <LinearProgress
                   variant="determinate"
-                  value={Math.max(0, Math.min(100, data.personalProgressPercent ?? 0))}
+                  value={Math.max(
+                    0,
+                    Math.min(100, data.personalProgressPercent ?? 0),
+                  )}
                   sx={{
                     height: 7,
                     borderRadius: 999,
-                    bgcolor: '#dbeafe',
+                    bgcolor: alpha(theme.palette.primary.main, 0.2),
                   }}
                 />
               </Box>
-
               <Divider />
-
               <Box>
                 <Typography variant="body2" fontWeight={700}>
                   Средняя загрузка подчиненных
                 </Typography>
-                <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mt: 0.45, mb: 0.55 }}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  spacing={1}
+                  sx={{ mt: 0.45, mb: 0.55 }}
+                >
                   <Typography variant="caption" color="text.secondary">
-                    {data.averageSubordinatesFactAmount !== null && data.averageSubordinatesFactAmount !== undefined
+                    {data.averageSubordinatesFactAmount !== null &&
+                    data.averageSubordinatesFactAmount !== undefined
                       ? `${formatAmount(data.averageSubordinatesFactAmount)} / ${formatAmount(data.averageSubordinatesPlanAmount ?? 0)}`
-                      : '—'}
+                      : "—"}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {data.averageSubordinatesProgressPercent !== null && data.averageSubordinatesProgressPercent !== undefined
+                    {data.averageSubordinatesProgressPercent !== null &&
+                    data.averageSubordinatesProgressPercent !== undefined
                       ? formatPercent(data.averageSubordinatesProgressPercent)
-                      : '—'}
+                      : "—"}
                   </Typography>
                 </Stack>
                 <LinearProgress
                   variant="determinate"
-                  value={Math.max(0, Math.min(100, data.averageSubordinatesProgressPercent ?? 0))}
+                  value={Math.max(
+                    0,
+                    Math.min(100, data.averageSubordinatesProgressPercent ?? 0),
+                  )}
                   color="success"
                   sx={{
                     height: 7,
                     borderRadius: 999,
-                    bgcolor: '#bbf7d0',
+                    bgcolor: alpha(theme.palette.success.main, 0.2),
                   }}
                 />
               </Box>
             </Stack>
-
-            <Button variant="text" endIcon={<ChevronRightRoundedIcon />} onClick={() => navigate('/pm-dashboard')} sx={{ justifyContent: 'flex-start', px: 0 }}>
+            <Button
+              variant="text"
+              endIcon={<ChevronRightRoundedIcon />}
+              onClick={() => navigate("/pm-dashboard")}
+              sx={{ justifyContent: "flex-start", px: 0 }}
+            >
               Перейти к сотрудникам
             </Button>
           </Stack>
@@ -584,76 +739,126 @@ export const PlanHierarchySection = ({
   onCollapseAll,
 }: PlanHierarchySectionProps) => {
   const hasItems = trees.length > 0;
+  const theme = useTheme();
 
   return (
-    <Card sx={{ ...planSectionCardSx, overflow: 'visible', boxShadow: 'none', border: '1px solid #e5e7eb', backgroundColor: '#ffffff' }}>
-      <CardContent sx={{ p: { xs: 1.1, md: 1.25 }, '&:last-child': { pb: { xs: 1.1, md: 1.25 } } }}>
-        <Stack spacing={1.1}>
-          <Stack
-            direction={{ xs: 'column', lg: 'row' }}
-            justifyContent="space-between"
-            spacing={1}
-            alignItems={{ xs: 'stretch', lg: 'center' }}
-          >
-            <Typography variant="subtitle1" fontWeight={800}>
-              Иерархия плана
-            </Typography>
-
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.9} alignItems={{ xs: 'stretch', md: 'center' }}>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={onExpandAll}
-                startIcon={<ManageSearchRoundedIcon />}
-                sx={{
-                  minHeight: 36,
-                  whiteSpace: 'nowrap',
-                  borderColor: '#e2e8f0',
-                  color: '#4b74b8',
-                  '&:hover': { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' },
-                }}
+    <Box
+      sx={{
+        display: "grid",
+        gridTemplateColumns: { xs: "1fr", xl: "minmax(0, 1fr) 292px" },
+        gap: 1,
+        alignItems: "start",
+      }}
+    >
+      <Card
+        sx={{
+          ...planSectionCardSx,
+          overflow: "visible",
+          boxShadow: `0 10px 28px ${alpha(theme.palette.common.black, 0.025)}`,
+          border: `1px solid ${alpha(theme.palette.divider, 0.72)}`,
+          backgroundColor: theme.palette.background.paper,
+          borderRadius: "12px",
+        }}
+      >
+        <CardContent
+          sx={{
+            p: { xs: 0.9, md: 1 },
+            "&:last-child": { pb: { xs: 0.9, md: 1 } },
+          }}
+        >
+          <Stack spacing={0.9}>
+            <Stack
+              direction={{ xs: "column", lg: "row" }}
+              justifyContent="space-between"
+              spacing={1}
+              alignItems={{ xs: "stretch", lg: "center" }}
+              sx={{
+                minHeight: 31,
+                px: { xs: 0.15, md: 0.3 },
+              }}
+            >
+              <Typography
+                variant="subtitle1"
+                fontWeight={800}
+                sx={{ fontSize: 33, lineHeight: 1.08 }}
               >
-                Развернуть все
-              </Button>
-              <Button
-                variant="text"
-                size="small"
-                onClick={onCollapseAll}
-                sx={{ minHeight: 36, whiteSpace: 'nowrap', color: '#64748b', '&:hover': { backgroundColor: '#f8fafc' } }}
+                Иерархия плана
+              </Typography>
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                spacing={0.75}
+                alignItems={{ xs: "stretch", md: "center" }}
               >
-                Свернуть все
-              </Button>
-              <TextField
-                size="small"
-                placeholder="Поиск по узлам"
-                value={searchValue}
-                onChange={(event) => onSearchChange(event.target.value)}
-                sx={{
-                  minWidth: { xs: '100%', md: 240 },
-                  '& .MuiOutlinedInput-root': { minHeight: 36, backgroundColor: '#ffffff' },
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchRoundedIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={onExpandAll}
+                  startIcon={<ManageSearchRoundedIcon />}
+                  sx={{
+                    minHeight: 36,
+                    height: 36,
+                    whiteSpace: "nowrap",
+                    px: 1.55,
+                    borderRadius: "11px",
+                    borderColor: alpha(theme.palette.primary.main, 0.18),
+                    color: theme.palette.primary.main,
+                    bgcolor: theme.palette.background.paper,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    "&:hover": {
+                      borderColor: alpha(theme.palette.primary.main, 0.4),
+                      backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                    },
+                  }}
+                >
+                  Развернуть все
+                </Button>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={onCollapseAll}
+                  sx={{ display: "none" }}
+                >
+                  Свернуть все
+                </Button>
+                <TextField
+                  size="small"
+                  placeholder="Поиск по узлам"
+                  value={searchValue}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  sx={{
+                    minWidth: { xs: "100%", md: 205 },
+                    "& .MuiOutlinedInput-root": {
+                      minHeight: 36,
+                      height: 36,
+                      borderRadius: "11px",
+                      backgroundColor: theme.palette.background.paper,
+                      fontSize: 13,
+                    },
+                    "& .MuiInputBase-input": {
+                      py: 0.72,
+                      fontSize: 13,
+                    },
+                  }}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <SearchRoundedIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Stack>
             </Stack>
-          </Stack>
-
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 1fr) 308px' },
-              gap: 1.25,
-              alignItems: 'start',
-            }}
-          >
-            <Stack spacing={0.95}>
+            <Divider
+              sx={{ borderColor: alpha(theme.palette.divider, 0.7), mx: -1 }}
+            />
+            <Stack spacing={0.6}>
               {!hasItems ? (
-                <Card variant="outlined" sx={{ borderRadius: 3, borderColor: '#e2e8f0' }}>
+                <Card
+                  variant="outlined"
+                  sx={{ borderRadius: 3, borderColor: theme.palette.divider }}
+                >
                   <CardContent>
                     <Typography variant="body2" color="text.secondary">
                       По текущему фильтру не найдено ни одного узла плана.
@@ -674,13 +879,18 @@ export const PlanHierarchySection = ({
                 ))
               )}
             </Stack>
-
-            <Box sx={{ position: { xs: 'static', xl: 'sticky' }, top: { xl: 16 }, zIndex: 2 }}>
-              <PlanSideSummary data={sideSummary} />
-            </Box>
-          </Box>
-        </Stack>
-      </CardContent>
-    </Card>
+          </Stack>
+        </CardContent>
+      </Card>
+      <Box
+        sx={{
+          position: { xs: "static", xl: "sticky" },
+          top: { xl: 12 },
+          zIndex: 2,
+        }}
+      >
+        <PlanSideSummary data={sideSummary} />
+      </Box>
+    </Box>
   );
 };
