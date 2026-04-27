@@ -1048,7 +1048,15 @@ class PlanService:
                 fact_amount_self + sum((child.fact_amount_subtree for child in child_nodes), Decimal("0.00"))
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-        remaining_amount = (plan_total - fact_amount_subtree).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        remaining_by_fact = (plan_total - fact_amount_subtree).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        delegated_overflow = (plan_total - delegated_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        # Negative remainder is meaningful only when parent plan became lower than
+        # already delegated amount to subordinates and they need rebalancing.
+        # Overperformance (fact > plan) should not produce negative remainder.
+        if delegated_overflow < Decimal("0.00"):
+            remaining_amount = delegated_overflow
+        else:
+            remaining_amount = max(remaining_by_fact, Decimal("0.00"))
         progress_percent = percent(fact_amount_subtree, plan_total)
         period_fact_amount = period_fact_by_plan_id.get(plan.id, Decimal("0.00")).quantize(
             Decimal("0.01"),

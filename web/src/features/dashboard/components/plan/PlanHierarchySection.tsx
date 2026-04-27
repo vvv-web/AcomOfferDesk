@@ -702,13 +702,6 @@ export const PlanSideSummary = ({
                         >
                           {employee.userName}
                         </Typography>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: "block", lineHeight: 1.1, mb: 0.3 }}
-                        >
-                          {employee.userRole}
-                        </Typography>
                         <Stack
                           direction="row"
                           justifyContent="space-between"

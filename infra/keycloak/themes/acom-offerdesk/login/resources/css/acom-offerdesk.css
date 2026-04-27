@@ -656,7 +656,7 @@ body#keycloak-bg.aod-body {
   max-width: 1200px;
   margin: 0 auto;
   padding: 8px 14px;
-  border-radius: 12px;
+  border-radius: 28px;
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 4px 14px rgba(15, 35, 75, 0.06);
   display: grid;
@@ -700,7 +700,7 @@ body#keycloak-bg.aod-body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 20px;
   border: 1px solid var(--aod-border);
   background: rgba(255, 255, 255, 0.86);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
@@ -717,7 +717,7 @@ body#keycloak-bg.aod-body {
   width: 24px;
   height: 24px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: 16px;
 }
 
 @media (max-width: 640px) {
@@ -763,7 +763,7 @@ body#keycloak-bg.aod-body {
   .aod-app-footer__panel {
     grid-template-columns: 1fr;
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: 22px;
     text-align: center;
   }
 

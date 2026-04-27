@@ -257,6 +257,7 @@ class RequestRepository:
         self,
         *,
         current_user_id: str,
+        owner_user_ids: list[str] | None = None,
     ) -> list[tuple[Request, RequestOfferStats | None, Profile | None, int]]:
         unread_messages_count = (
             select(func.count())
@@ -283,6 +284,10 @@ class RequestRepository:
             .outerjoin(Profile, Profile.id == Request.id_user)
             .order_by(Request.created_at.desc(), Request.id.desc())
         )
+        if owner_user_ids is not None:
+            if not owner_user_ids:
+                return []
+            stmt = stmt.where(Request.id_user.in_(owner_user_ids))
         result = await self._session.execute(stmt)
         return list(result.all())
     
