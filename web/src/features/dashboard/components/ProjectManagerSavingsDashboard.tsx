@@ -1,7 +1,6 @@
 ﻿import {
   Alert,
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
@@ -10,15 +9,14 @@
   IconButton,
   InputLabel,
   MenuItem,
-  Popover,
   Select,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ReportPeriodSelector } from './shared/ReportPeriodSelector';
 import {
   getResponsibilityDashboard,
   type ResponsibilityEmployeeNode,
@@ -52,13 +50,16 @@ const getCurrentMonthStart = () => {
 
 const getCurrentDate = () => toDateInputValue(new Date());
 
+
 type ScopeFilterOption = {
   userId: string;
   label: string;
 };
 
 type LeadEconomistOption = ScopeFilterOption;
+type ProjectFilterOption = { projectId: number; label: string };
 const ALL_LEAD_ECONOMISTS_SCOPE = '__all_lead_economists__';
+const ALL_PROJECTS_SCOPE = '__all_projects__';
 
 const flattenEmployeeTree = (nodes: ResponsibilityEmployeeNode[]): ResponsibilityEmployeeNode[] => {
   const result: ResponsibilityEmployeeNode[] = [];
@@ -116,62 +117,14 @@ const PeriodRangeField = ({
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
 }) => {
-  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const isOpen = Boolean(anchorEl);
-
   return (
-    <Box sx={{ minWidth: { xs: "100%", sm: 390 } }}>
-      <Button
-        fullWidth
-        variant="outlined"
-        onClick={(event) => setAnchorEl(event.currentTarget)}
-        sx={{ justifyContent: "space-between", minHeight: 40 }}
-      >
-        Выбор периода
-        {isOpen ? <ExpandLessRoundedIcon fontSize="small" /> : <ExpandMoreRoundedIcon fontSize="small" />}
-      </Button>
-      <Popover
-        open={isOpen}
-        anchorEl={anchorEl}
-        onClose={() => setAnchorEl(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
-        transformOrigin={{ vertical: "top", horizontal: "left" }}
-        slotProps={{ paper: { sx: { p: 1.25, mt: 0.5 } } }}
-      >
-        <Stack direction="row" spacing={1}>
-          <TextField
-            type="date"
-            size="small"
-            label="С"
-            value={dateFrom}
-            onChange={(event) => onDateFromChange(event.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{
-              flex: 1,
-              "& .MuiOutlinedInput-root": {
-                minHeight: 40,
-                bgcolor: "rgba(255,255,255,0.96)",
-              },
-            }}
-          />
-          <TextField
-            type="date"
-            size="small"
-            label="По"
-            value={dateTo}
-            onChange={(event) => onDateToChange(event.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{
-              flex: 1,
-              "& .MuiOutlinedInput-root": {
-                minHeight: 40,
-                bgcolor: "rgba(255,255,255,0.96)",
-              },
-            }}
-          />
-        </Stack>
-      </Popover>
-    </Box>
+    <ReportPeriodSelector
+      dateFrom={dateFrom}
+      dateTo={dateTo}
+      onDateFromChange={onDateFromChange}
+      onDateToChange={onDateToChange}
+      minWidth={390}
+    />
   );
 };
 
@@ -565,6 +518,7 @@ export const ProjectManagerSavingsDashboard = () => {
   const [dateTo, setDateTo] = useState<string>(getCurrentDate);
   const [selectedGlobalLeadUserId, setSelectedGlobalLeadUserId] = useState<string>(ALL_LEAD_ECONOMISTS_SCOPE);
   const [selectedLeadUserId, setSelectedLeadUserId] = useState<string>(ALL_LEAD_ECONOMISTS_SCOPE);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(ALL_PROJECTS_SCOPE);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [expandedCards, setExpandedCards] = useState({
@@ -689,6 +643,44 @@ export const ProjectManagerSavingsDashboard = () => {
     [matchesGlobalFilters, savings.items]
   );
 
+  const projectOptions = useMemo<ProjectFilterOption[]>(() => {
+    const byProjectId = new Map<number, string>();
+    filteredClosedItems.forEach((item) => {
+      if (item.plan_id == null) {
+        return;
+      }
+      byProjectId.set(item.plan_id, item.plan_name?.trim() || `Проект #${item.plan_id}`);
+    });
+    return Array.from(byProjectId.entries())
+      .map(([projectId, label]) => ({ projectId, label }))
+      .sort((left, right) => left.label.localeCompare(right.label, 'ru'));
+  }, [filteredClosedItems]);
+
+  useEffect(() => {
+    if (
+      selectedProjectId !== ALL_PROJECTS_SCOPE
+      && !projectOptions.some((item) => String(item.projectId) === selectedProjectId)
+    ) {
+      setSelectedProjectId(ALL_PROJECTS_SCOPE);
+    }
+  }, [projectOptions, selectedProjectId]);
+
+  const projectFilteredClosedItems = useMemo(() => {
+    if (selectedProjectId === ALL_PROJECTS_SCOPE) {
+      return filteredClosedItems;
+    }
+    const projectId = Number.parseInt(selectedProjectId, 10);
+    return filteredClosedItems.filter((item) => item.plan_id === projectId);
+  }, [filteredClosedItems, selectedProjectId]);
+
+  const projectFilteredSavingsItems = useMemo(() => {
+    if (selectedProjectId === ALL_PROJECTS_SCOPE) {
+      return filteredSavingsItems;
+    }
+    const projectId = Number.parseInt(selectedProjectId, 10);
+    return filteredSavingsItems.filter((item) => item.plan_id === projectId);
+  }, [filteredSavingsItems, selectedProjectId]);
+
   const periodFilteredClosedItems = useMemo(
     () => (savings.closed_items ?? []).filter((item) => isInSelectedPeriod(item.closed_at)),
     [isInSelectedPeriod, savings.closed_items]
@@ -698,6 +690,22 @@ export const ProjectManagerSavingsDashboard = () => {
     () => savings.items.filter((item) => isInSelectedPeriod(item.closed_at)),
     [isInSelectedPeriod, savings.items]
   );
+
+  const projectFilteredPeriodClosedItems = useMemo(() => {
+    if (selectedProjectId === ALL_PROJECTS_SCOPE) {
+      return periodFilteredClosedItems;
+    }
+    const projectId = Number.parseInt(selectedProjectId, 10);
+    return periodFilteredClosedItems.filter((item) => item.plan_id === projectId);
+  }, [periodFilteredClosedItems, selectedProjectId]);
+
+  const projectFilteredPeriodSavingsItems = useMemo(() => {
+    if (selectedProjectId === ALL_PROJECTS_SCOPE) {
+      return periodFilteredSavingsItems;
+    }
+    const projectId = Number.parseInt(selectedProjectId, 10);
+    return periodFilteredSavingsItems.filter((item) => item.plan_id === projectId);
+  }, [periodFilteredSavingsItems, selectedProjectId]);
 
   const selectedLeadOwnerIds = useMemo(() => {
     if (!selectedLeadUserId || selectedLeadUserId === ALL_LEAD_ECONOMISTS_SCOPE) {
@@ -710,31 +718,31 @@ export const ProjectManagerSavingsDashboard = () => {
 
   const tzClosedItems = useMemo(() => {
     if (!selectedLeadOwnerIds) {
-      return periodFilteredClosedItems;
+      return projectFilteredPeriodClosedItems;
     }
-    return periodFilteredClosedItems.filter((item) => selectedLeadOwnerIds.has(item.owner_user_id));
-  }, [periodFilteredClosedItems, selectedLeadOwnerIds]);
+    return projectFilteredPeriodClosedItems.filter((item) => selectedLeadOwnerIds.has(item.owner_user_id));
+  }, [projectFilteredPeriodClosedItems, selectedLeadOwnerIds]);
 
   const tzSavingsItems = useMemo(() => {
     if (!selectedLeadOwnerIds) {
-      return periodFilteredSavingsItems;
+      return projectFilteredPeriodSavingsItems;
     }
-    return periodFilteredSavingsItems.filter((item) => selectedLeadOwnerIds.has(item.owner_user_id));
-  }, [periodFilteredSavingsItems, selectedLeadOwnerIds]);
+    return projectFilteredPeriodSavingsItems.filter((item) => selectedLeadOwnerIds.has(item.owner_user_id));
+  }, [projectFilteredPeriodSavingsItems, selectedLeadOwnerIds]);
 
   const itemsByClosed = useMemo(
     () =>
-      [...filteredClosedItems].sort((left, right) => {
+      [...projectFilteredClosedItems].sort((left, right) => {
         const leftTime = left.closed_at ? new Date(left.closed_at).getTime() : 0;
         const rightTime = right.closed_at ? new Date(right.closed_at).getTime() : 0;
         return rightTime - leftTime;
       }),
-    [filteredClosedItems]
+    [projectFilteredClosedItems]
   );
 
   const itemsWithSavings = useMemo(
-    () => [...filteredSavingsItems].sort((left, right) => Math.abs(right.savings_amount) - Math.abs(left.savings_amount)),
-    [filteredSavingsItems]
+    () => [...projectFilteredSavingsItems].sort((left, right) => Math.abs(right.savings_amount) - Math.abs(left.savings_amount)),
+    [projectFilteredSavingsItems]
   );
 
   const positiveItems = useMemo(() => itemsWithSavings.filter((item) => item.savings_amount > 0), [itemsWithSavings]);
@@ -742,7 +750,7 @@ export const ProjectManagerSavingsDashboard = () => {
   const negativeItems = useMemo(() => itemsWithSavings.filter((item) => item.savings_amount < 0), [itemsWithSavings]);
 
   const summary = useMemo(() => {
-    return filteredSavingsItems.reduce(
+    return projectFilteredSavingsItems.reduce(
       (acc, item) => {
         if (item.savings_amount > 0) {
           acc.totalSavings += item.savings_amount;
@@ -754,7 +762,7 @@ export const ProjectManagerSavingsDashboard = () => {
       },
       { totalSavings: 0, lostSavings: 0 }
     );
-  }, [filteredSavingsItems]);
+  }, [projectFilteredSavingsItems]);
 
   const totalTzAmount = useMemo(
     () => {
@@ -839,6 +847,31 @@ export const ProjectManagerSavingsDashboard = () => {
               <MenuItem value={ALL_LEAD_ECONOMISTS_SCOPE}>Все руководители</MenuItem>
               {leadEconomistOptions.map((option) => (
                 <MenuItem key={option.userId} value={option.userId}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl
+            size="small"
+            sx={{
+              minWidth: { xs: '100%', sm: 240 },
+              '& .MuiOutlinedInput-root': {
+                minHeight: 40,
+                bgcolor: 'rgba(255,255,255,0.96)',
+              },
+            }}
+          >
+            <InputLabel id="savings-project-filter-label">Проект</InputLabel>
+            <Select
+              labelId="savings-project-filter-label"
+              label="Проект"
+              value={selectedProjectId}
+              onChange={(event) => setSelectedProjectId(event.target.value)}
+            >
+              <MenuItem value={ALL_PROJECTS_SCOPE}>Все проекты</MenuItem>
+              {projectOptions.map((option) => (
+                <MenuItem key={option.projectId} value={String(option.projectId)}>
                   {option.label}
                 </MenuItem>
               ))}

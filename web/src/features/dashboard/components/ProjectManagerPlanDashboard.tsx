@@ -1,6 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@app/providers/AuthProvider";
-import type { PlanDelegateCandidate, PlanTreeNode } from "@shared/api/plans";
+import {
+  getPlanRequestStats,
+  type PlanDelegateCandidate,
+  type PlanRequestStats,
+  type PlanTreeNode,
+} from "@shared/api/plans";
 import {
   Alert,
   Box,
@@ -11,7 +16,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { usePlanDashboard } from "../model/usePlanDashboard";
@@ -108,6 +113,28 @@ const buildRangePeriodLabel = (dateFrom: string, dateTo: string) => {
   return `${toRuDate(dateFrom)} — ${toRuDate(dateTo)}`;
 };
 
+const isSingleMonthRange = (dateFrom: string, dateTo: string) => {
+  const yearFrom = Number.parseInt(dateFrom.slice(0, 4), 10);
+  const monthFrom = Number.parseInt(dateFrom.slice(5, 7), 10);
+  const dayFrom = dateFrom.slice(8, 10);
+  const yearTo = Number.parseInt(dateTo.slice(0, 4), 10);
+  const monthTo = Number.parseInt(dateTo.slice(5, 7), 10);
+  const dayTo = dateTo.slice(8, 10);
+  if (
+    !Number.isFinite(yearFrom)
+    || !Number.isFinite(monthFrom)
+    || !Number.isFinite(yearTo)
+    || !Number.isFinite(monthTo)
+  ) {
+    return false;
+  }
+  if (yearFrom !== yearTo || monthFrom !== monthTo || dayFrom !== "01") {
+    return false;
+  }
+  const monthEnd = new Date(yearFrom, monthFrom, 0).getDate();
+  return dayTo === String(monthEnd).padStart(2, "0");
+};
+
 const flattenPlanNodes = (nodes: PlanTreeNode[]): PlanTreeNode[] => {
   const result: PlanTreeNode[] = [];
   const walk = (node: PlanTreeNode) => {
@@ -149,6 +176,7 @@ const collectOwnerIdsFromSubtree = (node: PlanTreeNode): Set<string> => {
 };
 
 export const ProjectManagerPlanDashboard = () => {
+  const theme = useTheme();
   const { session } = useAuth();
   const {
     period,
@@ -157,6 +185,7 @@ export const ProjectManagerPlanDashboard = () => {
     setDateTo: setDashboardDateTo,
     trees,
     summary: dashboardSummary,
+    requestStats: dashboardRequestStats,
     isLoading,
     isMutating,
     canCreateRootPlan,
@@ -193,18 +222,26 @@ export const ProjectManagerPlanDashboard = () => {
   const [expandedNodeIds, setExpandedNodeIds] = useState<
     Record<number, boolean>
   >({});
+  const [selectedPlanRequestStats, setSelectedPlanRequestStats] = useState<PlanRequestStats | null>(null);
 
   const rootPlanForm = useForm<RootPlanFormValues>({
     resolver: zodResolver(rootPlanSchema),
     defaultValues: {
       name: "",
       periodStart: periodToDate(period),
+      periodEnd: getMonthEndFromPeriod(period),
       planAmount: "",
     },
   });
   const subplanForm = useForm<SubplanFormValues>({
     resolver: zodResolver(subplanSchema),
-    defaultValues: { name: "", periodStart: periodToDate(period), amount: "" },
+    defaultValues: {
+      name: "",
+      childUserId: "",
+      periodStart: periodToDate(period),
+      periodEnd: getMonthEndFromPeriod(period),
+      amount: "",
+    },
   });
   const delegateForm = useForm<DelegateFormValues>({
     resolver: zodResolver(delegateSchema),
@@ -216,13 +253,15 @@ export const ProjectManagerPlanDashboard = () => {
   });
   const editForm = useForm<EditFormValues>({
     resolver: zodResolver(editSchema),
-    defaultValues: { name: "", planAmount: "" },
+    defaultValues: { name: "", periodEnd: "", planAmount: "" },
   });
 
   useEffect(() => {
     rootPlanForm.setValue("periodStart", periodToDate(period));
+    rootPlanForm.setValue("periodEnd", getMonthEndFromPeriod(period));
     if (!subplanNode) {
       subplanForm.setValue("periodStart", periodToDate(period));
+      subplanForm.setValue("periodEnd", getMonthEndFromPeriod(period));
     }
     if (!delegateNode) {
       delegateForm.setValue("childPeriodStart", periodToDate(period));
@@ -249,13 +288,14 @@ export const ProjectManagerPlanDashboard = () => {
   }, [dateFrom, dateTo, setDashboardDateFrom, setDashboardDateTo]);
 
   useEffect(() => {
-    if (!delegateNode) {
+    const nodeForCandidates = delegateNode ?? subplanNode;
+    if (!nodeForCandidates) {
       return;
     }
 
     let isMounted = true;
     setIsCandidatesLoading(true);
-    loadDelegateCandidates(delegateNode.plan_id)
+    loadDelegateCandidates(nodeForCandidates.plan_id)
       .then((items) => {
         if (isMounted) {
           setDelegateCandidates(items);
@@ -275,7 +315,7 @@ export const ProjectManagerPlanDashboard = () => {
     return () => {
       isMounted = false;
     };
-  }, [delegateNode, loadDelegateCandidates]);
+  }, [delegateNode, loadDelegateCandidates, subplanNode]);
 
   const leadOptions = useMemo(() => collectLeadOptions(trees), [trees]);
   const periodLabel = useMemo(
@@ -350,6 +390,32 @@ export const ProjectManagerPlanDashboard = () => {
   );
 
   useEffect(() => {
+    if (!selectedPlanTree) {
+      setSelectedPlanRequestStats(null);
+      return;
+    }
+    let isMounted = true;
+    getPlanRequestStats({
+      dateFrom,
+      dateTo,
+      planId: selectedPlanTree.plan_id,
+    })
+      .then((stats) => {
+        if (isMounted) {
+          setSelectedPlanRequestStats(stats);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setSelectedPlanRequestStats(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [dateFrom, dateTo, selectedPlanTree]);
+
+  useEffect(() => {
     setExpandedNodeIds((prev) => {
       const next = { ...prev };
       expandableNodeIds.forEach((planId) => {
@@ -391,24 +457,64 @@ export const ProjectManagerPlanDashboard = () => {
     [scopedTrees],
   );
   const requestFactMetrics = useMemo(
-    () =>
-      buildRequestFactMetrics(
+    () => {
+      if (selectedPlanTree) {
+        return buildRequestFactMetrics(
+          {
+            total_plan_amount: selectedPlanTree.plan_amount,
+            total_fact_amount: selectedPlanTree.fact_amount_subtree,
+            total_period_fact_amount: selectedPlanTree.period_fact_amount ?? 0,
+            total_remaining_amount: selectedPlanTree.remaining_amount,
+            total_progress_percent: selectedPlanTree.progress_percent,
+            total_period_progress_percent: selectedPlanTree.period_progress_percent ?? 0,
+          },
+          selectedPlanRequestStats,
+          selectedPlanTree.period_fact_amount ?? null,
+          selectedPlanTree.period_progress_percent ?? null,
+        );
+      }
+      return buildRequestFactMetrics(
         scopedSummary,
+        dashboardRequestStats,
         dashboardSummary?.total_period_fact_amount ?? null,
         dashboardSummary?.total_period_progress_percent ?? null,
-      ),
-    [dashboardSummary?.total_period_fact_amount, dashboardSummary?.total_period_progress_percent, scopedSummary],
+      );
+    },
+    [
+      dashboardSummary?.total_period_fact_amount,
+      dashboardSummary?.total_period_progress_percent,
+      dashboardRequestStats,
+      scopedSummary,
+      selectedPlanRequestStats,
+      selectedPlanTree,
+    ],
   );
   const sideSummary = useMemo(
     () => buildSideSummaryData(scopedTrees, session?.userId ?? null),
     [scopedTrees, session?.userId],
   );
+  const showNoPeriodExecutionHint = useMemo(() => {
+    if (!isSingleMonthRange(dateFrom, dateTo)) {
+      return false;
+    }
+    if (!rootPlanExists || scopedSummary.total_plan_amount <= 0) {
+      return false;
+    }
+    return (requestFactMetrics.periodFactAmount ?? 0) <= 0;
+  }, [
+    dateFrom,
+    dateTo,
+    requestFactMetrics.periodFactAmount,
+    rootPlanExists,
+    scopedSummary.total_plan_amount,
+  ]);
   const forceExpanded = Boolean(searchValue.trim());
 
   const openEditDialog = (node: PlanTreeNode) => {
     setEditNode(node);
     editForm.reset({
       name: node.plan_name,
+      periodEnd: node.period_end,
       planAmount: node.plan_amount.toFixed(2),
     });
   };
@@ -418,7 +524,9 @@ export const ProjectManagerPlanDashboard = () => {
       setSubplanNode(planNode);
       subplanForm.reset({
         name: "",
+        childUserId: planNode.user_id,
         periodStart: planNode.period_start,
+        periodEnd: planNode.period_end,
         amount: "",
       });
     },
@@ -470,7 +578,7 @@ export const ProjectManagerPlanDashboard = () => {
       spacing={1.35}
       sx={{
         backgroundColor: "transparent",
-        borderRadius: 4,
+        borderRadius: `${theme.acomShape.panelRadius}px`,
         p: { xs: 0.5, md: 0.75 },
       }}
     >
@@ -541,7 +649,7 @@ export const ProjectManagerPlanDashboard = () => {
                 sx={{
                   width: 82,
                   height: 82,
-                  borderRadius: "28px",
+                  borderRadius: `${theme.acomShape.surfaceRadius}px`,
                   bgcolor: alpha("#3b82f6", 0.08),
                   color: "primary.main",
                   display: "flex",
@@ -595,6 +703,12 @@ export const ProjectManagerPlanDashboard = () => {
             executionSlices={executionSlices}
             selectedPlanId={selectedPlanId}
             requestFactMetrics={requestFactMetrics}
+            showNoPeriodExecutionHint={showNoPeriodExecutionHint}
+            selectedPlanLabel={
+              selectedPlanTree
+                ? `${selectedPlanTree.plan_name} (${selectedPlanTree.user_name})`
+                : null
+            }
             onExecutionSliceClick={togglePlanSelection}
             onDistributionItemClick={togglePlanSelection}
             onClearPlanSelection={() => applyPlanSelection(null)}
@@ -664,10 +778,12 @@ export const ProjectManagerPlanDashboard = () => {
             values.name,
             parseAmount(values.planAmount),
             values.periodStart,
+            values.periodEnd,
           );
           rootPlanForm.reset({
             name: "",
             periodStart: periodToDate(period),
+            periodEnd: getMonthEndFromPeriod(period),
             planAmount: "",
           });
           setIsRootDialogOpen(false);
@@ -681,6 +797,8 @@ export const ProjectManagerPlanDashboard = () => {
             values.name,
             parseAmount(values.amount),
             values.periodStart,
+            values.periodEnd,
+            values.childUserId,
           );
           setSubplanNode(null);
         })}
@@ -702,6 +820,7 @@ export const ProjectManagerPlanDashboard = () => {
           }
           await updatePlanNode(editNode.plan_id, {
             name: values.name,
+            periodEnd: values.periodEnd,
             planAmount: parseAmount(values.planAmount),
           });
           setEditNode(null);

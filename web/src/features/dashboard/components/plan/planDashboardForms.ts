@@ -13,13 +13,22 @@ const amountStringSchema = z
 export const rootPlanSchema = z.object({
   name: z.string().trim().min(1, 'Укажите название плана'),
   periodStart: z.string().trim().min(10, 'Укажите дату начала'),
+  periodEnd: z.string().trim().min(10, 'Укажите дату окончания'),
   planAmount: amountStringSchema,
+}).refine((value) => value.periodEnd >= value.periodStart, {
+  message: 'Дата окончания не может быть раньше даты начала',
+  path: ['periodEnd'],
 });
 
 export const subplanSchema = z.object({
   name: z.string().trim().min(1, 'Укажите название подплана'),
+  childUserId: z.string().trim().min(1, 'Выберите исполнителя'),
   periodStart: z.string().trim().min(10, 'Укажите дату начала'),
+  periodEnd: z.string().trim().min(10, 'Укажите дату окончания'),
   amount: amountStringSchema.refine((value) => Number(value.replace(',', '.')) > 0, 'Сумма должна быть больше нуля'),
+}).refine((value) => value.periodEnd >= value.periodStart, {
+  message: 'Дата окончания не может быть раньше даты начала',
+  path: ['periodEnd'],
 });
 
 export const delegateSchema = z.object({
@@ -30,6 +39,7 @@ export const delegateSchema = z.object({
 
 export const editSchema = z.object({
   name: z.string().trim().min(1, 'Укажите название плана'),
+  periodEnd: z.string().trim().min(10, 'Укажите дату окончания'),
   planAmount: amountStringSchema,
 });
 

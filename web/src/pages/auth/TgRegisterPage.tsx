@@ -1,5 +1,6 @@
 // LEGACY_TELEGRAM: page is excluded from active routes and kept only for rollback.
 import { zodResolver } from '@hookform/resolvers/zod';
+import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded';
 import { Alert, Box, Button, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -290,15 +291,7 @@ export const TgRegisterPage = () => {
                             <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center">
                                 {step > 0 && hasToken && !isCompleted ? (
                                     <IconButton aria-label="Назад" onClick={handleBack} sx={{ padding: 0, color: 'text.primary' }}>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                            <path
-                                                d="M15 6L9 12L15 18"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
-                                        </svg>
+                                        <ArrowBackIosNewRoundedIcon sx={{ fontSize: 20 }} />
                                     </IconButton>
                                 ) : (
                                     <span />

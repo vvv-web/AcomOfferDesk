@@ -13,6 +13,9 @@ from app.schemas.plans import (
     PlanDashboardDataSchema,
     PlanDashboardResponse,
     PlanDashboardSummarySchema,
+    PlanRequestStatsSchema,
+    PlanRequestStatsDataSchema,
+    PlanRequestStatsResponse,
     PlanDelegateCandidateSchema,
     PlanDelegateCandidatesDataSchema,
     PlanDelegateCandidatesResponse,
@@ -37,6 +40,7 @@ from app.services.plans import (
     PlanDashboardSummary,
     PlanNodeActions,
     PlanOption,
+    PlanRequestStats,
     PlanService,
     PlanTreeNode,
     format_month_period,
@@ -80,6 +84,9 @@ def _map_tree_node(node: PlanTreeNode) -> PlanTreeNodeSchema:
         unallocated_amount=_to_float(node.unallocated_amount),
         fact_amount_self=_to_float(node.fact_amount_self),
         fact_amount_subtree=_to_float(node.fact_amount_subtree),
+        period_fact_amount=_to_float(node.period_fact_amount),
+        period_progress_percent=_to_float(node.period_progress_percent),
+        in_progress_requests_count=node.in_progress_requests_count,
         remaining_amount=_to_float(node.remaining_amount),
         progress_percent=_to_float(node.progress_percent),
         available_actions=_map_actions(node.available_actions),
@@ -95,6 +102,17 @@ def _map_summary(summary: PlanDashboardSummary) -> PlanDashboardSummarySchema:
         total_remaining_amount=_to_float(summary.total_remaining_amount),
         total_progress_percent=_to_float(summary.total_progress_percent),
         total_period_progress_percent=_to_float(summary.total_period_progress_percent),
+    )
+
+
+def _map_request_stats(stats: PlanRequestStats) -> PlanRequestStatsSchema:
+    return PlanRequestStatsSchema(
+        total_requests=stats.total_requests,
+        distributed_requests=stats.distributed_requests,
+        unallocated_requests=stats.unallocated_requests,
+        request_fact_amount=_to_float(stats.request_fact_amount),
+        unallocated_amount=_to_float(stats.unallocated_amount),
+        completion_percent=_to_float(stats.completion_percent),
     )
 
 
@@ -128,6 +146,7 @@ def _build_service(uow: UnitOfWork) -> PlanService:
     return PlanService(
         plans=uow.economy_plans,
         users=uow.users,
+        requests=uow.requests,
     )
 
 
@@ -173,6 +192,7 @@ async def get_plan_dashboard(
             can_create_root_plan=dashboard.can_create_root_plan,
             root_plan_exists=dashboard.root_plan_exists,
             summary=_map_summary(dashboard.summary),
+            request_stats=_map_request_stats(dashboard.request_stats),
             tree=(_map_tree_node(dashboard.tree) if dashboard.tree else None),
             trees=[_map_tree_node(item) for item in dashboard.trees],
         ),
@@ -183,6 +203,60 @@ async def get_plan_dashboard(
                     if date_from is not None and date_to is not None
                     else f"/api/v1/plans?period={period}"
                 ),
+                method="GET",
+            )
+        ),
+    )
+
+
+@router.get("/plans/request-stats", response_model=PlanRequestStatsResponse)
+async def get_plan_request_stats(
+    period: str | None = Query(default=None, min_length=7, max_length=7),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    plan_id: int | None = Query(default=None, ge=1),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> PlanRequestStatsResponse:
+    if date_from is not None or date_to is not None:
+        if date_from is None or date_to is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Both date_from and date_to are required",
+            )
+        period_start = date_from
+        period_end = date_to
+    elif period is not None:
+        period_start, period_end = parse_month_period(period)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Either period or date_from/date_to must be provided",
+        )
+
+    async with uow:
+        service = _build_service(uow)
+        stats = await service.get_request_stats(
+            period_start=period_start,
+            period_end=period_end,
+            plan_id=plan_id,
+            current_user=current_user,
+        )
+
+    query_parts = [f"date_from={period_start.isoformat()}", f"date_to={period_end.isoformat()}"]
+    if plan_id is not None:
+        query_parts.append(f"plan_id={plan_id}")
+    query = "&".join(query_parts)
+    return PlanRequestStatsResponse(
+        data=PlanRequestStatsDataSchema(
+            period_start=period_start,
+            period_end=period_end,
+            plan_id=plan_id,
+            stats=_map_request_stats(stats),
+        ),
+        _links=LinkSet(
+            self=Link(
+                href=f"/api/v1/plans/request-stats?{query}",
                 method="GET",
             )
         ),
@@ -318,6 +392,7 @@ async def create_root_plan(
         plan = await service.create_root_plan(
             period=payload.period,
             period_start=payload.period_start,
+            period_end=payload.period_end,
             name=payload.name,
             plan_amount=payload.plan_amount,
             current_user=current_user,
@@ -341,6 +416,8 @@ async def create_subplan(
             parent_plan_id=payload.parent_plan_id,
             name=payload.name,
             period_start=payload.period_start,
+            period_end=payload.period_end,
+            child_user_id=payload.child_user_id,
             plan_amount=payload.plan_amount,
             current_user=current_user,
         )
@@ -389,6 +466,7 @@ async def update_plan(
             plan_id=plan_id,
             new_amount=payload.plan_amount,
             new_name=payload.name,
+            new_period_end=payload.period_end,
             current_user=current_user,
         )
 

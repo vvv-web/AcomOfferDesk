@@ -4,6 +4,7 @@ import type { PlanMutationResult } from './types';
 type CreateRootPlanPayload = {
   period?: string;
   period_start?: string;
+  period_end?: string;
   name: string;
   plan_amount: number;
 };

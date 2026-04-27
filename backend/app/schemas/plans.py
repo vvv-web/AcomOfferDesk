@@ -34,6 +34,9 @@ class PlanTreeNodeSchema(BaseModel):
     unallocated_amount: float
     fact_amount_self: float
     fact_amount_subtree: float
+    period_fact_amount: float = 0
+    period_progress_percent: float = 0
+    in_progress_requests_count: int = 0
     remaining_amount: float
     progress_percent: float
     available_actions: PlanNodeActionsSchema = Field(default_factory=PlanNodeActionsSchema)
@@ -49,6 +52,15 @@ class PlanDashboardSummarySchema(BaseModel):
     total_period_progress_percent: float = 0
 
 
+class PlanRequestStatsSchema(BaseModel):
+    total_requests: int = 0
+    distributed_requests: int = 0
+    unallocated_requests: int = 0
+    request_fact_amount: float = 0
+    unallocated_amount: float = 0
+    completion_percent: float = 0
+
+
 class PlanDashboardDataSchema(BaseModel):
     period: str
     period_start: date
@@ -56,6 +68,7 @@ class PlanDashboardDataSchema(BaseModel):
     can_create_root_plan: bool
     root_plan_exists: bool
     summary: PlanDashboardSummarySchema
+    request_stats: PlanRequestStatsSchema = Field(default_factory=PlanRequestStatsSchema)
     tree: PlanTreeNodeSchema | None = None
     trees: list[PlanTreeNodeSchema] = Field(default_factory=list)
 
@@ -64,6 +77,20 @@ class PlanDashboardResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     data: PlanDashboardDataSchema
+    links: LinkSet = Field(alias="_links")
+
+
+class PlanRequestStatsDataSchema(BaseModel):
+    period_start: date
+    period_end: date
+    plan_id: int | None = None
+    stats: PlanRequestStatsSchema
+
+
+class PlanRequestStatsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: PlanRequestStatsDataSchema
     links: LinkSet = Field(alias="_links")
 
 
@@ -98,6 +125,7 @@ class PlanSummaryResponse(BaseModel):
 class PlanRootCreateRequest(BaseModel):
     period: str | None = Field(default=None, min_length=7, max_length=7)
     period_start: date | None = None
+    period_end: date | None = None
     name: str = Field(min_length=1, max_length=255)
     plan_amount: float = Field(ge=0)
 
@@ -112,6 +140,8 @@ class PlanSubplanCreateRequest(BaseModel):
     parent_plan_id: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=255)
     period_start: date | None = None
+    period_end: date | None = None
+    child_user_id: str | None = Field(default=None, min_length=1)
     plan_amount: float = Field(gt=0)
 
 
@@ -125,11 +155,12 @@ class PlanDelegateRequest(BaseModel):
 class PlanUpdateRequest(BaseModel):
     plan_amount: float | None = Field(default=None, ge=0)
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    period_end: date | None = None
     status: str | None = None
 
     @model_validator(mode="after")
     def _validate_payload(self) -> "PlanUpdateRequest":
-        if self.plan_amount is None and self.name is None and self.status is None:
+        if self.plan_amount is None and self.name is None and self.period_end is None and self.status is None:
             raise ValueError("At least one mutable field must be provided")
         return self
 

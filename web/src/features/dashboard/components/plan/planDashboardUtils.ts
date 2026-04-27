@@ -1,4 +1,4 @@
-import type { PlanDashboardSummary, PlanTreeNode } from '@shared/api/plans';
+import type { PlanDashboardSummary, PlanRequestStats, PlanTreeNode } from '@shared/api/plans';
 
 export const ALL_SUBORDINATES_SCOPE = '__all_descendants__';
 
@@ -50,9 +50,16 @@ export type PlanSideSummaryData = {
   personalProgressPercent?: number | null;
   personalFactAmount?: number | null;
   personalPlanAmount?: number | null;
-  averageSubordinatesProgressPercent?: number | null;
-  averageSubordinatesFactAmount?: number | null;
-  averageSubordinatesPlanAmount?: number | null;
+  personalInProgressRequestsCount?: number | null;
+  directSubordinates?: Array<{
+    userId: string;
+    userName: string;
+    userRole: string;
+    factAmount: number;
+    planAmount: number;
+    progressPercent: number;
+    inProgressRequestsCount: number;
+  }>;
 };
 
 const distributionPalette = ['#3b82f6', '#f59e0b', '#34c759', '#8b5cf6', '#06b6d4'];
@@ -183,15 +190,16 @@ export const findSubtreeByUserId = (node: PlanTreeNode, userId: string): PlanTre
 export const deriveSummaryFromTrees = (trees: PlanTreeNode[]): PlanDashboardSummary => {
   const totalPlanAmount = trees.reduce((sum, node) => sum + node.plan_amount, 0);
   const totalFactAmount = trees.reduce((sum, node) => sum + node.fact_amount_subtree, 0);
+  const totalPeriodFactAmount = trees.reduce((sum, node) => sum + (node.period_fact_amount ?? 0), 0);
   const totalRemainingAmount = trees.reduce((sum, node) => sum + node.remaining_amount, 0);
 
   return {
     total_plan_amount: totalPlanAmount,
     total_fact_amount: totalFactAmount,
-    total_period_fact_amount: 0,
+    total_period_fact_amount: totalPeriodFactAmount,
     total_remaining_amount: totalRemainingAmount,
     total_progress_percent: toPercent(totalFactAmount, totalPlanAmount),
-    total_period_progress_percent: 0,
+    total_period_progress_percent: toPercent(totalPeriodFactAmount, totalPlanAmount),
   };
 };
 
@@ -277,17 +285,18 @@ export const buildDistributionItems = (trees: PlanTreeNode[]): PlanDistributionI
 
 export const buildRequestFactMetrics = (
   summary: PlanDashboardSummary | null,
+  requestStats?: PlanRequestStats | null,
   periodFactAmount?: number | null,
   periodCompletionPercent?: number | null
 ): PlanRequestFactMetrics => ({
-  totalRequests: null,
-  distributedRequests: null,
-  requestFactAmount: summary?.total_fact_amount ?? 0,
+  totalRequests: requestStats?.total_requests ?? null,
+  distributedRequests: requestStats?.distributed_requests ?? null,
+  requestFactAmount: requestStats?.request_fact_amount ?? summary?.total_fact_amount ?? 0,
   periodFactAmount: periodFactAmount ?? summary?.total_period_fact_amount ?? 0,
-  completionPercent: summary?.total_progress_percent ?? 0,
+  completionPercent: requestStats?.completion_percent ?? summary?.total_progress_percent ?? 0,
   periodCompletionPercent: periodCompletionPercent ?? summary?.total_period_progress_percent ?? 0,
-  unallocatedRequests: null,
-  unallocatedAmount: null,
+  unallocatedRequests: requestStats?.unallocated_requests ?? null,
+  unallocatedAmount: requestStats?.unallocated_amount ?? null,
 });
 
 export const buildSideSummaryData = (trees: PlanTreeNode[], currentUserId: string | null): PlanSideSummaryData => {
@@ -301,25 +310,55 @@ export const buildSideSummaryData = (trees: PlanTreeNode[], currentUserId: strin
   const personalPlanAmount = currentNode.personal_plan_amount > 0 ? currentNode.personal_plan_amount : currentNode.plan_amount;
   const personalFactAmount = currentNode.fact_amount_self;
   const personalProgressPercent = toPercent(personalFactAmount, personalPlanAmount);
+  const managerUserId = currentUserId ?? currentNode.user_id;
 
-  const subordinateNodes = currentNode.children;
-  const averageSubordinatesProgressPercent = subordinateNodes.length > 0
-    ? subordinateNodes.reduce((sum, node) => sum + node.progress_percent, 0) / subordinateNodes.length
-    : null;
-  const averageSubordinatesFactAmount = subordinateNodes.length > 0
-    ? subordinateNodes.reduce((sum, node) => sum + node.fact_amount_subtree, 0) / subordinateNodes.length
-    : null;
-  const averageSubordinatesPlanAmount = subordinateNodes.length > 0
-    ? subordinateNodes.reduce((sum, node) => sum + node.plan_amount, 0) / subordinateNodes.length
-    : null;
+  const personalInProgressRequestsCount = currentNode.in_progress_requests_count ?? 0;
+  const directSubordinateNodes = allNodes.filter(
+    (node) =>
+      node.parent_user_id_snapshot === managerUserId
+      && node.user_id !== managerUserId,
+  );
+  const directSubordinatesMap = new Map<
+    string,
+    {
+      userId: string;
+      userName: string;
+      userRole: string;
+      factAmount: number;
+      planAmount: number;
+      inProgressRequestsCount: number;
+    }
+  >();
+  directSubordinateNodes.forEach((node) => {
+    const existing = directSubordinatesMap.get(node.user_id);
+    if (!existing) {
+      directSubordinatesMap.set(node.user_id, {
+        userId: node.user_id,
+        userName: node.user_name,
+        userRole: node.user_role,
+        factAmount: node.fact_amount_subtree,
+        planAmount: node.plan_amount,
+        // Count is employee-level; avoid summing duplicates from multiple nodes/subplans.
+        inProgressRequestsCount: node.in_progress_requests_count ?? 0,
+      });
+      return;
+    }
+    existing.factAmount += node.fact_amount_subtree;
+    existing.planAmount += node.plan_amount;
+  });
+  const directSubordinates = Array.from(directSubordinatesMap.values())
+    .map((item) => ({
+      ...item,
+      progressPercent: toPercent(item.factAmount, item.planAmount),
+    }))
+    .sort((left, right) => left.userName.localeCompare(right.userName, 'ru'));
 
   return {
     personalProgressPercent,
     personalFactAmount,
     personalPlanAmount,
-    averageSubordinatesProgressPercent,
-    averageSubordinatesFactAmount,
-    averageSubordinatesPlanAmount,
+    personalInProgressRequestsCount,
+    directSubordinates,
   };
 };
 

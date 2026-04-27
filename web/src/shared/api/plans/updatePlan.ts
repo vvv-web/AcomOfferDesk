@@ -4,6 +4,7 @@ import type { PlanMutationResult } from './types';
 type UpdatePlanPayload = {
   plan_amount?: number;
   name?: string;
+  period_end?: string;
   status?: string;
 };
 

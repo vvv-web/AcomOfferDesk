@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from app.core.config import settings
 from app.domain.policies import CurrentUser, UserPolicy
+from app.repositories.economy_plans import EconomyPlanRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
@@ -54,6 +55,8 @@ class DashboardSavingsItem:
     final_amount: float
     savings_amount: float
     closed_at: datetime | None
+    plan_id: int | None
+    plan_name: str | None
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,8 @@ class DashboardClosedRequestItem:
     final_amount: float | None
     savings_amount: float | None
     closed_at: datetime | None
+    plan_id: int | None
+    plan_name: str | None
 
 
 @dataclass(frozen=True)
@@ -99,10 +104,17 @@ class UpcomingUnavailabilityItem:
 
 
 class DashboardService:
-    def __init__(self, users: UserRepository, requests: RequestRepository, user_status_periods: UserStatusPeriodRepository):
+    def __init__(
+        self,
+        users: UserRepository,
+        requests: RequestRepository,
+        user_status_periods: UserStatusPeriodRepository,
+        plans: EconomyPlanRepository,
+    ):
         self._users = users
         self._requests = requests
         self._user_status_periods = user_status_periods
+        self._plans = plans
 
     async def get_responsibility_dashboard(self, *, current_user: CurrentUser) -> ResponsibilityDashboard:
         UserPolicy.ensure_can_view_responsibility_dashboard(current_user)
@@ -260,6 +272,9 @@ class DashboardService:
         ]
 
         savings_rows = await self._requests.list_closed_requests_with_chosen_offer_by_owner_ids(owner_ids=staff_owner_ids)
+        plan_ids = list({int(request.id_plan) for request, _, _ in savings_rows if request.id_plan is not None})
+        plans = await self._plans.list_by_ids(plan_ids=plan_ids)
+        plan_name_by_id = {plan.id: plan.name for plan in plans}
         savings_items: list[DashboardSavingsItem] = []
         closed_items: list[DashboardClosedRequestItem] = []
         total_savings_amount = Decimal("0")
@@ -280,6 +295,8 @@ class DashboardService:
                     final_amount=float(request.final_amount) if request.final_amount is not None else None,
                     savings_amount=float(savings_amount) if savings_amount is not None else None,
                     closed_at=request.closed_at,
+                    plan_id=request.id_plan,
+                    plan_name=plan_name_by_id.get(request.id_plan) if request.id_plan is not None else None,
                 )
             )
 
@@ -297,6 +314,8 @@ class DashboardService:
                     final_amount=float(request.final_amount),
                     savings_amount=float(savings_amount),
                     closed_at=request.closed_at,
+                    plan_id=request.id_plan,
+                    plan_name=plan_name_by_id.get(request.id_plan) if request.id_plan is not None else None,
                 )
             )
 

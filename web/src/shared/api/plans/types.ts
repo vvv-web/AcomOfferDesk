@@ -25,6 +25,9 @@ export type PlanTreeNode = {
   unallocated_amount: number;
   fact_amount_self: number;
   fact_amount_subtree: number;
+  period_fact_amount: number;
+  period_progress_percent: number;
+  in_progress_requests_count: number;
   remaining_amount: number;
   progress_percent: number;
   available_actions: PlanNodeActions;
@@ -40,6 +43,15 @@ export type PlanDashboardSummary = {
   total_period_progress_percent: number;
 };
 
+export type PlanRequestStats = {
+  total_requests: number;
+  distributed_requests: number;
+  unallocated_requests: number;
+  request_fact_amount: number;
+  unallocated_amount: number;
+  completion_percent: number;
+};
+
 export type PlanDashboardData = {
   period: string;
   period_start: string;
@@ -47,6 +59,7 @@ export type PlanDashboardData = {
   can_create_root_plan: boolean;
   root_plan_exists: boolean;
   summary: PlanDashboardSummary;
+  request_stats: PlanRequestStats;
   tree: PlanTreeNode | null;
   trees: PlanTreeNode[];
 };

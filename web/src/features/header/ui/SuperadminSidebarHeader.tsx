@@ -1,8 +1,8 @@
-import AddRounded from '@mui/icons-material/AddRounded';
-import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
+import AddOutlined from '@mui/icons-material/AddOutlined';
+import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
 import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
-import LogoutRounded from '@mui/icons-material/LogoutRounded';
+import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
 import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
@@ -188,7 +188,7 @@ export const SuperadminSidebarHeader = ({
                       {hasDashboardProcessTab ? (
                         <SidebarMenuButton
                           label="Процесс работы"
-                          icon={getHeaderNavigationIcon('dashboard')}
+                          icon={getHeaderNavigationIcon('dashboard-process')}
                           collapsed={false}
                           active={config.activeTab === 'dashboard'}
                           onClick={() => config.onTabChange?.('dashboard')}
@@ -233,7 +233,7 @@ export const SuperadminSidebarHeader = ({
           {config.backAction ? (
             <SidebarMenuButton
               label={config.backAction.label}
-              icon={<ArrowBackRounded fontSize="small" />}
+              icon={<ArrowBackOutlined fontSize="small" />}
               collapsed={collapsed}
               onClick={config.backAction.onClick}
             />
@@ -243,7 +243,7 @@ export const SuperadminSidebarHeader = ({
             <SidebarMenuButton
               key={action.key}
               label={action.label}
-              icon={<AddRounded fontSize="small" />}
+              icon={<AddOutlined fontSize="small" />}
               collapsed={collapsed}
               onClick={action.onClick}
             />
@@ -311,7 +311,7 @@ export const SuperadminSidebarHeader = ({
                 <ProfileButton iconOnly sidebar />
                 <SidebarMenuButton
                   label="Выйти"
-                  icon={<LogoutRounded fontSize="small" />}
+                  icon={<LogoutOutlined fontSize="small" />}
                   collapsed
                   onClick={onLogout}
                 />
@@ -335,7 +335,7 @@ export const SuperadminSidebarHeader = ({
                         borderRadius: `${theme.acomShape.buttonRadius}px !important`,
                       }}
                     >
-                      <LogoutRounded fontSize="small" />
+                      <LogoutOutlined fontSize="small" />
                     </ActionButton>
                   </Box>
                 </Tooltip>
@@ -344,7 +344,7 @@ export const SuperadminSidebarHeader = ({
           ) : config.showLogout ? (
             <SidebarMenuButton
               label="Выйти"
-              icon={<LogoutRounded fontSize="small" />}
+              icon={<LogoutOutlined fontSize="small" />}
               collapsed={collapsed}
               onClick={onLogout}
             />

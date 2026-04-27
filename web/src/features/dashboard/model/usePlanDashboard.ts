@@ -71,11 +71,17 @@ export const usePlanDashboard = () => {
     }
   }, [loadDashboard]);
 
-  const createRoot = useCallback(async (name: string, planAmount: number, periodStart?: string) => {
+  const createRoot = useCallback(async (
+    name: string,
+    planAmount: number,
+    periodStart?: string,
+    periodEnd?: string,
+  ) => {
     await withMutation(async () => {
       await createRootPlan({
         period,
         period_start: periodStart ?? monthToStartDate(period),
+        period_end: periodEnd,
         name,
         plan_amount: planAmount,
       });
@@ -99,13 +105,17 @@ export const usePlanDashboard = () => {
     parentPlanId: number,
     name: string,
     amount: number,
-    periodStart?: string
+    periodStart?: string,
+    periodEnd?: string,
+    childUserId?: string,
   ) => {
     await withMutation(async () => {
       await createSubplan({
         parent_plan_id: parentPlanId,
         name,
         period_start: periodStart,
+        period_end: periodEnd,
+        child_user_id: childUserId,
         plan_amount: amount,
       });
       setSuccessMessage('Подплан создан');
@@ -129,11 +139,15 @@ export const usePlanDashboard = () => {
     });
   }, [withMutation]);
 
-  const updatePlanNode = useCallback(async (planId: number, payload: { planAmount?: number; name?: string }) => {
+  const updatePlanNode = useCallback(async (
+    planId: number,
+    payload: { planAmount?: number; name?: string; periodEnd?: string },
+  ) => {
     await withMutation(async () => {
       await updatePlan(planId, {
         plan_amount: payload.planAmount,
         name: payload.name,
+        period_end: payload.periodEnd,
       });
       setSuccessMessage('План обновлен');
     });
@@ -158,6 +172,7 @@ export const usePlanDashboard = () => {
   }, []);
 
   const summary = useMemo(() => data?.summary ?? null, [data]);
+  const requestStats = useMemo(() => data?.request_stats ?? null, [data]);
 
   return {
     period,
@@ -170,6 +185,7 @@ export const usePlanDashboard = () => {
     tree: data?.tree ?? null,
     trees: data?.trees ?? (data?.tree ? [data.tree] : []),
     summary,
+    requestStats,
     canCreateRootPlan: data?.can_create_root_plan ?? false,
     rootPlanExists: data?.root_plan_exists ?? false,
     isLoading,

@@ -54,6 +54,8 @@ class DashboardSavingsItemSchema(BaseModel):
     final_amount: float
     savings_amount: float
     closed_at: datetime | None
+    plan_id: int | None = None
+    plan_name: str | None = None
 
 
 class DashboardClosedRequestItemSchema(BaseModel):
@@ -65,6 +67,8 @@ class DashboardClosedRequestItemSchema(BaseModel):
     final_amount: float | None
     savings_amount: float | None
     closed_at: datetime | None
+    plan_id: int | None = None
+    plan_name: str | None = None
 
 
 class DashboardSavingsSummarySchema(BaseModel):

@@ -61,6 +61,10 @@ export const PlanNodeMetricChips = ({ node }: PlanNodeMetricGridProps) => {
       label: "Выполнено по плану",
       value: formatAmount(node.fact_amount_subtree),
     },
+    {
+      label: "Выполнено за период",
+      value: formatAmount(node.period_fact_amount ?? 0),
+    },
     { label: "Выполнено лично", value: formatAmount(node.fact_amount_self) },
     { label: "Не распределено", value: formatAmount(node.unallocated_amount) },
     { label: "Выполнение", value: formatPercent(node.progress_percent) },
@@ -139,6 +143,7 @@ export const PlanTreeNodeCard = ({
   const hasChildren = node.children.length > 0;
   const isExpanded = forceExpanded || expandedNodeIds[node.plan_id] !== false;
   const progressValue = Math.max(0, Math.min(100, node.progress_percent));
+  const periodProgressValue = Math.max(0, Math.min(100, node.period_progress_percent ?? 0));
   const isRoot = depth === 0;
   const isSyntheticRoot =
     isRoot && node.children.some((child) => child.user_id === node.user_id);
@@ -151,7 +156,7 @@ export const PlanTreeNodeCard = ({
   const iconButtonSx = {
     width: 30,
     height: 30,
-    borderRadius: "9px",
+    borderRadius: `${theme.acomShape.controlRadius}px`,
     border: `1px solid ${alpha(theme.palette.primary.main, 0.45)}`,
     color: theme.palette.primary.main,
     bgcolor: theme.palette.background.paper,
@@ -231,7 +236,7 @@ export const PlanTreeNodeCard = ({
             mt: 0.1,
             width: 36,
             height: 36,
-            borderRadius: "11px",
+            borderRadius: `${theme.acomShape.controlRadius}px`,
             border: `1px solid ${alpha(theme.palette.primary.main, 0.34)}`,
             color: theme.palette.primary.main,
             bgcolor: theme.palette.background.paper,
@@ -261,7 +266,7 @@ export const PlanTreeNodeCard = ({
             backgroundColor: theme.palette.background.paper,
             border: `1px solid ${alpha(theme.palette.divider, 0.86)}`,
             boxShadow: `0 8px 18px ${alpha(theme.palette.common.black, 0.018)}`,
-            borderRadius: "10px",
+            borderRadius: `${theme.acomShape.controlRadius}px`,
             overflow: "hidden",
           }}
         >
@@ -289,10 +294,10 @@ export const PlanTreeNodeCard = ({
                 >
                   {isSyntheticRoot ? (
                     <Box
-                      sx={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: "11px",
+                        sx={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: `${theme.acomShape.buttonRadius}px`,
                         bgcolor: alpha(theme.palette.primary.main, 0.12),
                         color: "primary.main",
                         display: "flex",
@@ -379,29 +384,40 @@ export const PlanTreeNodeCard = ({
                     ) : null}
                   </Stack>
                 </Stack>
-                <Stack
-                  direction="row"
-                  spacing={0.75}
-                  alignItems="center"
-                  minWidth={0}
-                >
-                  <LinearProgress
-                    variant="determinate"
-                    value={progressValue}
-                    sx={{
-                      flex: 1,
-                      height: 6,
-                      borderRadius: 999,
-                      bgcolor: alpha(theme.palette.divider, 0.58),
-                      "& .MuiLinearProgress-bar": {
+                <Stack direction="row" spacing={0.75} alignItems="center" minWidth={0}>
+                  <Box sx={{ flex: 1, position: "relative" }}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={progressValue}
+                      sx={{
+                        height: 7,
                         borderRadius: 999,
-                        backgroundColor:
-                          progressValue >= 100
-                            ? theme.palette.success.main
-                            : theme.palette.primary.main,
-                      },
-                    }}
-                  />
+                        bgcolor: alpha(theme.palette.divider, 0.58),
+                        "& .MuiLinearProgress-bar": {
+                          borderRadius: 999,
+                          backgroundColor:
+                            progressValue >= 100
+                              ? theme.palette.success.main
+                              : theme.palette.primary.main,
+                        },
+                      }}
+                    />
+                    <LinearProgress
+                      variant="determinate"
+                      value={periodProgressValue}
+                      sx={{
+                        position: "absolute",
+                        inset: 0,
+                        height: 7,
+                        borderRadius: 999,
+                        bgcolor: "transparent",
+                        "& .MuiLinearProgress-bar": {
+                          borderRadius: 999,
+                          backgroundColor: theme.palette.warning.main,
+                        },
+                      }}
+                    />
+                  </Box>
                   <Typography
                     variant="caption"
                     fontWeight={800}
@@ -631,7 +647,7 @@ export const PlanSideSummary = ({
                   direction="row"
                   justifyContent="space-between"
                   spacing={1}
-                  sx={{ mt: 0.45, mb: 0.55 }}
+                  sx={{ mt: 0.45, mb: 0.35 }}
                 >
                   <Typography variant="caption" color="text.secondary">
                     {data.personalFactAmount !== null &&
@@ -646,6 +662,9 @@ export const PlanSideSummary = ({
                       : "—"}
                   </Typography>
                 </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.55 }}>
+                  Заявок в работе: {data.personalInProgressRequestsCount ?? 0}
+                </Typography>
                 <LinearProgress
                   variant="determinate"
                   value={Math.max(
@@ -662,40 +681,68 @@ export const PlanSideSummary = ({
               <Divider />
               <Box>
                 <Typography variant="body2" fontWeight={700}>
-                  Средняя загрузка подчиненных
+                  Загрузка прямых подчиненных
                 </Typography>
-                <Stack
-                  direction="row"
-                  justifyContent="space-between"
-                  spacing={1}
-                  sx={{ mt: 0.45, mb: 0.55 }}
-                >
-                  <Typography variant="caption" color="text.secondary">
-                    {data.averageSubordinatesFactAmount !== null &&
-                    data.averageSubordinatesFactAmount !== undefined
-                      ? `${formatAmount(data.averageSubordinatesFactAmount)} / ${formatAmount(data.averageSubordinatesPlanAmount ?? 0)}`
-                      : "—"}
+                {!data.directSubordinates || data.directSubordinates.length === 0 ? (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.45 }}
+                  >
+                    Прямых подчиненных нет
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {data.averageSubordinatesProgressPercent !== null &&
-                    data.averageSubordinatesProgressPercent !== undefined
-                      ? formatPercent(data.averageSubordinatesProgressPercent)
-                      : "—"}
-                  </Typography>
-                </Stack>
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.max(
-                    0,
-                    Math.min(100, data.averageSubordinatesProgressPercent ?? 0),
-                  )}
-                  color="success"
-                  sx={{
-                    height: 7,
-                    borderRadius: 999,
-                    bgcolor: alpha(theme.palette.success.main, 0.2),
-                  }}
-                />
+                ) : (
+                  <Stack spacing={0.85} sx={{ mt: 0.6 }}>
+                    {data.directSubordinates.map((employee) => (
+                      <Box key={employee.userId}>
+                        <Typography
+                          variant="caption"
+                          fontWeight={700}
+                          sx={{ display: "block", lineHeight: 1.1 }}
+                        >
+                          {employee.userName}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", lineHeight: 1.1, mb: 0.3 }}
+                        >
+                          {employee.userRole}
+                        </Typography>
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          spacing={1}
+                          sx={{ mb: 0.25 }}
+                        >
+                          <Typography variant="caption" color="text.secondary">
+                            {`${formatAmount(employee.factAmount)} / ${formatAmount(employee.planAmount)}`}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatPercent(employee.progressPercent)}
+                          </Typography>
+                        </Stack>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mb: 0.4 }}
+                        >
+                          Заявок в работе: {employee.inProgressRequestsCount}
+                        </Typography>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.max(0, Math.min(100, employee.progressPercent))}
+                          color="success"
+                          sx={{
+                            height: 6,
+                            borderRadius: 999,
+                            bgcolor: alpha(theme.palette.success.main, 0.2),
+                          }}
+                        />
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
               </Box>
             </Stack>
             <Button
@@ -757,7 +804,7 @@ export const PlanHierarchySection = ({
           boxShadow: `0 10px 28px ${alpha(theme.palette.common.black, 0.025)}`,
           border: `1px solid ${alpha(theme.palette.divider, 0.72)}`,
           backgroundColor: theme.palette.background.paper,
-          borderRadius: "12px",
+          borderRadius: `${theme.acomShape.controlRadius}px`,
         }}
       >
         <CardContent
@@ -780,7 +827,7 @@ export const PlanHierarchySection = ({
               <Typography
                 variant="subtitle1"
                 fontWeight={800}
-                sx={{ fontSize: 33, lineHeight: 1.08 }}
+                sx={{ fontSize: 24, lineHeight: 1.1 }}
               >
                 Иерархия плана
               </Typography>
@@ -799,7 +846,7 @@ export const PlanHierarchySection = ({
                     height: 36,
                     whiteSpace: "nowrap",
                     px: 1.55,
-                    borderRadius: "11px",
+                    borderRadius: `${theme.acomShape.controlRadius}px`,
                     borderColor: alpha(theme.palette.primary.main, 0.18),
                     color: theme.palette.primary.main,
                     bgcolor: theme.palette.background.paper,
@@ -831,7 +878,7 @@ export const PlanHierarchySection = ({
                     "& .MuiOutlinedInput-root": {
                       minHeight: 36,
                       height: 36,
-                      borderRadius: "11px",
+                      borderRadius: `${theme.acomShape.controlRadius}px`,
                       backgroundColor: theme.palette.background.paper,
                       fontSize: 13,
                     },
@@ -857,7 +904,7 @@ export const PlanHierarchySection = ({
               {!hasItems ? (
                 <Card
                   variant="outlined"
-                  sx={{ borderRadius: 3, borderColor: theme.palette.divider }}
+                  sx={{ borderRadius: `${theme.acomShape.controlRadius}px`, borderColor: theme.palette.divider }}
                 >
                   <CardContent>
                     <Typography variant="body2" color="text.secondary">

@@ -102,12 +102,24 @@ export const PlanDialogs = ({
               {...rootPlanForm.register('periodStart')}
             />
             <TextField
+              type="date"
+              label="Дата окончания"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              error={Boolean(rootPlanForm.formState.errors.periodEnd)}
+              helperText={rootPlanForm.formState.errors.periodEnd?.message}
+              {...rootPlanForm.register('periodEnd')}
+            />
+            <TextField
               label="Сумма плана"
               size="small"
               error={Boolean(rootPlanForm.formState.errors.planAmount)}
               helperText={rootPlanForm.formState.errors.planAmount?.message}
               {...rootPlanForm.register('planAmount')}
             />
+            <Alert severity="info">
+              Рекомендуем декомпозировать глобальные планы на более мелкие, например помесячно.
+            </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -132,6 +144,31 @@ export const PlanDialogs = ({
               helperText={subplanForm.formState.errors.name?.message}
               {...subplanForm.register('name')}
             />
+            <FormControl fullWidth size="small" error={Boolean(subplanForm.formState.errors.childUserId)}>
+              <InputLabel id="subplan-child-user-label">Исполнитель</InputLabel>
+              <Select
+                labelId="subplan-child-user-label"
+                label="Исполнитель"
+                value={subplanForm.watch('childUserId')}
+                onChange={(event) => {
+                  subplanForm.setValue('childUserId', event.target.value, { shouldValidate: true });
+                }}
+              >
+                <MenuItem value={subplanNode?.user_id ?? ''}>
+                  {subplanNode?.user_name ?? 'Текущий владелец плана'}
+                </MenuItem>
+                {delegateCandidates.map((candidate) => (
+                  <MenuItem key={`subplan-${candidate.user_id}`} value={candidate.user_id}>
+                    {candidate.full_name || candidate.user_id} ({candidate.role_name})
+                  </MenuItem>
+                ))}
+              </Select>
+              {subplanForm.formState.errors.childUserId ? (
+                <Typography variant="caption" color="error">
+                  {subplanForm.formState.errors.childUserId.message}
+                </Typography>
+              ) : null}
+            </FormControl>
             <TextField
               type="date"
               label="Дата начала подплана"
@@ -141,6 +178,16 @@ export const PlanDialogs = ({
               error={Boolean(subplanForm.formState.errors.periodStart)}
               helperText={subplanForm.formState.errors.periodStart?.message}
               {...subplanForm.register('periodStart')}
+            />
+            <TextField
+              type="date"
+              label="Дата окончания подплана"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ min: subplanNode?.period_start, max: subplanNode?.period_end }}
+              error={Boolean(subplanForm.formState.errors.periodEnd)}
+              helperText={subplanForm.formState.errors.periodEnd?.message}
+              {...subplanForm.register('periodEnd')}
             />
             <TextField
               label="Сумма подплана"
@@ -239,6 +286,15 @@ export const PlanDialogs = ({
               error={Boolean(editForm.formState.errors.planAmount)}
               helperText={editForm.formState.errors.planAmount?.message}
               {...editForm.register('planAmount')}
+            />
+            <TextField
+              type="date"
+              label="Дата окончания"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              error={Boolean(editForm.formState.errors.periodEnd)}
+              helperText={editForm.formState.errors.periodEnd?.message}
+              {...editForm.register('periodEnd')}
             />
           </Stack>
         </DialogContent>

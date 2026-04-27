@@ -11,6 +11,7 @@ from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.policies import CurrentUser, UserPolicy
 from app.models.orm_models import EconomyPlan
 from app.repositories.economy_plans import EconomyPlanRepository, PlanDistributionRow
+from app.repositories.requests import RequestRepository
 from app.repositories.users import UserRepository
 
 MONTH_PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -84,6 +85,9 @@ class PlanTreeNode:
     unallocated_amount: Decimal
     fact_amount_self: Decimal
     fact_amount_subtree: Decimal
+    period_fact_amount: Decimal
+    period_progress_percent: Decimal
+    in_progress_requests_count: int
     remaining_amount: Decimal
     progress_percent: Decimal
     available_actions: PlanNodeActions
@@ -108,6 +112,7 @@ class PlanDashboardData:
     can_create_root_plan: bool
     root_plan_exists: bool
     summary: PlanDashboardSummary
+    request_stats: "PlanRequestStats"
     tree: PlanTreeNode | None
     trees: list[PlanTreeNode] = field(default_factory=list)
 
@@ -133,20 +138,33 @@ class PlanOption:
     is_closed: bool
 
 
+@dataclass(frozen=True)
+class PlanRequestStats:
+    total_requests: int
+    distributed_requests: int
+    unallocated_requests: int
+    request_fact_amount: Decimal
+    unallocated_amount: Decimal
+    completion_percent: Decimal
+
+
 class PlanService:
     def __init__(
         self,
         plans: EconomyPlanRepository,
         users: UserRepository,
+        requests: RequestRepository,
     ):
         self._plans = plans
         self._users = users
+        self._requests = requests
 
     async def create_root_plan(
         self,
         *,
         period: str | None,
         period_start: date | None,
+        period_end: date | None,
         name: str,
         plan_amount: Decimal | float | int | str,
         current_user: CurrentUser,
@@ -158,6 +176,7 @@ class PlanService:
         plan_start, plan_end, _month_start, _month_end = self._resolve_period_bounds(
             period=period,
             period_start=period_start,
+            period_end=period_end,
         )
 
         normalized_name = normalize_plan_name(name)
@@ -192,6 +211,8 @@ class PlanService:
         name: str,
         plan_amount: Decimal | float | int | str,
         period_start: date | None,
+        period_end: date | None,
+        child_user_id: str | None,
         current_user: CurrentUser,
     ) -> EconomyPlan:
         UserPolicy.ensure_can_view_plan(current_user)
@@ -207,14 +228,24 @@ class PlanService:
         await self._ensure_owner_has_direct_subordinates(parent_plan.id_user)
         await self._ensure_available_amount(parent_plan=parent_plan, requested_amount=normalized_amount)
 
-        child_period_start = self._resolve_child_period_start(
+        child_period_start, child_period_end = self._resolve_child_period_bounds(
             parent_plan=parent_plan,
             candidate_start=period_start,
+            candidate_end=period_end,
         )
-        child_period_end = parent_plan.period_end
+        target_user_id = parent_plan.id_user
+        target_parent_snapshot = parent_plan.id_parent_user_snapshot
+        if child_user_id is not None and child_user_id != parent_plan.id_user:
+            child_user = await self._users.get_by_id(child_user_id)
+            if child_user is None:
+                raise NotFound("Child user not found")
+            if child_user.id_parent != parent_plan.id_user:
+                raise Forbidden("Subplan assignee must be a direct subordinate of parent plan owner")
+            target_user_id = child_user.id
+            target_parent_snapshot = parent_plan.id_user
         normalized_name = normalize_plan_name(name)
         exists_identical = await self._plans.exists_identical_plan(
-            user_id=parent_plan.id_user,
+            user_id=target_user_id,
             parent_plan_id=parent_plan.id,
             name=normalized_name,
             period_start=child_period_start,
@@ -225,9 +256,9 @@ class PlanService:
 
         return await self._plans.create(
             name=normalized_name,
-            user_id=parent_plan.id_user,
+            user_id=target_user_id,
             parent_plan_id=parent_plan.id,
-            parent_user_id_snapshot=parent_plan.id_parent_user_snapshot,
+            parent_user_id_snapshot=target_parent_snapshot,
             period_start=child_period_start,
             period_end=child_period_end,
             plan_amount=normalized_amount,
@@ -294,10 +325,11 @@ class PlanService:
         plan_id: int,
         new_amount: Decimal | float | int | str | None,
         new_name: str | None,
+        new_period_end: date | None,
         current_user: CurrentUser,
     ) -> EconomyPlan:
         UserPolicy.ensure_can_view_plan(current_user)
-        if new_amount is None and new_name is None:
+        if new_amount is None and new_name is None and new_period_end is None:
             raise Conflict("Nothing to update")
 
         plan = await self._plans.get_by_id_for_update(plan_id=plan_id)
@@ -313,7 +345,17 @@ class PlanService:
                 raise Conflict("Plan amount cannot be negative")
 
         normalized_name = normalize_plan_name(new_name) if new_name is not None else None
-        await self._plans.update(plan=plan, name=normalized_name, plan_amount=normalized_amount)
+        normalized_period_end = None
+        if new_period_end is not None:
+            if new_period_end < plan.period_start:
+                raise Conflict("Plan period end cannot be earlier than period start")
+            normalized_period_end = new_period_end
+        await self._plans.update(
+            plan=plan,
+            name=normalized_name,
+            plan_amount=normalized_amount,
+            period_end=normalized_period_end,
+        )
         return plan
 
     async def delete_child_plan(
@@ -387,6 +429,8 @@ class PlanService:
         trees = await self._build_trees_for_roots(
             period_plans=period_plans,
             root_plans=root_plans,
+            period_start=month_start,
+            period_end=month_end,
             current_user=current_user,
         )
         if not trees:
@@ -402,6 +446,80 @@ class PlanService:
         UserPolicy.ensure_can_view_plan(current_user)
         dashboard = await self.get_dashboard_plan_tab(period=period, current_user=current_user)
         return dashboard.summary
+
+    async def get_request_stats(
+        self,
+        *,
+        period_start: date,
+        period_end: date,
+        current_user: CurrentUser,
+        plan_id: int | None = None,
+    ) -> PlanRequestStats:
+        UserPolicy.ensure_can_view_plan(current_user)
+        if period_start > period_end:
+            raise Conflict("date_from must be less than or equal to date_to")
+
+        period_plans = await self._load_relevant_period_plans(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        if not period_plans:
+            return PlanRequestStats(
+                total_requests=0,
+                distributed_requests=0,
+                unallocated_requests=0,
+                request_fact_amount=Decimal("0.00"),
+                unallocated_amount=Decimal("0.00"),
+                completion_percent=Decimal("0.00"),
+            )
+
+        if plan_id is not None:
+            plan_by_id = {plan.id: plan for plan in period_plans}
+            selected_plan = plan_by_id.get(plan_id)
+            if selected_plan is None:
+                raise NotFound("Plan not found for selected period")
+            await self._ensure_can_manage_node(
+                current_user=current_user,
+                plan_owner_user_id=selected_plan.id_user,
+            )
+            trees = await self._build_trees_for_roots(
+                period_plans=period_plans,
+                root_plans=[selected_plan],
+                period_start=period_start,
+                period_end=period_end,
+                current_user=current_user,
+            )
+            return await self._request_stats_from_trees(
+                trees=trees,
+                period_start=period_start,
+                period_end=period_end,
+            )
+
+        my_entry_plans = self._find_entry_plans_for_user(
+            period_plans=period_plans,
+            user_id=current_user.user_id,
+        )
+        if not my_entry_plans:
+            return PlanRequestStats(
+                total_requests=0,
+                distributed_requests=0,
+                unallocated_requests=0,
+                request_fact_amount=Decimal("0.00"),
+                unallocated_amount=Decimal("0.00"),
+                completion_percent=Decimal("0.00"),
+            )
+        trees = await self._build_trees_for_roots(
+            period_plans=period_plans,
+            root_plans=my_entry_plans,
+            period_start=period_start,
+            period_end=period_end,
+            current_user=current_user,
+        )
+        return await self._request_stats_from_trees(
+            trees=trees,
+            period_start=period_start,
+            period_end=period_end,
+        )
 
     async def get_dashboard_plan_tab(
         self,
@@ -434,6 +552,14 @@ class PlanService:
                 can_create_root_plan=can_create_root_plan,
                 root_plan_exists=False,
                 summary=empty_summary,
+                request_stats=PlanRequestStats(
+                    total_requests=0,
+                    distributed_requests=0,
+                    unallocated_requests=0,
+                    request_fact_amount=Decimal("0.00"),
+                    unallocated_amount=Decimal("0.00"),
+                    completion_percent=Decimal("0.00"),
+                ),
                 tree=None,
                 trees=[],
             )
@@ -441,9 +567,16 @@ class PlanService:
         trees = await self._build_trees_for_roots(
             period_plans=period_plans,
             root_plans=my_entry_plans,
+            period_start=month_start,
+            period_end=month_end,
             current_user=current_user,
         )
         summary = await self._summary_from_trees(trees, period_start=month_start, period_end=month_end)
+        request_stats = await self._request_stats_from_trees(
+            trees=trees,
+            period_start=month_start,
+            period_end=month_end,
+        )
         return PlanDashboardData(
             period=format_month_period(month_start),
             period_start=month_start,
@@ -451,6 +584,7 @@ class PlanService:
             can_create_root_plan=can_create_root_plan,
             root_plan_exists=True,
             summary=summary,
+            request_stats=request_stats,
             tree=(trees[0] if trees else None),
             trees=trees,
         )
@@ -494,6 +628,14 @@ class PlanService:
                 can_create_root_plan=can_create_root_plan,
                 root_plan_exists=False,
                 summary=empty_summary,
+                request_stats=PlanRequestStats(
+                    total_requests=0,
+                    distributed_requests=0,
+                    unallocated_requests=0,
+                    request_fact_amount=Decimal("0.00"),
+                    unallocated_amount=Decimal("0.00"),
+                    completion_percent=Decimal("0.00"),
+                ),
                 tree=None,
                 trees=[],
             )
@@ -501,9 +643,16 @@ class PlanService:
         trees = await self._build_trees_for_roots(
             period_plans=period_plans,
             root_plans=my_entry_plans,
+            period_start=date_from,
+            period_end=date_to,
             current_user=current_user,
         )
         summary = await self._summary_from_trees(trees, period_start=date_from, period_end=date_to)
+        request_stats = await self._request_stats_from_trees(
+            trees=trees,
+            period_start=date_from,
+            period_end=date_to,
+        )
         return PlanDashboardData(
             period=f"{date_from.isoformat()}..{date_to.isoformat()}",
             period_start=date_from,
@@ -511,6 +660,7 @@ class PlanService:
             can_create_root_plan=can_create_root_plan,
             root_plan_exists=True,
             summary=summary,
+            request_stats=request_stats,
             tree=(trees[0] if trees else None),
             trees=trees,
         )
@@ -736,11 +886,53 @@ class PlanService:
             stack.extend(node.children)
         return list(plan_ids)
 
+    async def _request_stats_from_trees(
+        self,
+        *,
+        trees: list[PlanTreeNode],
+        period_start: date,
+        period_end: date,
+    ) -> PlanRequestStats:
+        if not trees:
+            return PlanRequestStats(
+                total_requests=0,
+                distributed_requests=0,
+                unallocated_requests=0,
+                request_fact_amount=Decimal("0.00"),
+                unallocated_amount=Decimal("0.00"),
+                completion_percent=Decimal("0.00"),
+            )
+        plan_ids = self._collect_tree_plan_ids(trees)
+        owner_ids: set[str] = set()
+        stack = list(trees)
+        while stack:
+            node = stack.pop()
+            owner_ids.add(node.user_id)
+            stack.extend(node.children)
+        aggregated = await self._requests.aggregate_plan_request_stats(
+            owner_ids=list(owner_ids),
+            plan_ids=plan_ids,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        plan_total = sum((tree.plan_amount for tree in trees), Decimal("0.00"))
+        completion_percent = percent(aggregated.request_fact_amount, plan_total)
+        return PlanRequestStats(
+            total_requests=aggregated.total_requests,
+            distributed_requests=aggregated.distributed_requests,
+            unallocated_requests=aggregated.unallocated_requests,
+            request_fact_amount=aggregated.request_fact_amount,
+            unallocated_amount=aggregated.unallocated_amount,
+            completion_percent=completion_percent,
+        )
+
     async def _build_trees_for_roots(
         self,
         *,
         period_plans: list[EconomyPlan],
         root_plans: list[EconomyPlan],
+        period_start: date,
+        period_end: date,
         current_user: CurrentUser,
     ) -> list[PlanTreeNode]:
         if not period_plans or not root_plans:
@@ -780,6 +972,17 @@ class PlanService:
 
         distribution_by_plan_id = await self._plans.fetch_distribution_by_plan_ids(plan_ids=[plan.id for plan in subtree_plans])
         self_fact_by_plan_id = await self._plans.aggregate_active_request_facts_by_plan_ids(plan_ids=[plan.id for plan in subtree_plans])
+        in_progress_counts_rows = await self._requests.count_in_progress_requests_by_owner(
+            owner_ids=list({plan.id_user for plan in subtree_plans}),
+        )
+        in_progress_count_by_user_id: dict[str, int] = {}
+        for owner_user_id, _status, count in in_progress_counts_rows:
+            in_progress_count_by_user_id[owner_user_id] = in_progress_count_by_user_id.get(owner_user_id, 0) + int(count or 0)
+        period_fact_by_plan_id = await self._plans.aggregate_closed_request_facts_by_plan_ids(
+            plan_ids=[plan.id for plan in subtree_plans],
+            period_start=period_start,
+            period_end=period_end,
+        )
 
         return [
             self._build_tree_node(
@@ -787,6 +990,8 @@ class PlanService:
                 by_parent_plan_id=by_parent_plan_id,
                 distribution_by_plan_id=distribution_by_plan_id,
                 self_fact_by_plan_id=self_fact_by_plan_id,
+                in_progress_count_by_user_id=in_progress_count_by_user_id,
+                period_fact_by_plan_id=period_fact_by_plan_id,
                 user_meta_by_id=user_meta_by_id,
                 managers_with_subordinates=managers_with_subordinates,
                 current_user=current_user,
@@ -801,6 +1006,8 @@ class PlanService:
         by_parent_plan_id: dict[int | None, list[EconomyPlan]],
         distribution_by_plan_id: dict[int, PlanDistributionRow],
         self_fact_by_plan_id: dict[int, Decimal],
+        in_progress_count_by_user_id: dict[str, int],
+        period_fact_by_plan_id: dict[int, Decimal],
         user_meta_by_id: dict[str, dict[str, str | None]],
         managers_with_subordinates: set[str],
         current_user: CurrentUser,
@@ -812,6 +1019,8 @@ class PlanService:
                 by_parent_plan_id=by_parent_plan_id,
                 distribution_by_plan_id=distribution_by_plan_id,
                 self_fact_by_plan_id=self_fact_by_plan_id,
+                in_progress_count_by_user_id=in_progress_count_by_user_id,
+                period_fact_by_plan_id=period_fact_by_plan_id,
                 user_meta_by_id=user_meta_by_id,
                 managers_with_subordinates=managers_with_subordinates,
                 current_user=current_user,
@@ -841,6 +1050,11 @@ class PlanService:
 
         remaining_amount = (plan_total - fact_amount_subtree).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         progress_percent = percent(fact_amount_subtree, plan_total)
+        period_fact_amount = period_fact_by_plan_id.get(plan.id, Decimal("0.00")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        period_progress_percent = percent(period_fact_amount, plan_total)
 
         user_meta = user_meta_by_id.get(plan.id_user, {})
         can_manage = self._can_manage_node_sync(
@@ -876,6 +1090,9 @@ class PlanService:
             unallocated_amount=personal_plan_amount,
             fact_amount_self=fact_amount_self,
             fact_amount_subtree=fact_amount_subtree,
+            period_fact_amount=period_fact_amount,
+            period_progress_percent=period_progress_percent,
+            in_progress_requests_count=in_progress_count_by_user_id.get(plan.id_user, 0),
             remaining_amount=remaining_amount,
             progress_percent=progress_percent,
             children=child_nodes,
@@ -971,28 +1188,43 @@ class PlanService:
         *,
         period: str | None,
         period_start: date | None,
+        period_end: date | None,
     ) -> tuple[date, date, date, date]:
         if period_start is not None:
-            month_start, month_end = month_bounds_for_date(period_start)
-            return period_start, month_end, month_start, month_end
+            if period_end is None:
+                month_start, month_end = month_bounds_for_date(period_start)
+                return period_start, month_end, month_start, month_end
+            if period_end < period_start:
+                raise Conflict("Plan period end cannot be earlier than period start")
+            month_start, _month_end = month_bounds_for_date(period_start)
+            return period_start, period_end, month_start, period_end
         if period is None:
             raise Conflict("Either period or period_start is required")
         month_start, month_end = parse_month_period(period)
         return month_start, month_end, month_start, month_end
 
-    def _resolve_child_period_start(
+    def _resolve_child_period_bounds(
         self,
         *,
         parent_plan: EconomyPlan,
         candidate_start: date | None,
-    ) -> date:
+        candidate_end: date | None,
+    ) -> tuple[date, date]:
         if candidate_start is None:
-            return parent_plan.period_start
-        if candidate_start < parent_plan.period_start:
+            child_start = parent_plan.period_start
+        else:
+            child_start = candidate_start
+        if child_start < parent_plan.period_start:
             raise Conflict("Child plan period start cannot be earlier than parent period start")
-        if candidate_start > parent_plan.period_end:
+        if child_start > parent_plan.period_end:
             raise Conflict("Child plan period start cannot be later than parent period end")
-        return candidate_start
+        if candidate_end is None:
+            return child_start, parent_plan.period_end
+        if candidate_end < child_start:
+            raise Conflict("Child plan period end cannot be earlier than child plan period start")
+        if candidate_end > parent_plan.period_end:
+            raise Conflict("Child plan period end cannot be later than parent plan period end")
+        return child_start, candidate_end
 
     def _is_plan_closed(self, plan: EconomyPlan) -> bool:
         # Plan is considered closed only after explicit close action.

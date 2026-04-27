@@ -5,6 +5,8 @@ type CreateSubplanPayload = {
   parent_plan_id: number;
   name: string;
   period_start?: string;
+  period_end?: string;
+  child_user_id?: string;
   plan_amount: number;
 };
 

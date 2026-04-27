@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
@@ -22,6 +23,14 @@ from app.models.orm_models import (
     RequestOfferStats,
     User,
 )
+
+@dataclass(frozen=True)
+class PlanRequestStatsRow:
+    total_requests: int
+    distributed_requests: int
+    unallocated_requests: int
+    request_fact_amount: Decimal
+    unallocated_amount: Decimal
 
 
 class RequestRepository:
@@ -539,6 +548,78 @@ class RequestRepository:
             owner_user_id: Decimal(str(fact_amount or 0))
             for owner_user_id, fact_amount in result.all()
         }
+
+    async def aggregate_plan_request_stats(
+        self,
+        *,
+        owner_ids: list[str],
+        plan_ids: list[int],
+        period_start: date,
+        period_end: date,
+    ) -> PlanRequestStatsRow:
+        if not owner_ids:
+            return PlanRequestStatsRow(
+                total_requests=0,
+                distributed_requests=0,
+                unallocated_requests=0,
+                request_fact_amount=Decimal("0.00"),
+                unallocated_amount=Decimal("0.00"),
+            )
+
+        start_dt = datetime.combine(period_start, time.min)
+        end_dt = datetime.combine(period_end + timedelta(days=1), time.min)
+        if not plan_ids:
+            plan_ids = [-1]
+
+        stmt = (
+            text(
+                """
+                SELECT
+                  COUNT(*) AS total_requests,
+                  COUNT(*) FILTER (WHERE r.id_plan IN :plan_ids) AS distributed_requests,
+                  COUNT(*) FILTER (WHERE r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids) AS unallocated_requests,
+                  COALESCE(SUM(
+                    CASE WHEN r.id_plan IN :plan_ids
+                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
+                      ELSE 0
+                    END
+                  ), 0) AS request_fact_amount,
+                  COALESCE(SUM(
+                    CASE WHEN r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids
+                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
+                      ELSE 0
+                    END
+                  ), 0) AS unallocated_amount
+                FROM requests r
+                WHERE r.status = 'closed'
+                  AND r.id_user IN :owner_ids
+                  AND r.closed_at IS NOT NULL
+                  AND r.closed_at >= :start_dt
+                  AND r.closed_at < :end_dt
+                """
+            )
+            .bindparams(
+                bindparam("owner_ids", expanding=True),
+                bindparam("plan_ids", expanding=True),
+            )
+        )
+        result = await self._session.execute(
+            stmt,
+            {
+                "owner_ids": owner_ids,
+                "plan_ids": plan_ids,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+            },
+        )
+        row = result.one()
+        return PlanRequestStatsRow(
+            total_requests=int(row.total_requests or 0),
+            distributed_requests=int(row.distributed_requests or 0),
+            unallocated_requests=int(row.unallocated_requests or 0),
+            request_fact_amount=Decimal(str(row.request_fact_amount or 0)).quantize(Decimal("0.01")),
+            unallocated_amount=Decimal(str(row.unallocated_amount or 0)).quantize(Decimal("0.01")),
+        )
 
     def _quote_identifier(self, value: str) -> str:
         escaped = value.replace('"', '""')
