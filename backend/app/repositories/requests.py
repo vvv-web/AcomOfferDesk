@@ -360,6 +360,24 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.all())
+
+    async def list_open_with_stats_and_files_by_owner_ids(
+        self,
+        *,
+        owner_ids: list[str],
+    ) -> list[tuple[Request, RequestOfferStats | None, Profile | None]]:
+        if not owner_ids:
+            return []
+
+        stmt = (
+            select(Request, RequestOfferStats, Profile)
+            .outerjoin(RequestOfferStats, RequestOfferStats.request_id == Request.id)
+            .outerjoin(Profile, Profile.id == Request.id_user)
+            .where(Request.status == "open", Request.id_user.in_(owner_ids))
+            .order_by(Request.created_at.desc(), Request.id.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
     
     async def count_in_progress_requests_by_owner(
         self,
@@ -385,6 +403,7 @@ class RequestRepository:
         self,
         *,
         operator_role_id: int,
+        owner_ids: list[str] | None = None,
     ) -> list[Request]:
         stmt = (
             select(Request)
@@ -392,6 +411,10 @@ class RequestRepository:
             .where(User.id_role == operator_role_id, Request.status.in_(["open", "review"]))
             .order_by(Request.created_at.desc(), Request.id.desc())
         )
+        if owner_ids is not None:
+            if not owner_ids:
+                return []
+            stmt = stmt.where(Request.id_user.in_(owner_ids))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
     

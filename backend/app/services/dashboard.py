@@ -130,6 +130,7 @@ class DashboardService:
             staff_owner_ids = list(by_id.keys())
             my_owner_ids: list[str] = []
             assigned_owner_ids = list(by_id.keys())
+            hierarchy_scope_owner_ids: list[str] | None = None
         else:
             descendant_ids: set[str] = set()
             for user_id in by_id:
@@ -148,8 +149,15 @@ class DashboardService:
             if current_user.role_id == settings.lead_economist_role_id and current_user.user_id in by_id:
                 staff_owner_ids = [current_user.user_id, *staff_owner_ids]
 
-            my_owner_ids = [current_user.user_id] if current_user.role_id == settings.lead_economist_role_id else []
+            my_owner_ids = (
+                [current_user.user_id]
+                if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}
+                else []
+            )
             assigned_owner_ids = list(descendant_ids)
+            hierarchy_scope_owner_ids = await self._resolve_hierarchy_scope_owner_ids(
+                current_user_id=current_user.user_id,
+            )
 
         request_counters = await self._requests.count_in_progress_requests_by_owner(
             owner_ids=staff_owner_ids,
@@ -192,8 +200,13 @@ class DashboardService:
         tree.sort(key=lambda item: (item.role_id, item.full_name or item.user_id))
         self._sort_children(tree)
 
+        unassigned_owner_ids = hierarchy_scope_owner_ids
+        if current_user.role_id == settings.project_manager_role_id:
+            unassigned_owner_ids = None
+
         unassigned_rows = await self._requests.list_unassigned_requests(
             operator_role_id=settings.operator_role_id,
+            owner_ids=unassigned_owner_ids,
         )
         unassigned_requests = [
             DashboardRequestItem(
@@ -334,6 +347,25 @@ class DashboardService:
                 items=savings_items,
             ),
         )
+
+    async def _resolve_hierarchy_scope_owner_ids(self, *, current_user_id: str) -> list[str]:
+        pairs = await self._users.list_active_user_parent_pairs()
+        children_by_parent: dict[str, list[str]] = {}
+        for user_id, parent_id in pairs:
+            if parent_id:
+                children_by_parent.setdefault(parent_id, []).append(user_id)
+
+        visible_ids: set[str] = {current_user_id}
+        stack: list[str] = [current_user_id]
+        while stack:
+            manager_id = stack.pop()
+            for child_id in children_by_parent.get(manager_id, []):
+                if child_id in visible_ids:
+                    continue
+                visible_ids.add(child_id)
+                stack.append(child_id)
+
+        return list(visible_ids)
 
     def _sort_children(self, nodes: list[DashboardEconomistNode]) -> None:
         for node in nodes:

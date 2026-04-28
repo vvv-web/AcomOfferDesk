@@ -631,8 +631,8 @@ class RequestService:
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.ensure_can_view_requests(current_user)
         owner_scope_ids: list[str] | None = None
-        if current_user.role_id == settings.lead_economist_role_id:
-            owner_scope_ids = await self._resolve_visible_owner_ids_for_lead(current_user=current_user)
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+            owner_scope_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
 
         rows = await self._requests.list_with_stats_and_files(
             current_user_id=current_user.user_id,
@@ -744,7 +744,11 @@ class RequestService:
     
     async def list_open_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
-        rows = await self._requests.list_open_with_stats_and_files()
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+            owner_scope_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+            rows = await self._requests.list_open_with_stats_and_files_by_owner_ids(owner_ids=owner_scope_ids)
+        else:
+            rows = await self._requests.list_open_with_stats_and_files()
 
         return [
             RequestListItem(
@@ -779,8 +783,8 @@ class RequestService:
             raise NotFound("Request not found")
 
         request, stats, owner_profile = request_row
-        if current_user.role_id == settings.lead_economist_role_id:
-            allowed_owner_ids = await self._resolve_visible_owner_ids_for_lead(current_user=current_user)
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+            allowed_owner_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
             if request.id_user not in set(allowed_owner_ids):
                 raise Forbidden("Request is outside your management scope")
         request_files = await self._requests.list_files(request_id=request_id)
@@ -850,7 +854,7 @@ class RequestService:
             offers=list(offers_by_id.values()),
         )
 
-    async def _resolve_visible_owner_ids_for_lead(self, *, current_user: CurrentUser) -> list[str]:
+    async def _resolve_visible_owner_ids_for_manager(self, *, current_user: CurrentUser) -> list[str]:
         rows = await self._users.list_active_user_parent_pairs()
         children_by_parent: dict[str, list[str]] = {}
         for user_id, parent_id in rows:
