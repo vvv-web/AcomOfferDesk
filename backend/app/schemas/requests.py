@@ -61,6 +61,7 @@ class RequestItemSchema(BaseModel):
     owner_user_id: str
     owner_full_name: str | None
     chosen_offer_id: int | None
+    id_plan: int | None = None
     stats: RequestStatsSchema
     unread_messages_count: int
     files: list[RequestFileSchema]
@@ -89,6 +90,7 @@ class OpenRequestItemSchema(BaseModel):
     owner_user_id: str
     owner_full_name: str | None
     chosen_offer_id: int | None
+    id_plan: int | None = None
     files: list[RequestFileSchema]
     offers: list[OfferedRequestOfferSchema] = Field(default_factory=list)
     actions: RequestActionsSchema = Field(default_factory=RequestActionsSchema)
@@ -170,6 +172,7 @@ class RequestEditPayload(BaseModel):
     owner_user_id: str | None = None
     initial_amount: float | None = None
     final_amount: float | None = None
+    id_plan: int | None = None
 
 
 class RequestEmailNotificationPayload(BaseModel):

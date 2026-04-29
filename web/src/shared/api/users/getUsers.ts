@@ -11,7 +11,6 @@ type UsersRow = {
   role_id?: number;
   id_parent?: string | null;
   status?: string;
-  tg_user_id?: number | null;
   full_name?: string | null;
   phone?: string | null;
   mail?: string | null;
@@ -21,7 +20,6 @@ type UsersRow = {
   company_mail?: string | null;
   address?: string | null;
   note?: string | null;
-  tg_status?: string | null;
   actions?: {
     can_view_profile?: boolean;
     can_update_status?: boolean;
@@ -35,7 +33,6 @@ type UsersRow = {
     id_role?: number;
     role_id?: number;
     status?: string;
-    tg_user_id?: number | null;
   };
   profiles?: {
     id?: string;
@@ -51,10 +48,6 @@ type UsersRow = {
     mail?: string | null;
     address?: string | null;
     note?: string | null;
-  };
-  tg_users?: {
-    id?: number;
-    status?: string | null;
   };
 };
 
@@ -74,8 +67,6 @@ const normalizeUserItem = (item: UsersRow): UserListItem => {
   const users = item.users;
   const profile = item.profiles;
   const company = item.company_contacts;
-  const tgUser = item.tg_users;
-
   const userId = item.user_id ?? users?.id ?? item.id ?? profile?.id ?? company?.id ?? '';
   const roleId = item.role_id ?? users?.role_id ?? item.id_role ?? users?.id_role ?? 0;
   const companyPhone = item.company_phone ?? company?.phone ?? null;
@@ -89,8 +80,6 @@ const normalizeUserItem = (item: UsersRow): UserListItem => {
     full_name: item.full_name ?? profile?.full_name ?? null,
     phone: item.phone ?? profile?.phone ?? null,
     mail: item.mail ?? profile?.mail ?? null,
-    tg_user_id: item.tg_user_id ?? users?.tg_user_id ?? tgUser?.id ?? null,
-    tg_status: item.tg_status ?? tgUser?.status ?? null,
     company_name: item.company_name ?? company?.company_name ?? null,
     inn: item.inn ?? company?.inn ?? null,
     company_phone: companyPhone,

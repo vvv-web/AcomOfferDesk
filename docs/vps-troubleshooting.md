@@ -4,6 +4,14 @@
 
 ---
 
+## Keycloak / OAuth: **500** на `/api/v1/auth/callback`, в логах `user_auth_accounts` does not exist
+
+**Причина:** схема **`order_database`** на VPS не доведена миграциями Flyway (частый случай — **пустой** каталог **`/opt/order_database/flyway/sql`** при живом Postgres и только **baseline** в **`flyway_schema_history`**).
+
+**Куда смотреть:** пошагово — **[order-database-vps.md](./order-database-vps.md)** (раздел **«Рассинхрон: пустой flyway/sql на VPS»**). Полный пересоздающий том сценарий — только **`scripts/install-order-database-vps.sh`**, если осознанно готовы к новому volume.
+
+---
+
 ## 502 / «сервер недоступен» после `docker compose up --force-recreate backend`
 
 **Причина:** контейнер **`gateway`** (nginx) продолжает проксировать на **старый IP** `backend` в Docker-сети.
@@ -79,7 +87,6 @@ proxy_read_timeout 86400;
 
 ## `.env`
 
-- Не дублировать **`WEB_BASE_URL`** / **`PUBLIC_BACKEND_BASE_URL`** / **`TG_LINK_SECRET`**.
-- **`tg_bot/.env`** — только ключи из **`tg_bot/env.example`**, не копия **`backend/.env`**.
+- Не дублировать **`WEB_BASE_URL`** / **`PUBLIC_BACKEND_BASE_URL`**.
 - **`DATABASE_URL`:** хост Postgres = имя сервиса в вашей Docker-сети (часто **`order-database-postgres`**).
 - Публичные URL — **ваш** домен/туннель.

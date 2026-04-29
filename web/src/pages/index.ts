@@ -1,6 +1,6 @@
 export { AdminPage } from './admin';
-export { AccountStatePage, AuthCallbackPage, AuthPage, TgAuthPage, TgRegisterPage, VerifyEmailPage } from './auth';
-export { ProjectManagerDashboardPage, ProjectManagerSavingsPage } from './dashboard';
+export { AccountStatePage, AuthCallbackPage, AuthPage, VerifyEmailPage } from './auth';
+export { ProjectManagerDashboardPage, ProjectManagerPlanPage, ProjectManagerSavingsPage } from './dashboard';
 export { FeedbackPage } from './feedback';
 export { OfferWorkspacePage } from './offers';
 export {

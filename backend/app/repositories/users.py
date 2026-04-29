@@ -16,6 +16,7 @@ from app.models.orm_models import (
     RequestHiddenContractor,
     Role,
     TgUser,
+    EconomyPlan,
     User,
     UserStatusPeriod,
 )
@@ -130,6 +131,25 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def list_direct_subordinates_with_profiles_and_roles(
+        self,
+        *,
+        manager_user_id: str,
+        include_inactive: bool = False,
+    ) -> list[tuple[User, Profile | None, Role]]:
+        stmt = (
+            select(User, Profile, Role)
+            .options(with_expression(User.tg_user_id, _telegram_id_expr()))
+            .join(Role, Role.id == User.id_role)
+            .outerjoin(Profile, Profile.id == User.id)
+            .where(User.id_parent == manager_user_id)
+            .order_by(User.id_role.asc(), User.id.asc())
+        )
+        if not include_inactive:
+            stmt = stmt.where(User.status == "active")
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
     async def list_users_with_profiles(self, role_id: int | None = None) -> list[tuple[User, Profile | None]]:
         stmt = (
             select(User, Profile)
@@ -218,6 +238,33 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
+    async def list_by_ids_with_profiles_and_roles(
+        self,
+        *,
+        user_ids: list[str],
+    ) -> list[tuple[User, Profile | None, Role]]:
+        if not user_ids:
+            return []
+        stmt = (
+            select(User, Profile, Role)
+            .options(with_expression(User.tg_user_id, _telegram_id_expr()))
+            .join(Role, Role.id == User.id_role)
+            .outerjoin(Profile, Profile.id == User.id)
+            .where(User.id.in_(user_ids))
+            .order_by(User.id_role.asc(), User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
+    async def list_active_user_parent_pairs(self) -> list[tuple[str, str | None]]:
+        stmt = (
+            select(User.id, User.id_parent)
+            .where(User.status == "active")
+            .order_by(User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
     async def list_staff_with_profiles_and_roles_for_dashboard(
         self,
         *,
@@ -296,6 +343,14 @@ class UserRepository:
         )
         await self._session.execute(
             update(UserStatusPeriod).where(UserStatusPeriod.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(EconomyPlan).where(EconomyPlan.id_user == old_user_id).values(id_user=new_user_id)
+        )
+        await self._session.execute(
+            update(EconomyPlan)
+            .where(EconomyPlan.id_parent_user_snapshot == old_user_id)
+            .values(id_parent_user_snapshot=new_user_id)
         )
         await self._session.execute(
             update(User).where(User.id_parent == old_user_id).values(id_parent=new_user_id)

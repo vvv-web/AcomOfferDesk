@@ -100,7 +100,7 @@ export const useOfferWorkspace = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [isUpdatingOfferStatus, setIsUpdatingOfferStatus] = useState(false);
   const [offerDecisionStatus, setOfferDecisionStatus] = useState<'accepted' | 'rejected' | ''>('');
   const [isUpdatingOfferAmount, setIsUpdatingOfferAmount] = useState(false);

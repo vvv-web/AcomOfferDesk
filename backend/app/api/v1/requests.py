@@ -81,6 +81,7 @@ def _request_item_schema(current_user: CurrentUser, item) -> RequestItemSchema:
         owner_user_id=item.owner_user_id,
         owner_full_name=item.owner_full_name,
         chosen_offer_id=item.chosen_offer_id,
+        id_plan=item.id_plan,
         stats=_request_stats_schema(item),
         unread_messages_count=item.unread_messages_count,
         files=[_request_file_schema(file_item) for file_item in item.files],
@@ -111,6 +112,7 @@ def _open_request_item_schema(current_user: CurrentUser, item) -> OpenRequestIte
         owner_user_id=item.owner_user_id,
         owner_full_name=item.owner_full_name,
         chosen_offer_id=(None if current_user.role_id == settings.contractor_role_id else item.chosen_offer_id),
+        id_plan=item.id_plan,
         files=[_request_file_schema(file_item) for file_item in item.files],
         offers=[
             OfferedRequestOfferSchema(
@@ -242,6 +244,7 @@ async def get_request_details(
                 owner_user_id=item.owner_user_id,
                 owner_full_name=item.owner_full_name,
                 chosen_offer_id=item.chosen_offer_id,
+                id_plan=item.id_plan,
                 stats=_request_stats_schema(item),
                 unread_messages_count=item.unread_messages_count,
                 files=[_request_file_schema(file_item) for file_item in item.files],
@@ -293,6 +296,7 @@ async def create_request(
     deadline_at: datetime = Form(...),
     description: str | None = Form(default=None),
     initial_amount: float | None = Form(default=None),
+    id_plan: int | None = Form(default=None),
     additional_emails: list[str] | None = Form(default=None),
     hidden_contractor_ids: list[str] | None = Form(default=None),
     files: list[UploadFile] = File(...),
@@ -330,6 +334,7 @@ async def create_request(
                 deadline_at=deadline_at,
                 description=description,
                 initial_amount=initial_amount,
+                id_plan=id_plan,
                 files=file_inputs,
                 additional_emails=additional_emails,
                 hidden_contractor_ids=hidden_contractor_ids,
@@ -365,6 +370,8 @@ async def update_request(
                 owner_user_id=payload.owner_user_id,
                 initial_amount=payload.initial_amount,
                 final_amount=payload.final_amount,
+                id_plan=payload.id_plan,
+                id_plan_provided=("id_plan" in payload.model_fields_set),
             ),
         )
 

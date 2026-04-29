@@ -1,4 +1,5 @@
-import { InputAdornment, MenuItem, Stack, SvgIcon, TextField } from '@mui/material';
+import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
+import { InputAdornment, MenuItem, Stack, TextField } from '@mui/material';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import { DatePickerField } from './DatePickerField';
 
@@ -25,10 +26,7 @@ type UnavailabilityPeriodEditorProps = {
 };
 
 const ReasonIcon = () => (
-  <SvgIcon fontSize="small" sx={{ color: 'text.secondary' }}>
-    <path d="M4 4h16v14H4z" fill="none" />
-    <path d="M6 4a2 2 0 0 0-2 2v12h2V6h12v2h2V6a2 2 0 0 0-2-2H6Zm3 5v2h9V9H9Zm0 4v2h6v-2H9ZM4 20h16v-2H4v2Z" />
-  </SvgIcon>
+  <EventNoteOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
 );
 
 const fieldSx = {

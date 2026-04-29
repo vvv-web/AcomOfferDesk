@@ -16,6 +16,7 @@ from app.repositories.profiles import ProfileRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_contact_channels import UserContactChannelRepository
 from app.repositories.tg_users import TgUserRepository
+from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
@@ -229,7 +230,7 @@ class UserRegistrationService:
             if parent_user is None:
                 raise NotFound("Parent user not found")
             parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_role.role != ROLE_NAME_PROJECT_MANAGER:
+            if parent_role is None or parent_user.id_role != settings.project_manager_role_id:
                 raise Conflict("Lead economist user can have only project manager")
         else:
             id_parent = None
@@ -301,6 +302,7 @@ class ContractorRegistrationService:
         address: str,
         note: str,
     ) -> User:
+        telegram_subject = telegram_subject_value(tg_user_id)
         if await self._users.exists(login):
             raise Conflict("User already exists")
         existing_by_tg = await self._users.get_by_tg_user_id(tg_user_id)
@@ -335,7 +337,7 @@ class ContractorRegistrationService:
             UserAuthAccount(
                 id_user=login,
                 provider="telegram",
-                external_subject_id=str(tg_user_id),
+                external_subject_id=telegram_subject,
                 external_username=None,
                 external_email=None,
                 is_active=True,
@@ -345,7 +347,7 @@ class ContractorRegistrationService:
             UserContactChannel(
                 id_user=login,
                 channel_type="telegram",
-                channel_value=str(tg_user_id),
+                channel_value=telegram_subject,
                 is_verified=False,
                 verified_at=None,
                 is_primary=True,
@@ -1273,6 +1275,8 @@ class UserStatusService:
             raise Conflict("Unsupported users.status value")
         if tg_status is not None and tg_status not in self.VALID_TG_STATUSES:
             raise Conflict("Unsupported Telegram status value")
+        if tg_status is not None and not settings.telegram_legacy_enabled:
+            raise Forbidden("Telegram legacy status updates are disabled")
 
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -1299,15 +1303,15 @@ class UserStatusService:
                 raise Forbidden("You can update status only for your subordinates")
 
         tg_user: TgUser | None = None
-        if user.tg_user_id is not None:
+        if settings.telegram_legacy_enabled and user.tg_user_id is not None:
             tg_user = await self._tg_users.get_by_id(user.tg_user_id)
 
-        if tg_status is not None:
+        if settings.telegram_legacy_enabled and tg_status is not None:
             if tg_user is None:
                 raise Conflict("User has no linked Telegram account")
             await self._tg_users.update_status(tg_user, tg_status)
 
-        if tg_user is not None and tg_status is None:
+        if settings.telegram_legacy_enabled and tg_user is not None and tg_status is None:
             if user_status in {"inactive", "blacklist"}:
                 await self._tg_users.update_status(tg_user, "disapproved")
             elif user_status == "active":
@@ -1329,13 +1333,13 @@ class UserStatusService:
             profile = await self._profiles.get_by_id(user.id)
             notify_email = _normalize_notification_email(profile.mail if profile is not None else None)
 
-        if notify_tg_id is not None and tg_user is not None:
+        if settings.telegram_legacy_enabled and notify_tg_id is not None and tg_user is not None:
             if user.status == "active" and tg_user.status == "approved":
                 await notify_tg_access_opened(notify_tg_id)
             else:
                 await notify_tg_access_closed(notify_tg_id)
 
-        if notify_email is not None and notify_tg_id is None:
+        if notify_email is not None and (notify_tg_id is None or not settings.telegram_legacy_enabled):
             if user.status == "active":
                 await notify_contractor_access_opened_email(to_email=notify_email)
 

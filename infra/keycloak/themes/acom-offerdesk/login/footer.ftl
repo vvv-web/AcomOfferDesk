@@ -8,7 +8,7 @@
           href="${properties.aodBitrixUrl!'/'}"
           target="_blank"
           rel="noreferrer"
-          aria-label="Перейти в Bitrix24"
+          aria-label="Перейти в Битрикс"
         >
           <img src="${url.resourcesPath}/img/bitrix24-logo.png?v=${properties.aodAssetVersion!'dev'}" alt="Bitrix24" />
         </a>

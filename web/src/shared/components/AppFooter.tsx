@@ -1,14 +1,15 @@
-﻿import { alpha } from '@mui/material/styles';
-import { Box, Link, Stack, Typography } from '@mui/material';
+﻿import { Box, Link, Stack, Typography } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
 import bitrixLogo from '@shared/assets/bitrix24-logo.png';
 import maxLogo from '@shared/assets/max-logo-2025.png';
+import { useIsMobileViewport } from '@shared/lib/responsive';
 
 const BITRIX_LINK = 'https://team.alabuga.ru/company/structure.php?set_filter_structure=Y&structure_UF_DEPARTMENT=8304&filter=Y&set_filter=Y';
 const MAX_CONTACT_LINK = 'https://max.ru/u/f9LHodD0cOIA4s2RhH3dW5NoCLRn88NF67UYfQe_rOnnM6Y1a7VW_vOUt5I';
 
 const iconLinkSx = {
-  width: 40,
-  height: 40,
+  width: 34,
+  height: 34,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -25,81 +26,277 @@ const iconLinkSx = {
   }
 };
 
+const compactIconLinkSx = {
+  ...iconLinkSx,
+  width: 30,
+  height: 30
+};
+
 const iconImageSx = {
   display: 'block',
-  width: 30,
-  height: 30,
+  width: 24,
+  height: 24,
   objectFit: 'cover' as const,
   borderRadius: 2
 };
 
-export const AppFooter = () => (
-  <Box
-    component="footer"
-    sx={(theme) => ({
-      width: '100%',
-      px: { xs: 1.25, md: 2.5 },
-      pt: { xs: 0.8, md: 1.1 },
-      pb: { xs: 1.1, md: 1.5 },
-      borderTop: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-      background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0)} 0%, ${alpha(theme.palette.background.paper, 0.9)} 22%, ${theme.palette.background.paper} 100%)`
-    })}
-  >
-    <Box
-      sx={(theme) => ({
-        maxWidth: 1200,
-        mx: 'auto',
-        px: { xs: 1.1, md: 1.75 },
-        py: { xs: 0.8, md: 0.95 },
-        borderRadius: 4,
-        border: `1px solid ${alpha(theme.palette.divider, 0.95)}`,
-        background: `linear-gradient(135deg, ${alpha('#ffffff', 0.95)} 0%, ${alpha(theme.palette.primary.light, 0.22)} 100%)`,
-        boxShadow: '0 10px 24px rgba(15, 35, 75, 0.1)',
-        backdropFilter: 'blur(6px)'
-      })}
-    >
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        alignItems="center"
-        justifyContent="space-between"
-        spacing={{ xs: 0.9, md: 2.2 }}
-      >
-        <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', md: 'flex-start' } }}>
-          <Stack direction="row" alignItems="center" spacing={1.1}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              Created by «Цифровизация проектных задач»
-            </Typography>
-            <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label="Перейти в Битрикс" sx={iconLinkSx}>
-              <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={iconImageSx} />
-            </Link>
-          </Stack>
-        </Box>
+const compactIconImageSx = {
+  ...iconImageSx,
+  width: 20,
+  height: 20,
+  borderRadius: 99
+};
 
-        <Typography
-          variant="subtitle1"
-          color="text.primary"
+const CREATED_BY_LABEL = 'Created by "Цифровизация проектных задач"';
+const SUPPORT_LABEL = 'По вопросам системы писать сюда';
+const BITRIX_ARIA_LABEL = 'Перейти в Битрикс';
+const MAX_ARIA_LABEL = 'Открыть MAX';
+
+type AppFooterProps = {
+  compact?: boolean;
+};
+
+export const AppFooter = ({ compact = false }: AppFooterProps) => {
+  const isMobileViewport = useIsMobileViewport();
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const requiredRowWidthRef = useRef(0);
+  const [shouldUseMobileLayout, setShouldUseMobileLayout] = useState(false);
+  const shouldUseCompactLayout = isMobileViewport || shouldUseMobileLayout;
+
+  useEffect(() => {
+    if (compact) {
+      return;
+    }
+
+    const element = layoutRef.current;
+    if (!element) {
+      return;
+    }
+
+    const RECOVER_LAYOUT_GAP_PX = 28;
+
+    const updateLayout = () => {
+      setShouldUseMobileLayout((prev) => {
+        if (!prev) {
+          const hasOverflow = element.scrollWidth > element.clientWidth + 1;
+          if (hasOverflow) {
+            requiredRowWidthRef.current = Math.max(requiredRowWidthRef.current, element.scrollWidth);
+            return true;
+          }
+          return false;
+        }
+
+        const requiredRowWidth = requiredRowWidthRef.current;
+        if (requiredRowWidth <= 0) {
+          return prev;
+        }
+
+        const hasEnoughFreeSpace = element.clientWidth >= requiredRowWidth + RECOVER_LAYOUT_GAP_PX;
+        return hasEnoughFreeSpace ? false : prev;
+      });
+    };
+
+    updateLayout();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => {
+        updateLayout();
+      });
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateLayout);
+    return () => window.removeEventListener('resize', updateLayout);
+  }, [compact]);
+
+  if (compact) {
+    return (
+      <Box
+        component="footer"
+        sx={{
+          width: '100%',
+          px: 0.5,
+          pt: 0.25,
+          pb: 0.75,
+          pr: { lg: 'var(--offer-workspace-chat-offset, 0px)' },
+          transition: 'padding-right 0.2s ease'
+        }}
+      >
+        <Box
           sx={{
-            fontWeight: 600,
-            letterSpacing: 0.3,
-            textTransform: 'none',
-            textAlign: 'center',
-            whiteSpace: 'nowrap'
+            maxWidth: '100%',
+            mx: 'auto',
+          px: 1.2,
+          py: 0.7,
+          borderRadius: { xs: 1.5, sm: 2 },
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'rgba(255, 255, 255, 0.88)'
           }}
         >
-          AcomOfferDesk
-        </Typography>
-
-        <Box sx={{ flex: 1, display: 'flex', justifyContent: { xs: 'center', md: 'flex-end' } }}>
-          <Stack direction="row" alignItems="center" spacing={1.1}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              По вопросам системы писать сюда
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              gridTemplateRows: 'auto auto',
+              columnGap: 1,
+              rowGap: 0.6,
+              alignItems: 'center'
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                gridColumn: 1,
+                gridRow: 1,
+                fontWeight: 650,
+                fontSize: { xs: 18, sm: 17 },
+                lineHeight: 1.1
+              }}
+            >
+              AcomOfferDesk
             </Typography>
-            <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label="Открыть MAX" sx={iconLinkSx}>
-              <Box component="img" src={maxLogo} alt="MAX" sx={iconImageSx} />
-            </Link>
-          </Stack>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ gridColumn: 1, gridRow: 2, fontWeight: 500, fontSize: 12.5 }}
+            >
+              {CREATED_BY_LABEL}
+            </Typography>
+            <Stack
+              direction="row"
+              spacing={0.75}
+              sx={{
+                gridColumn: 2,
+                gridRow: '1 / span 2',
+                alignSelf: 'stretch',
+                alignItems: 'center',
+                justifyContent: 'flex-end'
+              }}
+            >
+              <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={compactIconLinkSx}>
+                <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={compactIconImageSx} />
+              </Link>
+              <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={compactIconLinkSx}>
+                <Box component="img" src={maxLogo} alt="MAX" sx={compactIconImageSx} />
+              </Link>
+            </Stack>
+          </Box>
         </Box>
-      </Stack>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      component="footer"
+      sx={{
+        width: '100%',
+        pr: { lg: 'var(--offer-workspace-chat-offset, 0px)' },
+        px: { xs: 0.5, md: 1.2 },
+        pt: { xs: 0.4, md: 0.6 },
+        pb: { xs: 0.9, md: 1.1 },
+        transition: 'padding-right 0.2s ease'
+      }}
+    >
+      <Box
+        sx={{
+          maxWidth: '100%',
+          mx: 'auto',
+          px: { xs: 1.1, md: 1.45 },
+          py: { xs: 0.7, md: 0.8 },
+          borderRadius: { xs: 2, md: 2.5 },
+          backgroundColor: '#ffffff',
+          boxShadow: '0 4px 14px rgba(15, 35, 75, 0.04)',
+          position: 'relative',
+          zIndex: 0,
+        }}
+      >
+        {shouldUseCompactLayout ? (
+          <Stack ref={layoutRef} spacing={0.8}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+              <Typography variant="h6" sx={{ fontWeight: 650, fontSize: { xs: 20, md: 18 }, lineHeight: 1.1 }}>
+                AcomOfferDesk
+              </Typography>
+              <Stack direction="row" spacing={0.8}>
+                <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={compactIconLinkSx}>
+                  <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={compactIconImageSx} />
+                </Link>
+                <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={compactIconLinkSx}>
+                  <Box component="img" src={maxLogo} alt="MAX" sx={compactIconImageSx} />
+                </Link>
+              </Stack>
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 12.5 }}>
+              {CREATED_BY_LABEL}
+            </Typography>
+          </Stack>
+        ) : (
+          <Stack
+            ref={layoutRef}
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={1.2}
+            sx={{ width: '100%' }}
+          >
+            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-start' }}>
+              <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="nowrap" justifyContent="flex-start">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{
+                    fontWeight: 500,
+                    fontSize: 12.5,
+                    textAlign: 'left',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {CREATED_BY_LABEL}
+                </Typography>
+                <Link href={BITRIX_LINK} target="_blank" rel="noreferrer" aria-label={BITRIX_ARIA_LABEL} sx={iconLinkSx}>
+                  <Box component="img" src={bitrixLogo} alt="Bitrix24" sx={iconImageSx} />
+                </Link>
+              </Stack>
+            </Box>
+
+            <Typography
+              variant="body2"
+              color="text.primary"
+              sx={{
+                fontWeight: 550,
+                fontSize: { xs: 16, md: 14 },
+                letterSpacing: 0.1,
+                textTransform: 'none',
+                textAlign: 'center'
+              }}
+            >
+              AcomOfferDesk
+            </Typography>
+
+            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+              <Stack direction="row" alignItems="center" spacing={1.1} useFlexGap flexWrap="nowrap" justifyContent="flex-end">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{
+                    fontWeight: 500,
+                    fontSize: 12.5,
+                    textAlign: 'right',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {SUPPORT_LABEL}
+                </Typography>
+                <Link href={MAX_CONTACT_LINK} target="_blank" rel="noreferrer" aria-label={MAX_ARIA_LABEL} sx={iconLinkSx}>
+                  <Box component="img" src={maxLogo} alt="MAX" sx={iconImageSx} />
+                </Link>
+              </Stack>
+            </Box>
+          </Stack>
+        )}
+      </Box>
     </Box>
-  </Box>
-);
+  );
+};

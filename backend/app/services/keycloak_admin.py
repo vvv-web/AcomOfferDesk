@@ -79,6 +79,23 @@ class KeycloakAdminService:
         if password is not None:
             await self._set_password(admin_token, user_id=user_id, password=password)
 
+    async def logout_user_sessions(self, *, user_id: str) -> None:
+        if not settings.keycloak_enabled:
+            return
+        self._ensure_configured()
+        normalized_user_id = (user_id or "").strip()
+        if not normalized_user_id:
+            return
+
+        admin_token = await self._get_admin_token()
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._users_endpoint}/{normalized_user_id}/logout",
+                headers=self._headers(admin_token),
+            )
+        if response.status_code >= 400:
+            raise Conflict("Unable to terminate Keycloak user sessions")
+
     def _ensure_configured(self) -> None:
         if not self._admin_username or not self._admin_password:
             raise Forbidden("Keycloak admin integration is not configured")

@@ -155,8 +155,7 @@ const getErrorMessage = async (response: Response, fallback: string) => {
 };
 
 const skipAutoRefresh = (url: string) => (
-  url.startsWith('/api/v1/auth/login')
-  || url.startsWith('/api/v1/auth/refresh')
+  url.startsWith('/api/v1/auth/refresh')
   || url.startsWith('/api/v1/auth/logout')
 );
 

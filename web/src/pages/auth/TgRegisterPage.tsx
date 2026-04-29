@@ -1,4 +1,6 @@
+// LEGACY_TELEGRAM: page is excluded from active routes and kept only for rollback.
 import { zodResolver } from '@hookform/resolvers/zod';
+import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded';
 import { Alert, Box, Button, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -233,7 +235,7 @@ export const TgRegisterPage = () => {
 
     const onSubmit = async (values: RegistrationFormValues) => {
         if (!token) {
-            setErrorMessage('Ссылка недействительна. Перейдите по ссылке из Telegram-бота.');
+            setErrorMessage('Ссылка недействительна. Перейдите по новой регистрационной ссылке.');
             return;
         }
         setErrorMessage(null);
@@ -289,15 +291,7 @@ export const TgRegisterPage = () => {
                             <Stack width="100%" direction="row" justifyContent="space-between" alignItems="center">
                                 {step > 0 && hasToken && !isCompleted ? (
                                     <IconButton aria-label="Назад" onClick={handleBack} sx={{ padding: 0, color: 'text.primary' }}>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                            <path
-                                                d="M15 6L9 12L15 18"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
-                                        </svg>
+                                        <ArrowBackIosNewRoundedIcon sx={{ fontSize: 20 }} />
                                     </IconButton>
                                 ) : (
                                     <span />
@@ -319,7 +313,7 @@ export const TgRegisterPage = () => {
 
                     {!hasToken ? (
                         <Typography variant="body2" color="error" textAlign="center">
-                            Ссылка недействительна. Пожалуйста, перейдите по ссылке из Telegram-бота.
+                            Ссылка недействительна. Пожалуйста, перейдите по новой регистрационной ссылке.
                         </Typography>
                     ) : isCompleted ? (
                         <Alert severity="success" sx={{ width: '100%', fontSize: 18, lineHeight: 1.4, py: 3, px: 2 }}>

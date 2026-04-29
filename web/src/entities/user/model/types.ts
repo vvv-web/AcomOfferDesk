@@ -8,8 +8,6 @@ export type UserListItem = {
   full_name: string | null;
   phone: string | null;
   mail: string | null;
-  tg_user_id: number | null;
-  tg_status: string | null;
   company_name: string | null;
   inn: string | null;
   company_phone: string | null;

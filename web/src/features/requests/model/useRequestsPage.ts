@@ -80,6 +80,10 @@ export const useRequestsPage = () => {
     () => hasPermission(session, 'requests.owner.change'),
     [session]
   );
+  const canCreateRequest = useMemo(
+    () => hasPermission(session, 'requests.create'),
+    [session]
+  );
 
   const fetchRequests = useCallback(
     async (showLoading: boolean) => {
@@ -223,6 +227,7 @@ export const useRequestsPage = () => {
   );
 
   return {
+    canCreateRequest,
     canEditOwner,
     chatAlertsMap,
     errorMessage,
@@ -230,6 +235,7 @@ export const useRequestsPage = () => {
     isContractor,
     isLoading,
     ownerOptions,
-    requests
+    requests,
+    shouldLoadOpenRequests
   };
 };

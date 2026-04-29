@@ -62,7 +62,7 @@ async def get_responsibility_dashboard(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ResponsibilityDashboardResponse:
     async with uow:
-        service = DashboardService(uow.users, uow.requests, uow.user_status_periods)
+        service = DashboardService(uow.users, uow.requests, uow.user_status_periods, uow.economy_plans)
         dashboard = await service.get_responsibility_dashboard(current_user=current_user)
 
     return ResponsibilityDashboardResponse(
@@ -107,6 +107,8 @@ async def get_responsibility_dashboard(
                         final_amount=item.final_amount,
                         savings_amount=item.savings_amount,
                         closed_at=item.closed_at,
+                        plan_id=item.plan_id,
+                        plan_name=item.plan_name,
                     )
                     for item in dashboard.savings.closed_items
                 ],
@@ -120,6 +122,8 @@ async def get_responsibility_dashboard(
                         final_amount=item.final_amount,
                         savings_amount=item.savings_amount,
                         closed_at=item.closed_at,
+                        plan_id=item.plan_id,
+                        plan_name=item.plan_name,
                     )
                     for item in dashboard.savings.items
                 ],

@@ -49,6 +49,7 @@ export const AdminPageView = () => {
   const {
     isLeadLike,
     isAdmin,
+    canViewRoleIds,
     isDialogOpen,
     setIsDialogOpen,
     errorMessage,
@@ -70,8 +71,7 @@ export const AdminPageView = () => {
     loadUsers,
     handleClose,
     onSubmit,
-    form,
-    addUserButtonSx
+    form
   } = useAdminPage();
 
   const {
@@ -102,26 +102,17 @@ export const AdminPageView = () => {
   return (
     <Stack spacing={2}>
       {!isLeadLike && !isAdmin ? (
-        <Stack direction="row" gap={1.5} alignItems="center" flexWrap="nowrap" sx={{ width: '100%', overflowX: 'auto', pb: 0.5 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} flexWrap="wrap" sx={{ width: '100%' }}>
           <Select
             size="small"
             value={activeTab}
             onChange={handleRoleSelectChange}
-            sx={{ minWidth: { xs: 220, sm: 300 }, flexShrink: 0 }}
+            sx={{ minWidth: { xs: '100%', sm: 300 }, flexShrink: 0 }}
           >
             {userTabs.map((tab) => (
               <MenuItem key={tab.value} value={tab.value}>{tab.label}</MenuItem>
             ))}
           </Select>
-          {canCreateUser ? (
-            <Button variant="outlined" sx={{ ...addUserButtonSx, flexShrink: 0 }} onClick={() => setIsDialogOpen(true)}>
-              Добавить пользователя
-            </Button>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Нет доступных действий для создания пользователей.
-            </Typography>
-          )}
         </Stack>
       ) : null}
 
@@ -133,10 +124,12 @@ export const AdminPageView = () => {
         emptyMessage="Список пользователей пока пуст."
         getRoleLabel={getRoleLabel}
         isContractorsTab={activeTab === 'contractors'}
+        canViewRoleIds={canViewRoleIds}
         canUpdateStatus={canUpdateStatus}
         canUpdateRole={canUpdateRole}
         allowedRoleOptions={[ROLE.ADMIN, ROLE.ECONOMIST]}
         onStatusUpdated={loadUsers}
+        onAddClick={canCreateUser ? () => setIsDialogOpen(true) : undefined}
       />
 
       <Dialog

@@ -3,13 +3,13 @@ import {
     Alert,
     Box,
     Button,
-    Chip,
     MenuItem,
     Select,
     Stack,
     TextField,
     Typography
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { OffersTable } from './OffersTable';
 import type { OfferDecisionStatus, OfferStatusOption } from './OffersTable';
 import { getRequestDetails } from '@shared/api/requests/getRequestDetails';
@@ -19,115 +19,41 @@ import { sendRequestEmailNotifications } from '@shared/api/requests/sendRequestE
 import { markDeletedAlertViewed } from '@shared/api/offers/markDeletedAlertViewed';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
+import { getPlanOptions, type PlanOption } from '@shared/api/plans';
 import { downloadFile } from '@shared/api/fileDownload';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
-import { DataTable } from '@shared/components/DataTable';
 import { ToggleSection } from '@shared/components/ToggleSection';
-import { getFileKey } from '@shared/lib/files';
 import { formatUnavailabilityDate, type UnavailabilityPeriodInfo } from '@shared/lib/unavailability';
 import { useRequestDetails } from '../model/useRequestDetails';
+import {
+    type RequestStatus,
+    statusOptions,
+    toDateInputValue,
+    toAmountInputValue,
+    parseAmountInput,
+    normalizeOfferStatus,
+    buildRequestDetailsSignature,
+    toDeadlineIso,
+} from '../model/requestDetailsUtils';
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
-
-type RequestStatus = 'open' | 'review' | 'closed' | 'cancelled';
-
-const statusOptions = [
-    { value: 'open', label: 'Открыта', color: '#2e7d32' },
-    { value: 'review', label: 'На рассмотрении', color: '#ed6c02' },
-    { value: 'closed', label: 'Закрыта', color: '#787878ff' },
-    { value: 'cancelled', label: 'Отменена', color: '#d32f2f' }
-] as const;
+import { RequestDetailsMainCard } from './RequestDetailsMainCard';
 
 const offerStatusOptions: OfferStatusOption[] = [
     { value: 'accepted', label: 'Принято' },
     { value: 'rejected', label: 'Отказано' }
 ];
 
-const detailsColumns = [
-    { key: 'label', label: 'Параметр' },
-    { key: 'value', label: 'Значение' }
-];
-
-const formatDate = (value: string | null) => {
-    if (!value) {
-        return '-';
-    }
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-
-    return new Intl.DateTimeFormat('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-    }).format(date);
+const requestStatusToneByValue: Record<RequestStatus, 'success' | 'warning' | 'neutral'> = {
+    open: 'success',
+    review: 'warning',
+    closed: 'neutral',
+    cancelled: 'neutral'
 };
-
-const toDateInputValue = (value: string | null) => {
-    if (!value) return '';
-    const [datePart] = value.split('T');
-    return datePart ?? '';
-};
-
-const toAmountInputValue = (value: number | null | undefined) => {
-    if (value === null || value === undefined || Number.isNaN(value)) {
-        return '';
-    }
-
-    return String(value);
-};
-
-const parseAmountInput = (value: string) => {
-    const normalized = value.trim().replace(',', '.');
-    if (!normalized) {
-        return null;
-    }
-
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
-const normalizeOfferStatus = (value: string | null): OfferDecisionStatus => {
-    if (value === 'accepted' || value === 'rejected') {
-        return value;
-    }
-
-    return '';
-};
-
-const buildRequestDetailsSignature = (request: RequestDetails | null) => {
-    if (!request) {
-        return '';
-    }
-
-    return JSON.stringify({
-        id: request.id,
-        id_user: request.id_user,
-        status: request.status,
-        deadline_at: request.deadline_at,
-        updated_at: request.updated_at,
-        initial_amount: request.initial_amount,
-        final_amount: request.final_amount,
-        id_offer: request.id_offer,
-        count_deleted_alert: request.count_deleted_alert,
-        offers: request.offers.map((offer) => ({
-            id: offer.offer_id,
-            status: offer.status,
-            updated_at: offer.updated_at,
-            amount: offer.offer_amount,
-            unread_messages_count: offer.unread_messages_count ?? 0,
-            files: offer.files.map((file) => [file.id, file.name])
-        })),
-        files: request.files.map((file) => [file.id, file.name])
-    });
-};
-
-const toDeadlineIso = (date: string) => `${date}T23:59:59`;
 
 export const RequestDetailsView = () => {
     const { navigate, requestId } = useRequestDetails();
+    const theme = useTheme();
 
     const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
     const [status, setStatus] = useState<RequestStatus>('open');
@@ -140,13 +66,22 @@ export const RequestDetailsView = () => {
     const [baselineInitialAmount, setBaselineInitialAmount] = useState<string>('');
     const [finalAmount, setFinalAmount] = useState<string>('');
     const [baselineFinalAmount, setBaselineFinalAmount] = useState<string>('');
+    const [planId, setPlanId] = useState<string>('');
+    const [baselinePlanId, setBaselinePlanId] = useState<string>('');
+    const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
+    const [isPlanOptionsLoading, setIsPlanOptionsLoading] = useState(false);
+    const [planOptionsOwnerId, setPlanOptionsOwnerId] = useState<string | null>(null);
     const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
     const [newFile, setNewFile] = useState<File | null>(null);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const [isDescriptionOverflowing, setIsDescriptionOverflowing] = useState(false);
     const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
     const [additionalEmailsEnabled, setAdditionalEmailsEnabled] = useState(false);
     const additionalEmailsFieldRef = useRef<AdditionalEmailsFieldHandle | null>(null);
+    const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
     const requestSignatureRef = useRef('');
     const hasPendingChangesRef = useRef(false);
 
@@ -163,10 +98,6 @@ export const RequestDetailsView = () => {
     const [isManualOfferDialogOpen, setIsManualOfferDialogOpen] = useState(false);
     const pollIntervalMs = 10000;
 
-    const statusConfig = useMemo(
-        () => statusOptions.find((option) => option.value === status) ?? statusOptions[0],
-        [status]
-    );
     const hasDeletedAlert = (requestDetails?.count_deleted_alert ?? 0) > 0;
     const hasFileChanges = deletedFileIds.length > 0 || Boolean(newFile);
     const canViewRequestAmounts = useMemo(
@@ -177,7 +108,8 @@ export const RequestDetailsView = () => {
         status !== baselineStatus ||
         deadline !== baselineDeadline ||
         (canViewRequestAmounts && initialAmount !== baselineInitialAmount) ||
-        (canViewRequestAmounts && finalAmount !== baselineFinalAmount);
+        (canViewRequestAmounts && finalAmount !== baselineFinalAmount) ||
+        planId !== baselinePlanId;
     const hasOwnerChange = ownerUserId !== baselineOwnerUserId;
     const hasPendingChanges = hasRequestFieldChanges || hasOwnerChange || hasFileChanges;
 
@@ -215,6 +147,13 @@ export const RequestDetailsView = () => {
         || (hasOwnerChange && canEditOwner)
         || (deletedFileIds.length > 0 && canDeleteRequestFiles)
         || (Boolean(newFile) && canUploadRequestFiles);
+    const canEnterEditMode = canEditRequest || canEditOwner || canUploadRequestFiles || canDeleteRequestFiles;
+    const statusTone = requestStatusToneByValue[status] ?? 'neutral';
+    const statusColor = statusTone === 'success'
+        ? theme.palette.success.main
+        : statusTone === 'warning'
+            ? theme.palette.warning.main
+            : theme.palette.text.secondary;
 
     const todayDate = useMemo(() => {
         const now = new Date();
@@ -242,6 +181,7 @@ export const RequestDetailsView = () => {
             const nextOwner = nextRequest.id_user ?? '';
             const nextInitialAmount = toAmountInputValue(nextRequest.initial_amount);
             const nextFinalAmount = toAmountInputValue(nextRequest.final_amount);
+            const nextPlanId = nextRequest.id_plan ? String(nextRequest.id_plan) : '';
             setStatus(nextStatus);
             setBaselineStatus(nextStatus);
             setDeadline(nextDeadline);
@@ -252,11 +192,9 @@ export const RequestDetailsView = () => {
             setBaselineInitialAmount(nextInitialAmount);
             setFinalAmount(nextFinalAmount);
             setBaselineFinalAmount(nextFinalAmount);
+            setPlanId(nextPlanId);
+            setBaselinePlanId(nextPlanId);
             setExistingFiles(nextRequest.files ?? []);
-            setAdditionalEmails([]);
-            setAdditionalEmailsEnabled(false);
-            setDeletedFileIds([]);
-            setNewFile(null);
         }
     }, []);
 
@@ -325,6 +263,45 @@ export const RequestDetailsView = () => {
         void fetchOwners();
     }, [fetchOwners]);
 
+    useEffect(() => {
+        const ownerForPlans = (isEditMode ? ownerUserId : requestDetails?.id_user) ?? '';
+        if (!ownerForPlans) {
+            setPlanOptions([]);
+            setPlanOptionsOwnerId(null);
+            return;
+        }
+        if (planOptionsOwnerId === ownerForPlans) {
+            return;
+        }
+
+        let isMounted = true;
+        setIsPlanOptionsLoading(true);
+        getPlanOptions({ ownerUserId: ownerForPlans })
+            .then((items) => {
+                if (!isMounted) {
+                    return;
+                }
+                setPlanOptions(items);
+                setPlanOptionsOwnerId(ownerForPlans);
+            })
+            .catch(() => {
+                if (!isMounted) {
+                    return;
+                }
+                setPlanOptions([]);
+                setPlanOptionsOwnerId(ownerForPlans);
+            })
+            .finally(() => {
+                if (isMounted) {
+                    setIsPlanOptionsLoading(false);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isEditMode, ownerUserId, planOptionsOwnerId, requestDetails?.id_user]);
+
      const getSaveValidationError = (
         currentStatus: RequestStatus,
         currentDeadline: string,
@@ -337,11 +314,12 @@ export const RequestDetailsView = () => {
         const deadlineChanged = currentDeadline !== baselineDeadline;
         const initialAmountChanged = canViewRequestAmounts && currentInitialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && currentFinalAmount !== baselineFinalAmount;
+        const planChanged = planId !== baselinePlanId;
         const parsedInitialAmount = canViewRequestAmounts ? parseAmountInput(currentInitialAmount) : null;
         const parsedFinalAmount = canViewRequestAmounts ? parseAmountInput(currentFinalAmount) : null;
 
         const isFinalStatus = currentStatus === 'closed' || currentStatus === 'cancelled';
-        if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !hasFileChanges) {
+        if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !planChanged && !hasFileChanges) {
             return 'Нет изменений для сохранения';
         }
 
@@ -422,8 +400,10 @@ export const RequestDetailsView = () => {
 
         const statusChanged = status !== baselineStatus;
         const ownerChanged = ownerUserId !== baselineOwnerUserId;
+        const planChanged = planId !== baselinePlanId;
         const parsedInitialAmount = canViewRequestAmounts ? parseAmountInput(initialAmount) : null;
         const parsedFinalAmount = canViewRequestAmounts ? parseAmountInput(finalAmount) : null;
+        const parsedPlanId = planId ? Number(planId) : null;
         const initialAmountChanged = canViewRequestAmounts && initialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && finalAmount !== baselineFinalAmount;
         let effectiveDeadline = deadline;
@@ -449,7 +429,8 @@ export const RequestDetailsView = () => {
                 deadline_at: deadlineChanged ? toDeadlineIso(effectiveDeadline) : undefined,
                 owner_user_id: ownerChanged ? ownerUserId : undefined,
                 initial_amount: initialAmountChanged && parsedInitialAmount !== null ? parsedInitialAmount : undefined,
-                final_amount: finalAmountChanged && parsedFinalAmount !== null ? parsedFinalAmount : undefined
+                final_amount: finalAmountChanged && parsedFinalAmount !== null ? parsedFinalAmount : undefined,
+                id_plan: planChanged ? parsedPlanId : undefined,
             });
 
             await Promise.all(deletedFileIds.map((fileId) => deleteRequestFile(currentRequest.id, fileId)));
@@ -459,6 +440,9 @@ export const RequestDetailsView = () => {
 
             const refreshed = await getRequestDetails(currentRequest.id);
             syncRequestState(refreshed, true);
+            setIsEditMode(false);
+            setDeletedFileIds([]);
+            setNewFile(null);
             setSuccessMessage('Изменения сохранены');
         } catch (error) {
             setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить изменения');
@@ -613,82 +597,90 @@ export const RequestDetailsView = () => {
         }
     };
 
+    const handleCancelEditing = () => {
+        setStatus(baselineStatus);
+        setDeadline(baselineDeadline);
+        setOwnerUserId(baselineOwnerUserId);
+        setInitialAmount(baselineInitialAmount);
+        setFinalAmount(baselineFinalAmount);
+        setPlanId(baselinePlanId);
+        setDeletedFileIds([]);
+        setNewFile(null);
+        setIsEditMode(false);
+        setErrorMessage(null);
+        setSuccessMessage(null);
+    };
 
-    const detailsRows = [
-        {
-            id: 'owner',
-            label: 'Ответственный',
-            value: canEditOwner ? (
-                <Select
-                    size="small"
-                    value={ownerUserId}
-                    renderValue={(selected) => ownerOptions.find((option) => option.id === selected)?.label ?? requestDetails?.owner_full_name ?? String(selected ?? '')}
-                    onChange={(event) => setOwnerUserId(event.target.value)}
-                    sx={{ minWidth: 200 }}
-                >
-                    {ownerOptions.map((option) => (
-                        <UnavailableAwareMenuItem
-                            key={option.id}
-                            value={option.id}
-                            label={option.label}
-                            unavailablePeriod={option.unavailablePeriod}
-                        />
-                    ))}
-                </Select>
-            ) : (requestDetails?.owner_full_name ?? requestDetails?.id_user ?? '-')
-        },
-        { id: 'created', label: 'Создана', value: formatDate(requestDetails?.created_at ?? null) },
-        { id: 'closed', label: 'Закрыта', value: formatDate(requestDetails?.closed_at ?? null) },
-        { id: 'offer', label: 'Номер КП', value: requestDetails?.id_offer ?? '-' },
-        ...(canViewRequestAmounts
-            ? [
-                {
-                    id: 'initialAmount',
-                    label: 'Сумма по ТЗ, руб.',
-                    value: (
-                        <TextField
-                            size="small"
-                            value={initialAmount}
-                            onChange={(event) => setInitialAmount(event.target.value)}
-                            disabled={!canEditRequest}
-                            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                            sx={{ minWidth: 150 }}
-                        />
-                    )
-                },
-                {
-                    id: 'finalAmount',
-                    label: 'Итоговая сумма, руб.',
-                    value: (
-                        <TextField
-                            size="small"
-                            value={finalAmount}
-                            onChange={(event) => setFinalAmount(event.target.value)}
-                            disabled={!canEditRequest}
-                            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                            sx={{ minWidth: 150 }}
-                        />
-                    )
-                }
-            ]
-            : []),
-        {
-            id: 'deadline',
-            label: 'Дедлайн сбора КП',
-            value: (
-                <TextField
-                    type="date"
-                    size="small"
-                    value={deadline}
-                    onChange={(event) => setDeadline(event.target.value)}
-                    inputProps={{ min: todayDate }}
-                    disabled={!canEditRequest}
-                    sx={{ minWidth: 150 }}
+    const ownerField = canEditOwner && isEditMode ? (
+        <Select
+            size="small"
+            value={ownerUserId}
+            fullWidth
+            renderValue={(selected) =>
+                ownerOptions.find((option) => option.id === selected)?.label
+                ?? requestDetails?.owner_full_name
+                ?? String(selected ?? '')
+            }
+            onChange={(event) => setOwnerUserId(event.target.value)}
+        >
+            {ownerOptions.map((option) => (
+                <UnavailableAwareMenuItem
+                    key={option.id}
+                    value={option.id}
+                    label={option.label}
+                    unavailablePeriod={option.unavailablePeriod}
                 />
-            )
-        },
-        { id: 'updated', label: 'Последнее изменение', value: formatDate(requestDetails?.updated_at ?? null) }
-    ];
+            ))}
+        </Select>
+    ) : (
+        <TextField
+            size="small"
+            value={requestDetails?.owner_full_name ?? requestDetails?.id_user ?? '-'}
+            fullWidth
+            InputProps={{ readOnly: true }}
+        />
+    );
+    const selectedPlanOption = planOptions.find((option) => String(option.plan_id) === planId);
+    const planDisplayLabel = selectedPlanOption
+        ? `${selectedPlanOption.plan_name} (${selectedPlanOption.user_name})`
+        : planId
+            ? `План #${planId}`
+            : 'Без плана';
+    const descriptionText = requestDetails?.description?.trim() ?? '';
+    const canExpandDescription = isDescriptionOverflowing;
+    const handleStatusSelection = (nextStatus: RequestStatus) => {
+        if (nextStatus !== status) {
+            const isConfirmed = window.confirm(
+                `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
+            );
+            if (!isConfirmed) {
+                return;
+            }
+        }
+        setStatus(nextStatus);
+        if (nextStatus === 'review') {
+            setDeadline(todayDate);
+        }
+    };
+
+    useEffect(() => {
+        const element = descriptionTextRef.current;
+        if (!element) {
+            setIsDescriptionOverflowing(false);
+            return;
+        }
+        if (isDescriptionExpanded) {
+            return;
+        }
+
+        const checkOverflow = () => {
+            setIsDescriptionOverflowing(element.scrollHeight - element.clientHeight > 1);
+        };
+
+        checkOverflow();
+        window.addEventListener('resize', checkOverflow);
+        return () => window.removeEventListener('resize', checkOverflow);
+    }, [descriptionText, isDescriptionExpanded]);
 
     useEffect(() => {
         if (!hasPendingChanges) {
@@ -719,84 +711,8 @@ export const RequestDetailsView = () => {
 
     return (
         <Box>
-            <Button
-                variant="outlined"
-                onClick={() => navigate('/requests')}
-                sx={{ mb: 2, alignSelf: 'flex-start' }}
-            >
-                Назад
-            </Button>
-            <Stack
-                direction="row"
-                spacing={2}
-                alignItems="center"
-                flexWrap="wrap"
-                sx={{ mb: 3 }}
-            >
-                <Typography variant="h6" fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
-                    Номер заявки: {requestDetails.id}
-                </Typography>
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'nowrap' }}>
-                    <Box
-                        sx={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: '50%',
-                            backgroundColor: statusConfig.color
-                        }}
-                    />
-                    <Select
-                        size="small"
-                        value={status}
-                        onChange={(event) => {
-                            const nextStatus = event.target.value as RequestStatus;
-                            if (nextStatus !== status) {
-                                const isConfirmed = window.confirm(
-                                    `Вы уверены, что хотите изменить статус заявки на «${statusOptions.find((option) => option.value === nextStatus)?.label ?? nextStatus}»?`
-                                );
-                                if (!isConfirmed) {
-                                    return;
-                                }
-                            }
-                            setStatus(nextStatus);
-                            if (nextStatus === 'review') {
-                                setDeadline(todayDate);
-                            }
-                        }}
-                        disabled={!canEditRequest}
-                        sx={{
-                            minWidth: 200,
-                            borderRadius: 999,
-                            backgroundColor: 'background.paper'
-                        }}
-                    >
-                        {statusOptions.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                                {option.label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </Stack>
-                <Button
-                    variant="contained"
-                    sx={{ paddingX: 4, boxShadow: 'none', whiteSpace: 'nowrap', '&:hover': { boxShadow: 'none' } }}
-                    onClick={() => void handleSave()}
-                    disabled={isSaving || !canSaveRequestChanges || !hasPendingChanges || Boolean(saveValidationError)}
-                >
-                    {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
-                </Button>
-                {canCreateManualOffer ? (
-                    <Button
-                        variant="outlined"
-                        onClick={() => setIsManualOfferDialogOpen(true)}
-                        sx={{ whiteSpace: 'nowrap' }}
-                    >
-                        Внести КП вручную
-                    </Button>
-                ) : null}
-            </Stack>
             {hasPendingChanges && (
-                <Typography color="warning.main" sx={{ mb: 2 }}>
+                <Typography role="status" color="warning.main" sx={{ mb: 2 }}>
                     Есть несохраненные изменения. При уходе со страницы они будут потеряны.
                 </Typography>
             )}
@@ -816,149 +732,162 @@ export const RequestDetailsView = () => {
                 </Alert>
             )}
 
+            <RequestDetailsMainCard
+                requestId={requestDetails.id}
+                status={status}
+                statusOptions={statusOptions}
+                statusColor={statusColor}
+                canEditRequest={canEditRequest}
+                isEditMode={isEditMode}
+                onStatusChange={handleStatusSelection}
+                descriptionText={descriptionText}
+                descriptionTextRef={descriptionTextRef}
+                canExpandDescription={canExpandDescription}
+                isDescriptionExpanded={isDescriptionExpanded}
+                onToggleDescription={() => setIsDescriptionExpanded((prev) => !prev)}
+                ownerField={ownerField}
+                existingFiles={existingFiles}
+                canDeleteRequestFiles={canDeleteRequestFiles}
+                onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
+                onRemoveExistingFile={handleRemoveExistingFile}
+                newFile={newFile}
+                onClearNewFile={() => setNewFile(null)}
+                canUploadRequestFiles={canUploadRequestFiles}
+                onNewFileSelected={setNewFile}
+                canViewRequestAmounts={canViewRequestAmounts}
+                deadline={deadline}
+                initialAmount={initialAmount}
+                finalAmount={finalAmount}
+                onDeadlineChange={setDeadline}
+                onInitialAmountChange={setInitialAmount}
+                onFinalAmountChange={setFinalAmount}
+                requestCreatedAt={requestDetails.created_at ?? null}
+                requestClosedAt={requestDetails.closed_at ?? null}
+                requestDeadlineAt={requestDetails.deadline_at ?? null}
+                requestOfferId={requestDetails.id_offer ?? '-'}
+                requestUpdatedAt={requestDetails.updated_at ?? null}
+                isSaving={isSaving}
+                canSaveRequestChanges={canSaveRequestChanges}
+                hasPendingChanges={hasPendingChanges}
+                hasValidationError={Boolean(saveValidationError)}
+                canEnterEditMode={canEnterEditMode}
+                onCancelEditing={handleCancelEditing}
+                onSave={() => void handleSave()}
+                onStartEdit={() => setIsEditMode(true)}
+            />
+
             <Box
-                sx={(theme) => ({
-                    borderRadius: 2,
-                    border: `1px solid ${theme.palette.divider}`,
-                    backgroundColor: theme.palette.background.paper,
-                    padding: { xs: 2, md: 3 },
-                    display: 'grid',
-                    gap: 3,
-                    gridTemplateColumns: { xs: '1fr', md: '1.4fr 1fr' }
+                sx={(themeValue) => ({
+                    mt: 2,
+                    borderRadius: `${themeValue.acomShape.panelRadius}px`,
+                    border: `1px solid ${themeValue.palette.divider}`,
+                    backgroundColor: themeValue.palette.background.paper,
+                    px: { xs: 2, md: 3 },
+                    py: { xs: 1.5, md: 2 },
                 })}
             >
-                <Stack spacing={2}>
-                    <TextField
-                        value={requestDetails.description ?? ''}
-                        placeholder="Описание заявки"
-                        multiline
-                        minRows={6}
-                        InputProps={{ readOnly: true }}
-                        sx={{ borderRadius: 3 }}
-                    />
-                    <Stack spacing={1}>
-                        <Typography variant="subtitle2" color="text.secondary">
-                            Файлы заявки
-                        </Typography>
-                        {existingFiles.length > 0 ? (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                {existingFiles.map((file) => (
-                                    <Chip
-                                        key={file.id}
-                                        label={file.name}
-                                        variant="outlined"
-                                        onClick={() => void handleDownload(file.download_url, file.name)}
-                                        onDelete={canDeleteRequestFiles ? () => handleRemoveExistingFile(file.id) : undefined}
-                                    />
-                                ))}
-                            </Box>
-                        ) : (
-                            <Typography variant="body2">Файлы не прикреплены</Typography>
-                        )}
-
-                        {canUploadRequestFiles && (
-                            <>
-                                <Button variant="outlined" component="label" sx={{ width: 'fit-content' }}>
-                                    Прикрепить новые файлы
-                                    <input
-                                        hidden
-                                        type="file"
-                                        onChange={(event) => {
-                                            setNewFile(event.target.files?.[0] ?? null);
-                                            event.target.value = '';
-                                        }}
-                                    />
-                                </Button>
-                                {newFile && (
-                                    <Chip
-                                        key={getFileKey(newFile)}
-                                        label={newFile.name}
-                                        variant="outlined"
-                                        onDelete={() => setNewFile(null)}
-                                    />
-                                )}
-                            </>
-                        )}
-                    </Stack>
-                    {status === 'open' && (
-                        <ToggleSection
-                            title="Дополнительная рассылка на электронную почту"
-                            checked={additionalEmailsEnabled}
-                            disabled={isAdditionalEmailsFieldUnavailable}
-                            onChange={(_event, checked) => {
-                                setAdditionalEmailsEnabled(checked);
-                                if (!checked) {
-                                    setAdditionalEmails([]);
-                                }
-                            }}
-                            description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
+                <Stack spacing={0.75}>
+                    <Typography variant="body2" color="text.secondary">
+                        План заявки
+                    </Typography>
+                    {canEditRequest && isEditMode ? (
+                        <Select
+                            size="small"
+                            value={planId}
+                            displayEmpty
+                            onChange={(event) => setPlanId(String(event.target.value))}
+                            disabled={isPlanOptionsLoading}
                         >
-                            <Stack spacing={1.5}>
-                                <AdditionalEmailsField
-                                    ref={additionalEmailsFieldRef}
-                                    emails={additionalEmails}
-                                    onChange={setAdditionalEmails}
-                                    hideHeader
-                                    addButtonVariant="icon"
-                                    disabled={isAdditionalEmailsFieldUnavailable}
-                                    helperText="Можно добавить несколько адресов через запятую."
-                                    containerSx={{
-                                        mt: 0,
-                                        opacity: isAdditionalEmailsFieldUnavailable ? 0.5 : 1,
-                                        transition: 'opacity 0.2s ease'
-                                    }}
-                                />
-                                <Button
-                                    variant="outlined"
-                                    sx={{ width: 'fit-content' }}
-                                    onClick={() => void handleSendAdditionalEmails()}
-                                    disabled={isAdditionalEmailsFieldUnavailable}
+                            <MenuItem value="">Без плана</MenuItem>
+                            {planId && !planOptions.some((option) => String(option.plan_id) === planId) ? (
+                                <MenuItem value={planId}>{planDisplayLabel}</MenuItem>
+                            ) : null}
+                            {planOptions.map((option) => (
+                                <MenuItem
+                                    key={option.plan_id}
+                                    value={String(option.plan_id)}
+                                    disabled={option.is_closed}
                                 >
-                                    {isSendingEmails ? 'Отправка...' : 'Отправить'}
-                                </Button>
-                            </Stack>
-                        </ToggleSection>
-                    )}
-                    {hasDeletedAlert && canMarkDeletedAlertViewed && (
-                        <Button
-                            variant="contained"
-                            sx={(theme) => ({
-                                paddingX: 3,
-                                width: 'fit-content',
-                                backgroundColor: theme.palette.error.main,
-                                color: theme.palette.error.contrastText,
-                                boxShadow: 'none',
-                                '&:hover': { backgroundColor: theme.palette.error.dark, boxShadow: 'none' },
-                                '&:disabled': {
-                                    backgroundColor: theme.palette.error.light,
-                                    color: theme.palette.error.contrastText
-                                }
-                            })}
-                            onClick={() => void handleDeletedAlertViewed()}
-                            disabled={isClearingDeletedAlert}
-                        >
-                            {isClearingDeletedAlert ? 'Отмечаем...' : 'Уведомлен об отмене сделки'}
-                        </Button>
-
+                                    {option.plan_name} ({option.user_name})
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    ) : (
+                        <TextField
+                            size="small"
+                            value={planDisplayLabel}
+                            fullWidth
+                            InputProps={{ readOnly: true }}
+                        />
                     )}
                 </Stack>
-                <DataTable
-                    columns={detailsColumns}
-                    rows={detailsRows}
-                    rowKey={(row) => row.id}
-                    showHeader={false}
-                    enableColumnControls={false}
-                    renderRow={(row) => [
-                        <Typography variant="body2">{row.label}</Typography>,
-                        typeof row.value === 'string' || typeof row.value === 'number' ? (
-                            <Typography variant="body2">{row.value}</Typography>
-                        ) : (
-                            row.value
-                        )
-                    ]}
-                />
-
             </Box>
+
+            {status === 'open' && (
+                <Box sx={{ mt: 2.5 }}>
+                    <ToggleSection
+                        title="Дополнительная рассылка на электронную почту"
+                        checked={additionalEmailsEnabled}
+                        disabled={isAdditionalEmailsFieldUnavailable}
+                        onChange={(_event, checked) => {
+                            setAdditionalEmailsEnabled(checked);
+                            if (!checked) {
+                                setAdditionalEmails([]);
+                            }
+                        }}
+                        description="Для уже созданной открытой заявки письма будут отправлены только на адреса, которые вы добавите вручную."
+                    >
+                        <Stack spacing={1.5}>
+                            <AdditionalEmailsField
+                                ref={additionalEmailsFieldRef}
+                                emails={additionalEmails}
+                                onChange={setAdditionalEmails}
+                                hideHeader
+                                addButtonVariant="icon"
+                                disabled={isAdditionalEmailsFieldUnavailable}
+                                helperText="Можно добавить несколько адресов через запятую."
+                                containerSx={{
+                                    mt: 0,
+                                    opacity: isAdditionalEmailsFieldUnavailable ? 0.5 : 1,
+                                    transition: 'opacity 0.2s ease'
+                                }}
+                            />
+                            <Button
+                                variant="outlined"
+                                sx={{ width: 'fit-content' }}
+                                onClick={() => void handleSendAdditionalEmails()}
+                                disabled={isAdditionalEmailsFieldUnavailable}
+                            >
+                                {isSendingEmails ? 'Отправка...' : 'Отправить'}
+                            </Button>
+                        </Stack>
+                    </ToggleSection>
+                </Box>
+            )}
+
+            {hasDeletedAlert && canMarkDeletedAlertViewed && (
+                <Button
+                    variant="contained"
+                    sx={(theme) => ({
+                        mt: 2,
+                        paddingX: 3,
+                        width: 'fit-content',
+                        backgroundColor: theme.palette.error.main,
+                        color: theme.palette.error.contrastText,
+                        boxShadow: 'none',
+                        '&:hover': { backgroundColor: theme.palette.error.dark, boxShadow: 'none' },
+                        '&:disabled': {
+                            backgroundColor: theme.palette.error.light,
+                            color: theme.palette.error.contrastText
+                        }
+                    })}
+                    onClick={() => void handleDeletedAlertViewed()}
+                    disabled={isClearingDeletedAlert}
+                >
+                    {isClearingDeletedAlert ? 'Отмечаем...' : 'Уведомлен об отмене сделки'}
+                </Button>
+            )}
+
             <Box sx={{ marginTop: 4 }}>
                 <OffersTable
                     offers={offers}
@@ -968,9 +897,10 @@ export const RequestDetailsView = () => {
                     errorMessage={offersError}
                     statusOptions={offerStatusOptions}
                     onStatusChange={(offerId, value) => void handleOfferStatusChange(offerId, value)}
-                    onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace`)}
+                    onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace?requestId=${requestDetails.id}`)}
                     onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
                     canChangeStatus={canChangeOfferStatus}
+                    onAddClick={canCreateManualOffer ? () => setIsManualOfferDialogOpen(true) : undefined}
                 />
             </Box>
             <CreateManualOfferDialog
@@ -979,7 +909,8 @@ export const RequestDetailsView = () => {
                 onClose={() => setIsManualOfferDialogOpen(false)}
                 onCreated={(workspacePath) => {
                     setIsManualOfferDialogOpen(false);
-                    navigate(workspacePath);
+                    const separator = workspacePath.includes('?') ? '&' : '?';
+                    navigate(`${workspacePath}${separator}requestId=${requestDetails.id}`);
                 }}
             />
         </Box>

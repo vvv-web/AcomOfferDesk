@@ -1,3 +1,4 @@
+// LEGACY_TELEGRAM: API methods are kept for rollback and are not used in active routes.
 import { fetchJson } from '../client';
 
 export type RequestTgEmailVerificationPayload = {

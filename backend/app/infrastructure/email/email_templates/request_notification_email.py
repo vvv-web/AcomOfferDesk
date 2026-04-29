@@ -46,7 +46,7 @@ def build_request_registration_email_payload(
     request_id: int,
     description: str | None,
     deadline_at: datetime,
-    tg_bot_url: str,
+    tg_bot_url: str | None,
     registration_url: str,
     registration_ttl_seconds: int,
     attachment_warning: str | None = None,
@@ -150,7 +150,7 @@ def _build_registration_text(
     request_id: int,
     description: str | None,
     deadline_at: datetime,
-    tg_bot_url: str,
+    tg_bot_url: str | None,
     registration_url: str,
     registration_ttl_seconds: int,
     attachment_warning: str | None,
@@ -163,6 +163,11 @@ def _build_registration_text(
     warning_block = f"\n\nВнимание: {attachment_warning}" if attachment_warning else ""
     ttl_label = _registration_ttl_label(registration_ttl_seconds=registration_ttl_seconds)
 
+    legacy_tg_block = (
+        "Если ссылка истекла, получить новую можно через legacy Telegram-бота через /start.\n\n"
+        f"Открыть legacy Telegram-бот: {tg_bot_url}"
+    ) if tg_bot_url else ""
+
     return (
         "AcomOfferDesk\n\n"
         f"Новая заявка №{request_id}\n"
@@ -174,8 +179,7 @@ def _build_registration_text(
         "Эл. почта: VKhlistun@alabuga.ru \n"  
         f"Ссылка на регистрацию: {registration_url}\n"
         f"Срок действия ссылки: {ttl_label}.\n"
-        "Если ссылка истекла, получить новую можно в Telegram-боте через /start.\n\n"
-        f"Перейти в Telegram-бот: {tg_bot_url}"
+        f"{legacy_tg_block}"
         f"{warning_block}\n"
     )
 
@@ -292,7 +296,7 @@ def _build_registration_html(
     request_id: int,
     description: str | None,
     deadline_at: datetime,
-    tg_bot_url: str,
+    tg_bot_url: str | None,
     registration_url: str,
     registration_ttl_seconds: int,
     attachment_warning: str | None,
@@ -304,7 +308,7 @@ def _build_registration_html(
     )
     contact_html = _registration_contact_html()
     escaped_description = escape(request_description)
-    escaped_bot_url = escape(tg_bot_url)
+    escaped_bot_url = escape(tg_bot_url) if tg_bot_url else None
     escaped_registration_url = escape(registration_url)
     ttl_label = _registration_ttl_label(registration_ttl_seconds=registration_ttl_seconds)
     warning_html = (
@@ -316,6 +320,28 @@ def _build_registration_html(
             </tr>
         """.rstrip()
         if attachment_warning
+        else ""
+    )
+
+    legacy_tg_button_html = (
+        f"""
+                    <td style="width:10px;"></td>
+                    <td bgcolor="#0969da" style="border-radius:6px;">
+                      <a href="{escaped_bot_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                        Открыть legacy Telegram-бот
+                      </a>
+                    </td>
+        """.rstrip()
+        if escaped_bot_url
+        else ""
+    )
+    legacy_tg_info_html = (
+        f"""
+                Если ссылка истекла, получить новую можно в legacy Telegram-боте через /start.<br/><br/>
+                Если кнопка не работает, откройте ссылку вручную:<br/>
+                <a href="{escaped_bot_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_bot_url}</a>
+        """.rstrip()
+        if escaped_bot_url
         else ""
     )
 
@@ -353,12 +379,7 @@ def _build_registration_html(
                         Перейти к регистрации
                       </a>
                     </td>
-                    <td style="width:10px;"></td>
-                    <td bgcolor="#0969da" style="border-radius:6px;">
-                      <a href="{escaped_bot_url}" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
-                        Открыть Telegram-бот
-                      </a>
-                    </td>
+                    {legacy_tg_button_html}
                   </tr>
                 </table>
               </td>
@@ -370,9 +391,7 @@ def _build_registration_html(
                 Ссылка на регистрацию:<br/>
                 <a href="{escaped_registration_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_registration_url}</a><br/><br/>
                 Срок действия ссылки: <strong>{ttl_label}</strong>.<br/>
-                Если ссылка истекла, получить новую можно в Telegram-боте через /start.<br/><br/>
-                Если кнопка не работает, откройте ссылку вручную:<br/>
-                <a href="{escaped_bot_url}" style="color:#0969da;text-decoration:underline;word-break:break-all;">{escaped_bot_url}</a>
+                {legacy_tg_info_html}
               </td>
             </tr>
           </table>

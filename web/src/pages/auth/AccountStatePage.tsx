@@ -74,7 +74,7 @@ const getStatusContent = (status: string): StatusContent => {
   if (status === 'review') {
     return {
       title: 'Проверяем данные',
-      description: 'Заполните личные данные и данные компании. После проверки мы уведомим о выдаче доступа по почте или Telegram.',
+      description: 'Заполните личные данные и данные компании. После проверки мы уведомим о выдаче доступа по электронной почте.',
       severity: 'info'
     };
   }
@@ -277,7 +277,7 @@ export const AccountStatePage = () => {
       } else {
         setDraft(buildDraft(nextProfile));
       }
-      setSuccessMessage('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по почте или Telegram.');
+      setSuccessMessage('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить данные.');
     } finally {
@@ -449,3 +449,4 @@ export const AccountStatePage = () => {
     </Box>
   );
 };
+

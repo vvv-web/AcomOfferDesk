@@ -1,9 +1,11 @@
-import { Alert, Box, Button, Dialog, DialogContent, Stack, Typography } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
+import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined';
+import { Alert, Box, Button, Dialog, DialogContent, Stack, Tooltip, Typography } from '@mui/material';
+import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
-import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
-import { ROLE } from '@shared/constants/roles';
 import { useAuth } from '@app/providers/AuthProvider';
+import { uploadNormativeFile } from '@shared/api/normative/uploadNormativeFile';
+import { ActionButton } from '@shared/components/ActionButton';
+import { ROLE } from '@shared/constants/roles';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
 
 const dialogPaperSx = (theme: Theme) => ({
@@ -26,7 +28,13 @@ const dialogContentSx = {
   }
 };
 
-export const NormativeFileButton = () => {
+type NormativeFileButtonProps = {
+  iconOnly?: boolean;
+  sidebar?: boolean;
+};
+
+export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: NormativeFileButtonProps) => {
+  const theme = useTheme();
   const { session } = useAuth();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -80,13 +88,100 @@ export const NormativeFileButton = () => {
 
   return (
     <>
-      <Button
-        variant="outlined"
-        onClick={handleOpen}
-        sx={{ borderRadius: 999, textTransform: 'none', px: 3, whiteSpace: 'nowrap' }}
-      >
-        Добавить нормативный документ
-      </Button>
+      {sidebar ? (
+        <Tooltip title="Нормативный документ" placement="right" enterDelay={150} disableHoverListener={!iconOnly}>
+          <Box component="span" sx={{ display: 'block', width: '100%' }}>
+            <ActionButton
+              kind="custom"
+              showNavigationIcons={false}
+              onClick={handleOpen}
+              aria-label="Загрузить нормативный документ"
+              sx={{
+                width: '100%',
+                minHeight: iconOnly ? 42 : 52,
+                minWidth: 0,
+                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                justifyContent: iconOnly ? 'center' : 'flex-start',
+                alignItems: iconOnly ? 'center' : 'flex-start',
+                py: iconOnly ? 0 : 0.75,
+                px: iconOnly ? 0 : 1.75,
+                gap: iconOnly ? 0 : 1.25,
+                transition: 'padding 0.32s ease, gap 0.32s ease'
+              }}
+            >
+              <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                <UploadFileOutlined fontSize="small" />
+              </Box>
+              <Stack spacing={0.15} sx={{ minWidth: 0, textAlign: 'left' }}>
+                <Typography
+                  sx={{
+                    maxWidth: iconOnly ? 0 : 180,
+                    opacity: iconOnly ? 0 : 1,
+                    transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                    overflow: 'hidden',
+                    textOverflow: 'clip',
+                    whiteSpace: 'nowrap',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    lineHeight: 1.15,
+                    transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                  }}
+                >
+                  Нормативный
+                </Typography>
+                <Typography
+                  sx={{
+                    maxWidth: iconOnly ? 0 : 180,
+                    opacity: iconOnly ? 0 : 1,
+                    transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                    overflow: 'hidden',
+                    textOverflow: 'clip',
+                    whiteSpace: 'nowrap',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    lineHeight: 1.15,
+                    transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                  }}
+                >
+                  документ
+                </Typography>
+              </Stack>
+            </ActionButton>
+          </Box>
+        </Tooltip>
+      ) : iconOnly ? (
+        <Tooltip title="Нормативный документ" placement="right">
+          <Box component="span" sx={{ display: 'block', width: '100%' }}>
+            <ActionButton
+              kind="custom"
+              showNavigationIcons={false}
+              onClick={handleOpen}
+              aria-label="Загрузить нормативный документ"
+              sx={{
+                width: '100%',
+                minHeight: 42,
+                minWidth: 0,
+                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                justifyContent: 'center',
+                px: 0,
+                gap: 0,
+              }}
+            >
+              <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                <UploadFileOutlined fontSize="small" />
+              </Box>
+            </ActionButton>
+          </Box>
+        </Tooltip>
+      ) : (
+        <Button
+          variant="outlined"
+          onClick={handleOpen}
+          sx={{ borderRadius: 999, textTransform: 'none', px: 3, whiteSpace: 'nowrap' }}
+        >
+          Добавить нормативный документ
+        </Button>
+      )}
       <Dialog
         open={open}
         onClose={handleClose}

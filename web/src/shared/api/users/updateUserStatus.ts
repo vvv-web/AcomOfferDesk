@@ -2,15 +2,12 @@ import { fetchJson } from '../client';
 
 type UpdateUserStatusPayload = {
   user_status: 'review' | 'active' | 'inactive' | 'blacklist';
-  tg_status?: 'review' | 'approved' | 'disapproved';
 };
 
 type UpdateUserStatusResponse = {
   data: {
     user_id: string;
     user_status: string;
-    tg_user_id: number | null;
-    tg_status: string | null;
   };
 };
 

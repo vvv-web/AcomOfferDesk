@@ -38,6 +38,8 @@ export type ResponsibilitySavingsItem = {
   final_amount: number;
   savings_amount: number;
   closed_at: string | null;
+  plan_id: number | null;
+  plan_name: string | null;
 };
 
 export type ResponsibilityClosedSavingsItem = {
@@ -49,6 +51,8 @@ export type ResponsibilityClosedSavingsItem = {
   final_amount: number | null;
   savings_amount: number | null;
   closed_at: string | null;
+  plan_id: number | null;
+  plan_name: string | null;
 };
 
 export type ResponsibilitySavingsSummary = {

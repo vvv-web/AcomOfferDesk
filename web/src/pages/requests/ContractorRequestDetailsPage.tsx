@@ -1,20 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Button,
-  Chip,
-  MenuItem,
-  Select,
   Stack,
   TextField,
   Typography
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
-import { DataTable } from '@shared/components/DataTable';
 import { getContractorRequestView } from '@shared/api/requests/getContractorRequestView';
 import type { ContractorRequestView } from '@shared/api/requests/getContractorRequestView';
 import { createOfferForRequest } from '@shared/api/offers/createOfferForRequest';
 import { downloadFile } from '@shared/api/fileDownload';
+import { RequestDetailsMainCard } from '@features/request-details/ui/RequestDetailsMainCard';
+import type { RequestStatus } from '@features/request-details/model/requestDetailsUtils';
 
 const statusOptions = [
   { value: 'open', label: 'Открыта', color: '#2e7d32' },
@@ -23,26 +21,11 @@ const statusOptions = [
   { value: 'cancelled', label: 'Отменена', color: '#d32f2f' }
 ] as const;
 
-const detailsColumns = [
-  { key: 'label', label: 'Параметр' },
-  { key: 'value', label: 'Значение' }
-];
-
-const formatDate = (value: string | null) => {
-  if (!value) {
-    return '-';
+const toRequestStatus = (status: string | null | undefined): RequestStatus => {
+  if (status === 'review' || status === 'closed' || status === 'cancelled') {
+    return status;
   }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  }).format(date);
+  return 'open';
 };
 
 const parseAmountInput = (value: string) => {
@@ -64,6 +47,7 @@ export const ContractorRequestDetailsPage = () => {
   const [isResponding, setIsResponding] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [offerAmount, setOfferAmount] = useState('');
+  const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
 
   useEffect(() => {
     if (!Number.isFinite(requestId) || requestId <= 0) {
@@ -110,13 +94,7 @@ export const ContractorRequestDetailsPage = () => {
     () => Boolean(request?.actions.create_offer),
     [request?.actions.create_offer]
   );
-
-  const detailsRows = [
-    { id: 'status', label: 'Статус', value: request?.status_label ?? '-' },
-    { id: 'offer', label: 'Номер КП', value: '-' },
-    { id: 'deadline', label: 'Дедлайн сбора КП', value: formatDate(request?.deadline_at ?? null) },
-    { id: 'owner', label: 'Ответственный', value: request?.owner_full_name ?? request?.owner_user_id ?? '-' }
-  ];
+  const requestStatus = toRequestStatus(request?.status);
 
   const handleRespond = async () => {
     if (!request) {
@@ -157,18 +135,12 @@ export const ContractorRequestDetailsPage = () => {
     if (errorMessage) {
       return (
         <Stack spacing={2} alignItems="flex-start">
-          <Button variant="outlined" onClick={() => navigate('/requests')}>
-            Назад
-          </Button>
           <Typography color="error">{errorMessage}</Typography>
         </Stack>
       );
     }
     return (
       <Stack spacing={2} alignItems="flex-start">
-        <Button variant="outlined" onClick={() => navigate('/requests')}>
-          Назад
-        </Button>
         <Typography color="text.secondary">Заявка не найдена.</Typography>
       </Stack>
     );
@@ -176,122 +148,101 @@ export const ContractorRequestDetailsPage = () => {
 
   return (
     <Box>
-      <Button variant="outlined" onClick={() => navigate('/requests')} sx={{ mb: 2 }}>
-        Назад
-      </Button>
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 3 }}>
-        <Typography variant="h6" fontWeight={600} sx={{ whiteSpace: 'nowrap' }}>
-          Номер заявки: {request.id}
-        </Typography>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'nowrap' }}>
-          <Box
-            sx={{
-              width: 22,
-              height: 22,
-              borderRadius: '50%',
-              backgroundColor: statusConfig.color
-            }}
-          />
-          <Select
-            size="small"
-            value={statusConfig.value}
-            disabled
-            sx={{
-              minWidth: 200,
-              borderRadius: 999,
-              backgroundColor: 'background.paper'
-            }}
-          >
-            {statusOptions.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </Stack>
-      </Stack>
-
       {errorMessage ? (
         <Typography color="error" sx={{ mb: 2 }}>
           {errorMessage}
         </Typography>
       ) : null}
 
-      <Box
-        sx={(theme) => ({
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.background.paper,
-          padding: { xs: 2, md: 3 },
-          display: 'grid',
-          gap: 3,
-          gridTemplateColumns: { xs: '1fr', md: '1.4fr 1fr' }
-        })}
-      >
-        <Stack spacing={2}>
-          <TextField
-            value={request.description ?? ''}
-            multiline
-            minRows={6}
-            InputProps={{ readOnly: true }}
-            sx={{ borderRadius: 3 }}
-          />
-
-          <Stack spacing={1}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Файлы заявки
-            </Typography>
-            {request.files.length > 0 ? (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {request.files.map((file) => (
-                  <Chip
-                    key={file.id}
-                    label={file.name}
-                    variant="outlined"
-                    sx={{ borderRadius: 999, backgroundColor: '#fff' }}
-                    onClick={() => void downloadFile(file.download_url, file.name)}
-                  />
-                ))}
-              </Box>
-            ) : (
-              <Typography variant="body2">Файлы не прикреплены</Typography>
-            )}
-          </Stack>
-        </Stack>
-
-        <DataTable
-          columns={detailsColumns}
-          rows={detailsRows}
-          rowKey={(row) => row.id}
-          showHeader={false}
-          enableColumnControls={false}
-          renderRow={(row) => [
-            <Typography variant="body2">{row.label}</Typography>,
-            <Typography variant="body2">{row.value}</Typography>
-          ]}
-        />
-      </Box>
-
-      {canCreateOffer ? (
-        <Stack spacing={1} sx={{ mt: 3, maxWidth: 360 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Сумма КП, руб. (необязательно)
-          </Typography>
+      <RequestDetailsMainCard
+        requestId={request.id}
+        status={requestStatus}
+        statusOptions={statusOptions}
+        statusColor={statusConfig.color}
+        canEditRequest={false}
+        isEditMode={false}
+        onStatusChange={() => undefined}
+        descriptionText={request.description ?? ''}
+        descriptionTextRef={descriptionTextRef}
+        canExpandDescription={false}
+        isDescriptionExpanded={false}
+        onToggleDescription={() => undefined}
+        ownerField={
           <TextField
             size="small"
-            value={offerAmount}
-            onChange={(event) => setOfferAmount(event.target.value)}
-            inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-            helperText="Можно оставить пустым и заполнить позже в рабочем пространстве КП."
+            value={request.owner_full_name ?? request.owner_user_id ?? '-'}
+            fullWidth
+            InputProps={{ readOnly: true }}
           />
-        </Stack>
-      ) : null}
+        }
+        existingFiles={request.files}
+        canDeleteRequestFiles={false}
+        onDownloadFile={(downloadUrl, fileName) => void downloadFile(downloadUrl, fileName)}
+        onRemoveExistingFile={() => undefined}
+        newFile={null}
+        onClearNewFile={() => undefined}
+        canUploadRequestFiles={false}
+        onNewFileSelected={() => undefined}
+        canViewRequestAmounts={false}
+        deadline={request.deadline_at ?? ''}
+        initialAmount=""
+        finalAmount=""
+        onDeadlineChange={() => undefined}
+        onInitialAmountChange={() => undefined}
+        onFinalAmountChange={() => undefined}
+        requestCreatedAt={null}
+        requestClosedAt={null}
+        requestDeadlineAt={request.deadline_at ?? null}
+        requestOfferId="-"
+        showOfferId={false}
+        requestUpdatedAt={request.updated_at ?? null}
+        hideUpdatedAtIfEmpty
+        isSaving={false}
+        canSaveRequestChanges={false}
+        hasPendingChanges={false}
+        hasValidationError={false}
+        canEnterEditMode={false}
+        onCancelEditing={() => undefined}
+        onSave={() => undefined}
+        onStartEdit={() => undefined}
+        hideActions
+      />
 
-      <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
-        <Button variant="contained" disabled={!canCreateOffer || isResponding} onClick={() => void handleRespond()}>
-          {isResponding ? 'Создаём отклик...' : 'Откликнуться'}
-        </Button>
-      </Stack>
+      {canCreateOffer ? (
+        <Box
+          sx={(theme) => ({
+            mt: 2,
+            width: 'fit-content',
+            maxWidth: '100%',
+            border: `1px solid ${theme.palette.divider}`,
+            borderRadius: `${theme.acomShape.panelRadius}px`,
+            backgroundColor: theme.palette.background.paper,
+            p: { xs: 1.5, sm: 2 }
+          })}
+        >
+          <Stack spacing={0.9} sx={{ width: 'fit-content', maxWidth: { xs: '100%', sm: 360 } }}>
+            <TextField
+              size="small"
+              value={offerAmount}
+              onChange={(event) => setOfferAmount(event.target.value)}
+              inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
+              placeholder="Сумма КП, руб."
+              sx={{ width: { xs: '100%', sm: 180 } }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280, lineHeight: 1.3 }}>
+              Можно заполнить после создания отклика.
+            </Typography>
+            <Button
+              variant="contained"
+              disabled={isResponding}
+              onClick={() => void handleRespond()}
+              sx={{ width: { xs: '100%', sm: 'fit-content' }, minWidth: 150, py: 0.75 }}
+            >
+              {isResponding ? 'Создаём отклик...' : 'Откликнуться'}
+            </Button>
+          </Stack>
+        </Box>
+      ) : null}
     </Box>
   );
 };

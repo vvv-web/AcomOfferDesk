@@ -13,11 +13,17 @@ services:
         exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start-dev}" --import-realm
     volumes:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
-      - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro0
+      - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro
       - ./infra/keycloak/prepare-theme.sh:/opt/keycloak/bootstrap/prepare-theme.sh:ro
       - keycloak_data:/opt/keycloak/data
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'HEAD /iam/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep '200' <&3"]
+      test:
+        [
+          "CMD",
+          "bash",
+          "-ec",
+          "management_port=\"$${KC_HTTP_MANAGEMENT_PORT:-9000}\"; management_prefix=\"$${KC_HTTP_MANAGEMENT_RELATIVE_PATH:-}\"; if [ -z \"$$management_prefix\" ]; then management_prefix=\"$${KC_HTTP_RELATIVE_PATH:-}\"; fi; if [ -z \"$$management_prefix\" ] || [ \"$$management_prefix\" = \"/\" ]; then health_path=\"/health/ready\"; else health_path=\"$${management_prefix%/}/health/ready\"; fi; exec 3<>/dev/tcp/127.0.0.1/$$management_port; printf 'HEAD %s HTTP/1.0\\r\\n\\r\\n' \"$$health_path\" >&3; grep '200' <&3",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -79,15 +85,20 @@ services:
     networks:
       - project_net
 
-  tg_bot:
-    build: ./tg_bot
-    container_name: tg_bot
-    env_file:
-      - ./tg_bot/.env
-    depends_on:
-      - gateway
-    networks:
-      - project_net
+  # LEGACY Telegram bot service. Keep this block for quick rollback.
+  # To restore:
+  # 1) uncomment this service
+  # 2) provide ./tg_bot/.env
+  # 3) enable LEGACY_TELEGRAM_ENABLED=true in backend/.env
+  # tg_bot:
+  #   build: ./tg_bot
+  #   container_name: tg_bot
+  #   env_file:
+  #     - ./tg_bot/.env
+  #   depends_on:
+  #     - gateway
+  #   networks:
+  #     - project_net
 
   rabbitmq:
     image: rabbitmq:3-management

@@ -10,8 +10,6 @@ import { ROLE } from '@shared/constants/roles';
 const AuthPage = lazy(async () => ({ default: (await import('@pages/auth/AuthPage')).AuthPage }));
 const AuthCallbackPage = lazy(async () => ({ default: (await import('@pages/auth/AuthCallbackPage')).AuthCallbackPage }));
 const AccountStatePage = lazy(async () => ({ default: (await import('@pages/auth/AccountStatePage')).AccountStatePage }));
-const TgAuthPage = lazy(async () => ({ default: (await import('@pages/auth/TgAuthPage')).TgAuthPage }));
-const TgRegisterPage = lazy(async () => ({ default: (await import('@pages/auth/TgRegisterPage')).TgRegisterPage }));
 const RegistrationLinkStatusPage = lazy(
   async () => ({ default: (await import('@pages/auth/RegistrationLinkStatusPage')).RegistrationLinkStatusPage })
 );
@@ -30,6 +28,9 @@ const ProjectManagerDashboardPage = lazy(
 );
 const ProjectManagerSavingsPage = lazy(
   async () => ({ default: (await import('@pages/dashboard/ProjectManagerSavingsPage')).ProjectManagerSavingsPage })
+);
+const ProjectManagerPlanPage = lazy(
+  async () => ({ default: (await import('@pages/dashboard/ProjectManagerPlanPage')).ProjectManagerPlanPage })
 );
 
 type AppRoutesProps = {
@@ -59,8 +60,6 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
           <Route path="/login" element={<AuthPage />} />
           <Route path="/auth/login" element={<AuthPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
-          <Route path="/auth/tg/login" element={<TgAuthPage />} />
-          <Route path="/auth/tg/register" element={<TgRegisterPage />} />
           <Route path="/auth/registration-link-status" element={<RegistrationLinkStatusPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route element={<ProtectedRoute />}>
@@ -109,6 +108,14 @@ export const AppRoutes = ({ defaultPath, hasSession, location, backgroundLocatio
                 element={
                   <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST]}>
                     <ProjectManagerSavingsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pm-dashboard/plan"
+                element={
+                  <RoleRoute allowedRoles={[ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST]}>
+                    <ProjectManagerPlanPage />
                   </RoleRoute>
                 }
               />

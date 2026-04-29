@@ -90,6 +90,17 @@ def _format_recipient_log(payload: dict) -> str:
     return f'"{to_email}" - "не зарегистрирован"'
 
 
+def _resolve_smtp_security_mode(smtp_port: int) -> str:
+    mode = os.getenv("SMTP_SECURITY", "auto").strip().lower()
+    if mode not in {"auto", "ssl", "starttls", "none"}:
+        logger.warning("Unknown SMTP_SECURITY=%r, fallback to auto", mode)
+        mode = "auto"
+
+    if mode == "auto":
+        return "ssl" if smtp_port == 465 else "starttls" if smtp_port == 587 else "none"
+    return mode
+
+
 async def send_email(payload: dict) -> None:
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
@@ -153,8 +164,18 @@ async def send_email(payload: dict) -> None:
         message.add_attachment(content_bytes, maintype=maintype, subtype=subtype, filename=filename)
 
     context = ssl.create_default_context()
+    smtp_security = _resolve_smtp_security_mode(smtp_port)
     try:
-        with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=20, context=context) as smtp:
+        if smtp_security == "ssl":
+            smtp = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=20, context=context)
+        else:
+            smtp = smtplib.SMTP(smtp_host, smtp_port, timeout=20)
+
+        with smtp:
+            if smtp_security == "starttls":
+                smtp.ehlo()
+                smtp.starttls(context=context)
+                smtp.ehlo()
             smtp.login(username, password)
             smtp.send_message(message, from_addr=from_address, to_addrs=[to_email])
         logger.info("Email sent to %s", _format_recipient_log(payload))
@@ -169,6 +190,6 @@ async def send_email(payload: dict) -> None:
             return
         _recent_payloads_until.pop(payload_fingerprint, None)
         logger.exception("Failed to send email to %s", _format_recipient_log(payload))
-    except smtplib.SMTPException:
+    except (smtplib.SMTPException, ssl.SSLError, OSError):
         _recent_payloads_until.pop(payload_fingerprint, None)
         logger.exception("Failed to send email to %s", _format_recipient_log(payload))

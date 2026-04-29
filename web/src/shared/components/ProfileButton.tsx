@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -8,11 +9,11 @@ import {
   Dialog,
   DialogContent,
   Stack,
-  SvgIcon,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
+import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -27,6 +28,7 @@ import {
 import type { CurrentUserProfile } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
 import { requestEmailVerification } from '@shared/api/auth/emailVerification';
+import { ActionButton } from '@shared/components/ActionButton';
 
 
 const fallbackText = 'Не указано';
@@ -115,12 +117,6 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 type CompanyFormValues = z.infer<typeof companySchema>;
 type UnavailabilityFormValues = z.infer<typeof unavailabilitySchema>;
 
-const ProfileIcon = () => (
-  <SvgIcon fontSize="small">
-    <path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5Z" />
-  </SvgIcon>
-);
-
 const DataRow = ({ label, value }: { label: string; value: string | null }) => (
   <Stack direction="row" spacing={2}>
     <Typography sx={{ width: 170, color: 'text.primary' }}>{label}</Typography>
@@ -138,7 +134,13 @@ const normalizeOptional = (value: string) => {
 
 const sanitizeDefaultValue = (value: string | null) => (value && isPlaceholderValue(value) ? '' : value ?? '');
 
-export const ProfileButton = () => {
+type ProfileButtonProps = {
+  iconOnly?: boolean;
+  sidebar?: boolean;
+};
+
+export const ProfileButton = ({ iconOnly = false, sidebar = false }: ProfileButtonProps) => {
+  const theme = useTheme();
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [openPassword, setOpenPassword] = useState(false);
@@ -329,9 +331,76 @@ export const ProfileButton = () => {
   };
   return (
     <>
-      <Button variant="outlined" onClick={() => void openDialog()} startIcon={<ProfileIcon />} sx={{ minWidth: 124 }}>
+      {sidebar ? (
+        <Tooltip title="Профиль" placement="right" enterDelay={150} disableHoverListener={!iconOnly}>
+          <Box component="span" sx={{ display: 'block', width: '100%' }}>
+            <ActionButton
+              kind="custom"
+              showNavigationIcons={false}
+              onClick={() => void openDialog()}
+              aria-label="Открыть профиль"
+              sx={{
+                width: '100%',
+                minHeight: 42,
+                minWidth: 0,
+                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                justifyContent: iconOnly ? 'center' : 'flex-start',
+                px: iconOnly ? 0 : 1.75,
+                gap: iconOnly ? 0 : 1.25,
+                transition: 'padding 0.32s ease, gap 0.32s ease'
+              }}
+            >
+              <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                <PersonOutlineRounded fontSize="small" />
+              </Box>
+              <Typography
+                sx={{
+                  maxWidth: iconOnly ? 0 : 160,
+                  opacity: iconOnly ? 0 : 1,
+                  transform: iconOnly ? 'translateX(-4px)' : 'translateX(0)',
+                  overflow: 'hidden',
+                  textOverflow: 'clip',
+                  whiteSpace: 'nowrap',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  lineHeight: 1.2,
+                  transition: 'max-width 0.34s ease, opacity 0.24s ease, transform 0.34s ease'
+                }}
+              >
+                {'Профиль'}
+              </Typography>
+            </ActionButton>
+          </Box>
+        </Tooltip>
+      ) : iconOnly ? (
+        <Tooltip title="Профиль" placement="right" enterDelay={150}>
+          <Box component="span" sx={{ display: 'block', width: '100%' }}>
+            <ActionButton
+              kind="custom"
+              showNavigationIcons={false}
+              onClick={() => void openDialog()}
+              aria-label="Открыть профиль"
+              sx={{
+                width: '100%',
+                minHeight: 42,
+                minWidth: 0,
+                borderRadius: `${theme.acomShape.buttonRadius}px !important`,
+                justifyContent: 'center',
+                px: 0,
+                gap: 0
+              }}
+            >
+              <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
+                <PersonOutlineRounded fontSize="small" />
+              </Box>
+            </ActionButton>
+          </Box>
+        </Tooltip>
+      ) : (
+      <Button variant="outlined" onClick={() => void openDialog()} startIcon={<PersonOutlineRounded fontSize="small" />} sx={{ minWidth: 124 }}>
         Профиль
       </Button>
+      )}
 
       <Dialog
         open={open}
