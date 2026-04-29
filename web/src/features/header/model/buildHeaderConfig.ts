@@ -14,6 +14,7 @@ type BuildHeaderConfigArgs = {
   adminUsersTab: 'contractors' | 'economists' | 'admins';
   onNavigateToDashboard: () => void;
   onNavigateToSavings: () => void;
+  onNavigateToPlan: () => void;
   onNavigateToRequests: () => void;
   onNavigateToRequestCreate: () => void;
   onNavigateToAdmin: () => void;
@@ -93,6 +94,7 @@ const buildProjectManagerMobileNavItems = (showNormative: boolean, canOpenUsersP
       children: [
         { key: 'dashboard-process', label: 'Процесс работы', to: '/pm-dashboard' },
         { key: 'dashboard-savings', label: 'Экономия', to: '/pm-dashboard/savings' },
+        { key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' },
       ],
     },
     { key: 'requests', label: 'Заявки', to: '/requests' }
@@ -134,6 +136,14 @@ const buildContractorMobileNavItems = (): HeaderMobileNavItem[] => [
 ];
 
 const buildLeadMobileNavItems = (): HeaderMobileNavItem[] => [
+  {
+    key: 'dashboard',
+    label: 'Дашборд',
+    to: '/pm-dashboard/plan',
+    children: [
+      { key: 'dashboard-plan', label: 'План', to: '/pm-dashboard/plan' },
+    ],
+  },
   { key: 'requests', label: 'Заявки', to: '/requests' },
   { key: 'economists', label: 'Экономисты', to: '/admin' },
   buildMoreNavItem({
@@ -234,6 +244,7 @@ export const buildHeaderConfig = ({
   adminUsersTab,
   onNavigateToDashboard,
   onNavigateToSavings,
+  onNavigateToPlan,
   onNavigateToRequests,
   onNavigateToRequestCreate: _onNavigateToRequestCreate,
   onNavigateToAdmin,
@@ -256,6 +267,7 @@ export const buildHeaderConfig = ({
   const isOfferWorkspacePage = /^\/offers\/\d+\/workspace$/.test(pathname);
   const isResponsibilityDashboard = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard';
   const isResponsibilitySavings = (isProjectManager || isLeadEconomist) && pathname === '/pm-dashboard/savings';
+  const isResponsibilityPlan = (isProjectManager || isLeadEconomist || isEconomist) && pathname === '/pm-dashboard/plan';
   const isResponsibilityRequestsPage =
     (isProjectManager || isLeadEconomist) && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isResponsibilityEmployeesPage = (isProjectManager || isLeadEconomist) && pathname.startsWith('/admin');
@@ -266,11 +278,12 @@ export const buildHeaderConfig = ({
   const canUseContractorTabs = isContractorRequestsArea && canLoadOpenRequests && canLoadOfferedRequests;
   const isLeadRequestsTab = isLeadLike && (pathname.startsWith('/requests') || isOfferWorkspacePage);
   const isLeadEconomistsTab = isLeadLike && pathname.startsWith('/admin');
+  const isLeadPlanTab = isLeadLike && pathname === '/pm-dashboard/plan';
   const canUseLeadTabs = isLeadLike && !isProjectManager && !isLeadEconomist
-    && (isLeadRequestsTab || isLeadEconomistsTab)
+    && (isLeadRequestsTab || isLeadEconomistsTab || isLeadPlanTab)
     && (canOpenUsersPage || isEconomist);
   const canUseProjectManagerTabs = (isProjectManager || isLeadEconomist)
-    && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
+    && (isResponsibilityDashboard || isResponsibilitySavings || isResponsibilityPlan || isResponsibilityRequestsPage || isResponsibilityEmployeesPage)
     && canOpenUsersPage;
 
   const defaultMobileNavItems = resolveDefaultMobileNavItems({
@@ -306,6 +319,7 @@ export const buildHeaderConfig = ({
       tabs: [
         { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
         { key: 'savings', value: 'savings', label: 'Экономия' },
+        { key: 'plan', value: 'plan', label: 'План' },
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'employees', value: 'employees', label: 'Сотрудники' }
       ],
@@ -313,6 +327,8 @@ export const buildHeaderConfig = ({
         ? 'dashboard'
         : isResponsibilitySavings
           ? 'savings'
+          : isResponsibilityPlan
+            ? 'plan'
           : isResponsibilityEmployeesPage
             ? 'employees'
             : 'requests',
@@ -323,6 +339,10 @@ export const buildHeaderConfig = ({
         }
         if (value === 'savings') {
           onNavigateToSavings();
+          return;
+        }
+        if (value === 'plan') {
+          onNavigateToPlan();
           return;
         }
         if (value === 'employees') {
@@ -382,11 +402,17 @@ export const buildHeaderConfig = ({
       breadcrumbs,
       mobileNavItems: buildLeadMobileNavItems(),
       tabs: [
+        { key: 'dashboard', value: 'dashboard', label: 'Дашборд' },
+        { key: 'plan', value: 'plan', label: 'План' },
         { key: 'requests', value: 'requests', label: 'Заявки' },
         { key: 'economists', value: 'economists', label: 'Экономисты' }
       ],
-      activeTab: pathname === '/admin' ? 'economists' : 'requests',
+      activeTab: pathname === '/pm-dashboard/plan' ? 'plan' : pathname === '/admin' ? 'economists' : 'requests',
       onTabChange: (value) => {
+        if (value === 'dashboard' || value === 'plan') {
+          onNavigateToPlan();
+          return;
+        }
         if (value === 'economists') {
           onNavigateToAdmin();
           return;

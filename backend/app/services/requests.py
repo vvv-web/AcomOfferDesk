@@ -64,6 +64,8 @@ class RequestEditInput:
     owner_user_id: str | None = None
     initial_amount: float | None = None
     final_amount: float | None = None
+    id_plan: int | None = None
+    id_plan_provided: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,7 @@ class RequestListItem:
     owner_user_id: str
     owner_full_name: str | None
     chosen_offer_id: int | None
+    id_plan: int | None
     count_submitted: int
     count_deleted_alert: int
     count_accepted_total: int
@@ -107,6 +110,7 @@ class OpenRequestListItem:
     owner_user_id: str
     owner_full_name: str | None
     chosen_offer_id: int | None
+    id_plan: int | None
     files: list[RequestFileItem] = field(default_factory=list)
     offers: list[OfferedRequestOfferItem] = field(default_factory=list)
     latest_offer_id: int | None = None
@@ -161,6 +165,7 @@ class RequestDetailItem:
     owner_user_id: str
     owner_full_name: str | None
     chosen_offer_id: int | None
+    id_plan: int | None
     count_submitted: int
     count_deleted_alert: int
     count_accepted_total: int
@@ -209,6 +214,7 @@ class RequestService:
         deadline_at: datetime,
         description: str | None,
         initial_amount: float | None,
+        id_plan: int | None = None,
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
@@ -219,6 +225,10 @@ class RequestService:
         if not files:
             raise Conflict("At least one file is required")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
+        await self._ensure_plan_assignment_allowed(
+            current_user=current_user,
+            plan_id=id_plan,
+        )
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
         normalized_hidden_contractor_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
 
@@ -227,6 +237,7 @@ class RequestService:
             deadline_at=deadline_at,
             description=description,
             initial_amount=initial_amount,
+            id_plan=id_plan,
         )
 
         file_ids: list[int] = []
@@ -365,7 +376,7 @@ class RequestService:
                 data.status,
                 data.deadline_at,
             )
-        )
+        ) or data.id_plan_provided
         if has_request_edit_changes:
             RequestPolicy.ensure_can_edit_owned_unassigned(
                 current_user,
@@ -450,6 +461,13 @@ class RequestService:
                 )
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
 
+        if data.id_plan_provided:
+            await self._ensure_plan_assignment_allowed(
+                current_user=current_user,
+                plan_id=data.id_plan,
+            )
+            await self._requests.update_plan(request=request, plan_id=data.id_plan)
+
         if resulting_status == "closed" and data.status != "closed":
             accepted_offer_id = request.id_offer or await self._requests.get_latest_accepted_offer_id(request_id=request.id)
             accepted_offer = await self._offers.get_by_id(offer_id=accepted_offer_id) if accepted_offer_id is not None else None
@@ -472,6 +490,28 @@ class RequestService:
             cursor_id = cursor_user.id_parent
 
         return False
+
+    async def _ensure_plan_assignment_allowed(
+        self,
+        *,
+        current_user: CurrentUser,
+        plan_id: int | None,
+    ) -> None:
+        if plan_id is None:
+            return
+        if plan_id <= 0:
+            raise Conflict("Plan ID must be positive")
+        plan_owner_user_id = await self._requests.get_economy_plan_owner_user_id(plan_id=plan_id)
+        if plan_owner_user_id is None:
+            raise NotFound("Plan not found")
+        if current_user.role_id == settings.superadmin_role_id:
+            return
+        if await self._is_descendant(
+            ancestor_user_id=current_user.user_id,
+            target_user_id=plan_owner_user_id,
+        ):
+            return
+        raise Forbidden("Selected plan is outside your management scope")
 
     def _validate_amount(self, *, value: float | None, field_name: str) -> None:
         if value is None:
@@ -590,7 +630,14 @@ class RequestService:
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.ensure_can_view_requests(current_user)
-        rows = await self._requests.list_with_stats_and_files(current_user_id=current_user.user_id)
+        owner_scope_ids: list[str] | None = None
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+            owner_scope_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+
+        rows = await self._requests.list_with_stats_and_files(
+            current_user_id=current_user.user_id,
+            owner_user_ids=owner_scope_ids,
+        )
 
         return [
             RequestListItem(
@@ -605,6 +652,7 @@ class RequestService:
                 owner_user_id=request.id_user,
                 owner_full_name=profile.full_name if profile else None,
                 chosen_offer_id=request.id_offer,
+                id_plan=request.id_plan,
                 count_submitted=stats.count_submitted if stats else 0,
                 count_deleted_alert=stats.count_deleted_alert if stats else 0,
                 count_accepted_total=stats.count_accepted_total if stats else 0,
@@ -640,6 +688,7 @@ class RequestService:
                 owner_user_id=request.id_user,
                 owner_full_name=profile.full_name if profile else None,
                 chosen_offer_id=request.id_offer,
+                id_plan=request.id_plan,
                 files=[],
                 latest_offer_id=latest_offers_by_request_id.get(request.id).id if request.id in latest_offers_by_request_id else None,
                 latest_offer_status=latest_offers_by_request_id.get(request.id).status if request.id in latest_offers_by_request_id else None,
@@ -670,6 +719,7 @@ class RequestService:
                     owner_user_id=request.id_user,
                     owner_full_name=profile.full_name if profile else None,
                     chosen_offer_id=None,
+                    id_plan=request.id_plan,
                     files=[],
                     offers=[],
                     latest_offer_id=offer.id,
@@ -694,7 +744,11 @@ class RequestService:
     
     async def list_open_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
-        rows = await self._requests.list_open_with_stats_and_files()
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+            owner_scope_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+            rows = await self._requests.list_open_with_stats_and_files_by_owner_ids(owner_ids=owner_scope_ids)
+        else:
+            rows = await self._requests.list_open_with_stats_and_files()
 
         return [
             RequestListItem(
@@ -709,6 +763,7 @@ class RequestService:
                 owner_user_id=request.id_user,
                 owner_full_name=profile.full_name if profile else None,
                 chosen_offer_id=request.id_offer,
+                id_plan=request.id_plan,
                 count_submitted=stats.count_submitted if stats else 0,
                 count_deleted_alert=stats.count_deleted_alert if stats else 0,
                 count_accepted_total=stats.count_accepted_total if stats else 0,
@@ -728,6 +783,10 @@ class RequestService:
             raise NotFound("Request not found")
 
         request, stats, owner_profile = request_row
+        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
+            allowed_owner_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+            if request.id_user not in set(allowed_owner_ids):
+                raise Forbidden("Request is outside your management scope")
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
@@ -785,6 +844,7 @@ class RequestService:
             owner_user_id=request.id_user,
             owner_full_name=owner_profile.full_name if owner_profile else None,
             chosen_offer_id=request.id_offer,
+            id_plan=request.id_plan,
             count_submitted=stats.count_submitted if stats else 0,
             count_deleted_alert=stats.count_deleted_alert if stats else 0,
             count_accepted_total=stats.count_accepted_total if stats else 0,
@@ -793,3 +853,23 @@ class RequestService:
             files=request_file_items,
             offers=list(offers_by_id.values()),
         )
+
+    async def _resolve_visible_owner_ids_for_manager(self, *, current_user: CurrentUser) -> list[str]:
+        rows = await self._users.list_active_user_parent_pairs()
+        children_by_parent: dict[str, list[str]] = {}
+        for user_id, parent_id in rows:
+            if parent_id is None:
+                continue
+            children_by_parent.setdefault(parent_id, []).append(user_id)
+
+        visible: set[str] = {current_user.user_id}
+        queue: list[str] = [current_user.user_id]
+        while queue:
+            manager_id = queue.pop()
+            for child_id in children_by_parent.get(manager_id, []):
+                if child_id in visible:
+                    continue
+                visible.add(child_id)
+                queue.append(child_id)
+
+        return list(visible)

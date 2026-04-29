@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     ForeignKey,
     Integer,
     Numeric,
@@ -168,6 +170,11 @@ class Request(Base):
     id_offer: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         ForeignKey("offers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    id_plan: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("economy_plans.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -410,3 +417,30 @@ class UserStatusPeriod(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     started_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     ended_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)
+
+
+class EconomyPlan(Base):
+    __tablename__ = "economy_plans"
+    __table_args__ = (
+        CheckConstraint("period_end >= period_start", name="economy_plans_period_chk"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id_parent_plan: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("economy_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id_parent_user_snapshot: Mapped[str | None] = mapped_column(
+        Text,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    plan_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    fact_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())

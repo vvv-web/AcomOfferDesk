@@ -1,8 +1,8 @@
-import AddRounded from '@mui/icons-material/AddRounded';
-import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
+import AddOutlined from '@mui/icons-material/AddOutlined';
+import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import KeyboardArrowLeftRounded from '@mui/icons-material/KeyboardArrowLeftRounded';
 import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
-import LogoutRounded from '@mui/icons-material/LogoutRounded';
+import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
 import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
@@ -69,7 +69,9 @@ export const SuperadminSidebarHeader = ({
   const topItems = (config.sidebarItems ?? []).filter((item) => !item.isBottomItem && item.key !== 'logout');
   const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
   const hasSavingsTab = config.tabs.some((tabItem) => tabItem.key === 'savings');
-  const isDashboardPopupOpen = collapsed && hasSavingsTab && Boolean(dashboardMenuAnchorEl);
+  const hasPlanTab = config.tabs.some((tabItem) => tabItem.key === 'plan');
+  const hasDashboardProcessTab = hasSavingsTab;
+  const isDashboardPopupOpen = collapsed && (hasSavingsTab || hasPlanTab) && Boolean(dashboardMenuAnchorEl);
 
   return (
     <Stack
@@ -137,10 +139,15 @@ export const SuperadminSidebarHeader = ({
             if (tab.key === 'savings') {
               return null;
             }
+            if (tab.key === 'plan' && config.tabs.some((tabItem) => tabItem.key === 'dashboard')) {
+              return null;
+            }
 
             if (tab.key === 'dashboard') {
-              const isDashboardOrSavingsActive = config.activeTab === 'dashboard' || config.activeTab === 'savings';
-              const shouldShowDashboardChildren = !collapsed && hasSavingsTab && (isDashboardMenuHovered || isDashboardOrSavingsActive);
+              const isDashboardRelatedActive =
+                config.activeTab === 'dashboard' || config.activeTab === 'savings' || config.activeTab === 'plan';
+              const shouldShowDashboardChildren =
+                !collapsed && (hasSavingsTab || hasPlanTab) && (isDashboardMenuHovered || isDashboardRelatedActive);
 
               return (
                 <Stack
@@ -159,7 +166,7 @@ export const SuperadminSidebarHeader = ({
                 >
                   <Box
                     onClick={(event) => {
-                      if (collapsed && hasSavingsTab) {
+                      if (collapsed && (hasSavingsTab || hasPlanTab)) {
                         setDashboardMenuAnchorEl((currentAnchorEl) =>
                           currentAnchorEl ? null : (event.currentTarget as HTMLElement)
                         );
@@ -173,25 +180,38 @@ export const SuperadminSidebarHeader = ({
                       label={tab.label}
                       icon={getHeaderNavigationIcon(tab.key)}
                       collapsed={collapsed}
-                      active={collapsed ? isDashboardOrSavingsActive : false}
+                      active={collapsed ? isDashboardRelatedActive : false}
                     />
                   </Box>
                   {shouldShowDashboardChildren ? (
                     <Stack spacing={0.35} sx={{ pl: 1.25 }}>
-                      <SidebarMenuButton
-                        label="Процесс работы"
-                        icon={getHeaderNavigationIcon('dashboard')}
-                        collapsed={false}
-                        active={config.activeTab === 'dashboard'}
-                        onClick={() => config.onTabChange?.('dashboard')}
-                      />
-                      <SidebarMenuButton
-                        label="Экономия"
-                        icon={getHeaderNavigationIcon('savings')}
-                        collapsed={false}
-                        active={config.activeTab === 'savings'}
-                        onClick={() => config.onTabChange?.('savings')}
-                      />
+                      {hasDashboardProcessTab ? (
+                        <SidebarMenuButton
+                          label="Процесс работы"
+                          icon={getHeaderNavigationIcon('dashboard-process')}
+                          collapsed={false}
+                          active={config.activeTab === 'dashboard'}
+                          onClick={() => config.onTabChange?.('dashboard')}
+                        />
+                      ) : null}
+                      {hasSavingsTab ? (
+                        <SidebarMenuButton
+                          label="Экономия"
+                          icon={getHeaderNavigationIcon('savings')}
+                          collapsed={false}
+                          active={config.activeTab === 'savings'}
+                          onClick={() => config.onTabChange?.('savings')}
+                        />
+                      ) : null}
+                      {hasPlanTab ? (
+                        <SidebarMenuButton
+                          label="План"
+                          icon={getHeaderNavigationIcon('plan')}
+                          collapsed={false}
+                          active={config.activeTab === 'plan'}
+                          onClick={() => config.onTabChange?.('plan')}
+                        />
+                      ) : null}
                     </Stack>
                   ) : null}
                 </Stack>
@@ -213,7 +233,7 @@ export const SuperadminSidebarHeader = ({
           {config.backAction ? (
             <SidebarMenuButton
               label={config.backAction.label}
-              icon={<ArrowBackRounded fontSize="small" />}
+              icon={<ArrowBackOutlined fontSize="small" />}
               collapsed={collapsed}
               onClick={config.backAction.onClick}
             />
@@ -223,7 +243,7 @@ export const SuperadminSidebarHeader = ({
             <SidebarMenuButton
               key={action.key}
               label={action.label}
-              icon={<AddRounded fontSize="small" />}
+              icon={<AddOutlined fontSize="small" />}
               collapsed={collapsed}
               onClick={action.onClick}
             />
@@ -241,22 +261,36 @@ export const SuperadminSidebarHeader = ({
           anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
           transformOrigin={{ vertical: 'center', horizontal: 'left' }}
         >
-          <MenuItem
-            onClick={() => {
-              config.onTabChange?.('dashboard');
-              setDashboardMenuAnchorEl(null);
-            }}
-          >
-            Процесс работы
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              config.onTabChange?.('savings');
-              setDashboardMenuAnchorEl(null);
-            }}
-          >
-            Экономия
-          </MenuItem>
+          {hasDashboardProcessTab ? (
+            <MenuItem
+              onClick={() => {
+                config.onTabChange?.('dashboard');
+                setDashboardMenuAnchorEl(null);
+              }}
+            >
+              Процесс работы
+            </MenuItem>
+          ) : null}
+          {hasSavingsTab ? (
+            <MenuItem
+              onClick={() => {
+                config.onTabChange?.('savings');
+                setDashboardMenuAnchorEl(null);
+              }}
+            >
+              Экономия
+            </MenuItem>
+          ) : null}
+          {hasPlanTab ? (
+            <MenuItem
+              onClick={() => {
+                config.onTabChange?.('plan');
+                setDashboardMenuAnchorEl(null);
+              }}
+            >
+              План
+            </MenuItem>
+          ) : null}
         </Menu>
 
         <Stack
@@ -277,7 +311,7 @@ export const SuperadminSidebarHeader = ({
                 <ProfileButton iconOnly sidebar />
                 <SidebarMenuButton
                   label="Выйти"
-                  icon={<LogoutRounded fontSize="small" />}
+                  icon={<LogoutOutlined fontSize="small" />}
                   collapsed
                   onClick={onLogout}
                 />
@@ -301,7 +335,7 @@ export const SuperadminSidebarHeader = ({
                         borderRadius: `${theme.acomShape.buttonRadius}px !important`,
                       }}
                     >
-                      <LogoutRounded fontSize="small" />
+                      <LogoutOutlined fontSize="small" />
                     </ActionButton>
                   </Box>
                 </Tooltip>
@@ -310,7 +344,7 @@ export const SuperadminSidebarHeader = ({
           ) : config.showLogout ? (
             <SidebarMenuButton
               label="Выйти"
-              icon={<LogoutRounded fontSize="small" />}
+              icon={<LogoutOutlined fontSize="small" />}
               collapsed={collapsed}
               onClick={onLogout}
             />

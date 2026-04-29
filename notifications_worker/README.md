@@ -84,6 +84,11 @@ Backend публикует email через `shared.broker.EXCHANGE` и `shared.
 
 - `SMTP_HOST`
 - `SMTP_PORT` (default: `465`)
+- `SMTP_SECURITY` (default: `auto`)
+  - `auto`: `465 -> ssl`, `587 -> starttls`, other ports -> plain SMTP
+  - `ssl`: implicit TLS (SMTPS)
+  - `starttls`: SMTP + TLS upgrade via STARTTLS
+  - `none`: plain SMTP without TLS
 - `EMAIL_ADDRESS` (логин для SMTP)
 - `EMAIL_APP_PASSWORD` (пароль/токен приложения)
 - `EMAIL_FROM_NAME` (default: `AcomOfferDesk`, display name)

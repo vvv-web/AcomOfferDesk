@@ -7,6 +7,7 @@ export const RequestsPageView = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
+    canCreateRequest,
     canEditOwner,
     chatAlertsMap,
     errorMessage,
@@ -41,7 +42,11 @@ export const RequestsPageView = () => {
         isContractor={isContractor}
         showContractorOffersColumn={isContractor && !shouldLoadOpenRequests}
         showContractorNotificationColumn={isContractor && !shouldLoadOpenRequests}
-        onAddClick={() => navigate('/requests/create', { state: { backgroundLocation: location } })}
+        onAddClick={
+          canCreateRequest
+            ? () => navigate('/requests/create', { state: { backgroundLocation: location } })
+            : undefined
+        }
       />
     </Box>
   );

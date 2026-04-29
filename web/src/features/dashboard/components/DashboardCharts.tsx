@@ -1,9 +1,10 @@
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import {
   Box,
   Card,
   CardContent,
   Stack,
-  SvgIcon,
   Tooltip,
   Typography
 } from '@mui/material';
@@ -12,15 +13,11 @@ import type { ResponsibilityEmployeeNode } from '@shared/api/users/getResponsibi
 import { STATUS_LABELS, sumTotals, type StatusTotals } from './dashboardUtils';
 
 export const ChevronUpIcon = () => (
-  <SvgIcon viewBox="0 0 24 24" sx={{ fontSize: 20 }}>
-    <path d="M7.41 14.59L12 10l4.59 4.59L18 13.17 12 7.17l-6 6z" />
-  </SvgIcon>
+  <KeyboardArrowUpRoundedIcon sx={{ fontSize: 20 }} />
 );
 
 export const ChevronDownIcon = () => (
-  <SvgIcon viewBox="0 0 24 24" sx={{ fontSize: 20 }}>
-    <path d="M7.41 8.41L12 13l4.59-4.59L18 9.83l-6 6-6-6z" />
-  </SvgIcon>
+  <KeyboardArrowDownRoundedIcon sx={{ fontSize: 20 }} />
 );
 
 const toRadians = (angle: number) => (Math.PI / 180) * angle;
@@ -142,7 +139,7 @@ export const CircularProcessChart = ({ totals, statusColors }: { totals: StatusT
     <Card
       sx={{
         borderRadius: 2,
-        background: 'linear-gradient(135deg, rgba(231,240,255,0.92), rgba(255,255,255,0.98))',
+        ackground: 'linear-gradient(135deg, rgba(231,240,255,0.92), rgba(255,255,255,0.98))',
         border: '1px solid',
         borderColor: 'divider'
       }}

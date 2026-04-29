@@ -8,6 +8,7 @@ from app.repositories.chats import ChatRepository
 from app.infrastructure.db import SessionLocal
 from app.repositories.files import FileRepository
 from app.repositories.messages import MessageRepository
+from app.repositories.economy_plans import EconomyPlanRepository
 from app.repositories.offers import OfferRepository
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.feedback import FeedBackRepository
@@ -37,6 +38,7 @@ class UnitOfWork:
         self.user_status_periods: UserStatusPeriodRepository | None = None
         self.user_auth_accounts: UserAuthAccountRepository | None = None
         self.user_contact_channels: UserContactChannelRepository | None = None
+        self.economy_plans: EconomyPlanRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         self.session = self._session_factory()
@@ -54,6 +56,7 @@ class UnitOfWork:
         self.user_status_periods = UserStatusPeriodRepository(self.session)
         self.user_auth_accounts = UserAuthAccountRepository(self.session)
         self.user_contact_channels = UserContactChannelRepository(self.session)
+        self.economy_plans = EconomyPlanRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

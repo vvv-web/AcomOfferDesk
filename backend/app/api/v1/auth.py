@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 from urllib.parse import quote
@@ -44,9 +44,11 @@ from app.services.identity_sync import IdentitySyncService
 from app.services.keycloak_oidc import (
     decode_keycloak_access_token,
     exchange_code_for_tokens,
+    looks_like_keycloak_token,
     logout_refresh_token,
     refresh_tokens,
 )
+from app.services.keycloak_admin import KeycloakAdminService
 from app.services.tg_registration_links import (
     TgRegistrationLinkExpiredError,
     TgRegistrationLinkInvalidError,
@@ -262,14 +264,14 @@ async def request_email_verification(
 
     if result == "same_email":
         return EmailVerificationActionResponse(
-            detail="Указан текущий подтверждённый email"
+            detail="РЈРєР°Р·Р°РЅ С‚РµРєСѓС‰РёР№ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Р№ email"
         )
     if result == "already_sent":
         return EmailVerificationActionResponse(
-            detail="Письмо уже отправлено. Проверьте вашу почту"
+            detail="РџРёСЃСЊРјРѕ СѓР¶Рµ РѕС‚РїСЂР°РІР»РµРЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ РІР°С€Сѓ РїРѕС‡С‚Сѓ"
         )
     return EmailVerificationActionResponse(
-        detail="Письмо для подтверждения email отправлено"
+        detail="РџРёСЃСЊРјРѕ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email РѕС‚РїСЂР°РІР»РµРЅРѕ"
     )
 
 
@@ -283,8 +285,8 @@ async def verify_email(
         updated = await service.confirm_profile_verification(token=token)
 
     if updated:
-        return EmailVerificationActionResponse(detail="Email подтверждён")
-    return EmailVerificationActionResponse(detail="Email уже подтверждён")
+        return EmailVerificationActionResponse(detail="Email РїРѕРґС‚РІРµСЂР¶РґС‘РЅ")
+    return EmailVerificationActionResponse(detail="Email СѓР¶Рµ РїРѕРґС‚РІРµСЂР¶РґС‘РЅ")
 
 
 @router.get("/auth/oidc/login", response_class=RedirectResponse)
@@ -536,20 +538,36 @@ async def refresh_session(
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request, response: Response) -> Response:
     keycloak_refresh_token = (request.cookies.get(settings.keycloak_refresh_cookie_name) or "").strip()
+    keycloak_user_id: str | None = None
+
+    authorization = (request.headers.get("Authorization") or "").strip()
+    if authorization.startswith("Bearer "):
+        bearer_token = authorization.removeprefix("Bearer ").strip()
+        if bearer_token and looks_like_keycloak_token(bearer_token):
+            try:
+                claims = await decode_keycloak_access_token(bearer_token)
+                keycloak_user_id = claims.subject
+            except Unauthorized:
+                keycloak_user_id = None
+
     if settings.keycloak_enabled and keycloak_refresh_token:
         try:
             await logout_refresh_token(refresh_token=keycloak_refresh_token)
         except Forbidden:
-            # Локальный logout должен завершиться даже при временной ошибке провайдера.
+            # Local logout must succeed even if provider is temporarily unavailable.
+            pass
+
+    if settings.keycloak_enabled and keycloak_user_id:
+        try:
+            await KeycloakAdminService().logout_user_sessions(user_id=keycloak_user_id)
+        except Conflict:
+            # Local logout must succeed even if admin API is temporarily unavailable.
             pass
 
     clear_keycloak_state_cookie(response)
     clear_keycloak_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
-    return response
-
-
-@router.post("/auth/tg/exchange", deprecated=True)
+    return response@router.post("/auth/tg/exchange", deprecated=True)
 async def tg_exchange_disabled() -> dict[str, str]:
     raise Forbidden("Telegram legacy authentication is disabled")
 
@@ -583,4 +601,5 @@ async def register_user(
             self=Link(href=f"/api/v1/users/{user.id}", method="GET"),
         ),
     )
+
 

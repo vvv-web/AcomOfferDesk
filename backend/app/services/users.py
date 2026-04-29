@@ -230,7 +230,7 @@ class UserRegistrationService:
             if parent_user is None:
                 raise NotFound("Parent user not found")
             parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_role.role != ROLE_NAME_PROJECT_MANAGER:
+            if parent_role is None or parent_user.id_role != settings.project_manager_role_id:
                 raise Conflict("Lead economist user can have only project manager")
         else:
             id_parent = None

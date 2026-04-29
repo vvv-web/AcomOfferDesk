@@ -1,4 +1,4 @@
-import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
+import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined';
 import { Alert, Box, Button, Dialog, DialogContent, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
@@ -110,7 +110,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               }}
             >
               <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
-                <UploadFileRounded fontSize="small" />
+                <UploadFileOutlined fontSize="small" />
               </Box>
               <Stack spacing={0.15} sx={{ minWidth: 0, textAlign: 'left' }}>
                 <Typography
@@ -168,7 +168,7 @@ export const NormativeFileButton = ({ iconOnly = false, sidebar = false }: Norma
               }}
             >
               <Box component="span" sx={{ display: 'inline-flex', lineHeight: 1 }}>
-                <UploadFileRounded fontSize="small" />
+                <UploadFileOutlined fontSize="small" />
               </Box>
             </ActionButton>
           </Box>

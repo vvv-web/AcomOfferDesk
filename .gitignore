@@ -18,4 +18,7 @@ build/
 .DS_Store
 .claude/
 .cursor/
+.codex/
+.agents/
 .trellis/
+artifacts/

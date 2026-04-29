@@ -3,6 +3,7 @@ import {
     Alert,
     Box,
     Button,
+    MenuItem,
     Select,
     Stack,
     TextField,
@@ -18,6 +19,7 @@ import { sendRequestEmailNotifications } from '@shared/api/requests/sendRequestE
 import { markDeletedAlertViewed } from '@shared/api/offers/markDeletedAlertViewed';
 import { updateOfferStatus } from '@shared/api/offers/updateOfferStatus';
 import { deleteRequestFile, updateRequestDetails, uploadRequestFile } from '@shared/api/requests/updateRequestDetails';
+import { getPlanOptions, type PlanOption } from '@shared/api/plans';
 import { downloadFile } from '@shared/api/fileDownload';
 import { AdditionalEmailsField, type AdditionalEmailsFieldHandle } from '@shared/components/AdditionalEmailsField';
 import { UnavailableAwareMenuItem } from '@shared/components/UnavailableAwareMenuItem';
@@ -64,6 +66,11 @@ export const RequestDetailsView = () => {
     const [baselineInitialAmount, setBaselineInitialAmount] = useState<string>('');
     const [finalAmount, setFinalAmount] = useState<string>('');
     const [baselineFinalAmount, setBaselineFinalAmount] = useState<string>('');
+    const [planId, setPlanId] = useState<string>('');
+    const [baselinePlanId, setBaselinePlanId] = useState<string>('');
+    const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
+    const [isPlanOptionsLoading, setIsPlanOptionsLoading] = useState(false);
+    const [planOptionsOwnerId, setPlanOptionsOwnerId] = useState<string | null>(null);
     const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
     const [existingFiles, setExistingFiles] = useState<RequestDetailsFile[]>([]);
     const [deletedFileIds, setDeletedFileIds] = useState<number[]>([]);
@@ -101,7 +108,8 @@ export const RequestDetailsView = () => {
         status !== baselineStatus ||
         deadline !== baselineDeadline ||
         (canViewRequestAmounts && initialAmount !== baselineInitialAmount) ||
-        (canViewRequestAmounts && finalAmount !== baselineFinalAmount);
+        (canViewRequestAmounts && finalAmount !== baselineFinalAmount) ||
+        planId !== baselinePlanId;
     const hasOwnerChange = ownerUserId !== baselineOwnerUserId;
     const hasPendingChanges = hasRequestFieldChanges || hasOwnerChange || hasFileChanges;
 
@@ -173,6 +181,7 @@ export const RequestDetailsView = () => {
             const nextOwner = nextRequest.id_user ?? '';
             const nextInitialAmount = toAmountInputValue(nextRequest.initial_amount);
             const nextFinalAmount = toAmountInputValue(nextRequest.final_amount);
+            const nextPlanId = nextRequest.id_plan ? String(nextRequest.id_plan) : '';
             setStatus(nextStatus);
             setBaselineStatus(nextStatus);
             setDeadline(nextDeadline);
@@ -183,6 +192,8 @@ export const RequestDetailsView = () => {
             setBaselineInitialAmount(nextInitialAmount);
             setFinalAmount(nextFinalAmount);
             setBaselineFinalAmount(nextFinalAmount);
+            setPlanId(nextPlanId);
+            setBaselinePlanId(nextPlanId);
             setExistingFiles(nextRequest.files ?? []);
         }
     }, []);
@@ -252,6 +263,45 @@ export const RequestDetailsView = () => {
         void fetchOwners();
     }, [fetchOwners]);
 
+    useEffect(() => {
+        const ownerForPlans = (isEditMode ? ownerUserId : requestDetails?.id_user) ?? '';
+        if (!ownerForPlans) {
+            setPlanOptions([]);
+            setPlanOptionsOwnerId(null);
+            return;
+        }
+        if (planOptionsOwnerId === ownerForPlans) {
+            return;
+        }
+
+        let isMounted = true;
+        setIsPlanOptionsLoading(true);
+        getPlanOptions({ ownerUserId: ownerForPlans })
+            .then((items) => {
+                if (!isMounted) {
+                    return;
+                }
+                setPlanOptions(items);
+                setPlanOptionsOwnerId(ownerForPlans);
+            })
+            .catch(() => {
+                if (!isMounted) {
+                    return;
+                }
+                setPlanOptions([]);
+                setPlanOptionsOwnerId(ownerForPlans);
+            })
+            .finally(() => {
+                if (isMounted) {
+                    setIsPlanOptionsLoading(false);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isEditMode, ownerUserId, planOptionsOwnerId, requestDetails?.id_user]);
+
      const getSaveValidationError = (
         currentStatus: RequestStatus,
         currentDeadline: string,
@@ -264,11 +314,12 @@ export const RequestDetailsView = () => {
         const deadlineChanged = currentDeadline !== baselineDeadline;
         const initialAmountChanged = canViewRequestAmounts && currentInitialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && currentFinalAmount !== baselineFinalAmount;
+        const planChanged = planId !== baselinePlanId;
         const parsedInitialAmount = canViewRequestAmounts ? parseAmountInput(currentInitialAmount) : null;
         const parsedFinalAmount = canViewRequestAmounts ? parseAmountInput(currentFinalAmount) : null;
 
         const isFinalStatus = currentStatus === 'closed' || currentStatus === 'cancelled';
-        if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !hasFileChanges) {
+        if (!statusChanged && !deadlineChanged && !ownerChanged && !initialAmountChanged && !finalAmountChanged && !planChanged && !hasFileChanges) {
             return 'Нет изменений для сохранения';
         }
 
@@ -349,8 +400,10 @@ export const RequestDetailsView = () => {
 
         const statusChanged = status !== baselineStatus;
         const ownerChanged = ownerUserId !== baselineOwnerUserId;
+        const planChanged = planId !== baselinePlanId;
         const parsedInitialAmount = canViewRequestAmounts ? parseAmountInput(initialAmount) : null;
         const parsedFinalAmount = canViewRequestAmounts ? parseAmountInput(finalAmount) : null;
+        const parsedPlanId = planId ? Number(planId) : null;
         const initialAmountChanged = canViewRequestAmounts && initialAmount !== baselineInitialAmount;
         const finalAmountChanged = canViewRequestAmounts && finalAmount !== baselineFinalAmount;
         let effectiveDeadline = deadline;
@@ -376,7 +429,8 @@ export const RequestDetailsView = () => {
                 deadline_at: deadlineChanged ? toDeadlineIso(effectiveDeadline) : undefined,
                 owner_user_id: ownerChanged ? ownerUserId : undefined,
                 initial_amount: initialAmountChanged && parsedInitialAmount !== null ? parsedInitialAmount : undefined,
-                final_amount: finalAmountChanged && parsedFinalAmount !== null ? parsedFinalAmount : undefined
+                final_amount: finalAmountChanged && parsedFinalAmount !== null ? parsedFinalAmount : undefined,
+                id_plan: planChanged ? parsedPlanId : undefined,
             });
 
             await Promise.all(deletedFileIds.map((fileId) => deleteRequestFile(currentRequest.id, fileId)));
@@ -549,6 +603,7 @@ export const RequestDetailsView = () => {
         setOwnerUserId(baselineOwnerUserId);
         setInitialAmount(baselineInitialAmount);
         setFinalAmount(baselineFinalAmount);
+        setPlanId(baselinePlanId);
         setDeletedFileIds([]);
         setNewFile(null);
         setIsEditMode(false);
@@ -585,6 +640,12 @@ export const RequestDetailsView = () => {
             InputProps={{ readOnly: true }}
         />
     );
+    const selectedPlanOption = planOptions.find((option) => String(option.plan_id) === planId);
+    const planDisplayLabel = selectedPlanOption
+        ? `${selectedPlanOption.plan_name} (${selectedPlanOption.user_name})`
+        : planId
+            ? `План #${planId}`
+            : 'Без плана';
     const descriptionText = requestDetails?.description?.trim() ?? '';
     const canExpandDescription = isDescriptionOverflowing;
     const handleStatusSelection = (nextStatus: RequestStatus) => {
@@ -714,6 +775,53 @@ export const RequestDetailsView = () => {
                 onSave={() => void handleSave()}
                 onStartEdit={() => setIsEditMode(true)}
             />
+
+            <Box
+                sx={(themeValue) => ({
+                    mt: 2,
+                    borderRadius: `${themeValue.acomShape.panelRadius}px`,
+                    border: `1px solid ${themeValue.palette.divider}`,
+                    backgroundColor: themeValue.palette.background.paper,
+                    px: { xs: 2, md: 3 },
+                    py: { xs: 1.5, md: 2 },
+                })}
+            >
+                <Stack spacing={0.75}>
+                    <Typography variant="body2" color="text.secondary">
+                        План заявки
+                    </Typography>
+                    {canEditRequest && isEditMode ? (
+                        <Select
+                            size="small"
+                            value={planId}
+                            displayEmpty
+                            onChange={(event) => setPlanId(String(event.target.value))}
+                            disabled={isPlanOptionsLoading}
+                        >
+                            <MenuItem value="">Без плана</MenuItem>
+                            {planId && !planOptions.some((option) => String(option.plan_id) === planId) ? (
+                                <MenuItem value={planId}>{planDisplayLabel}</MenuItem>
+                            ) : null}
+                            {planOptions.map((option) => (
+                                <MenuItem
+                                    key={option.plan_id}
+                                    value={String(option.plan_id)}
+                                    disabled={option.is_closed}
+                                >
+                                    {option.plan_name} ({option.user_name})
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    ) : (
+                        <TextField
+                            size="small"
+                            value={planDisplayLabel}
+                            fullWidth
+                            InputProps={{ readOnly: true }}
+                        />
+                    )}
+                </Stack>
+            </Box>
 
             {status === 'open' && (
                 <Box sx={{ mt: 2.5 }}>

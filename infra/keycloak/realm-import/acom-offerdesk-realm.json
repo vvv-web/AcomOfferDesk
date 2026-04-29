@@ -1,4 +1,4 @@
-{
+﻿{
   "realm": "acom-offerdesk",
   "enabled": true,
   "displayName": "AcomOfferDesk",
@@ -9,7 +9,18 @@
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": true,
-  "verifyEmail": true,
+  "verifyEmail": false,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionIdleTimeoutRememberMe": 1800,
+  "ssoSessionMaxLifespan": 86400,
+  "ssoSessionMaxLifespanRememberMe": 86400,
+  "clientSessionIdleTimeout": 1800,
+  "clientSessionMaxLifespan": 86400,
+  "accessCodeLifespan": 300,
+  "accessCodeLifespanUserAction": 1800,
+  "accessCodeLifespanLogin": 1800,
+  "actionTokenGeneratedByUserLifespan": 1800,
+  "revokeRefreshToken": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
@@ -17,3 +28,4 @@
   "sslRequired": "external",
   "bruteForceProtected": true
 }
+

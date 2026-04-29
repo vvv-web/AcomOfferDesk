@@ -1,4 +1,6 @@
-import { Accordion, AccordionDetails, AccordionSummary, Box, Stack, SvgIcon, Typography } from '@mui/material';
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import { Accordion, AccordionDetails, AccordionSummary, Box, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 import { UNAVAILABILITY_REASON_OPTIONS } from './UnavailabilityPeriodEditor';
 
@@ -155,15 +157,13 @@ export const UnavailabilityStatusSection = ({
                       minWidth: 0
                     }}
                   >
-                    <SvgIcon
+                    <AccessTimeRoundedIcon
                       sx={{
                         fontSize: 18,
                         color: '#7a69a8',
                         flexShrink: 0
                       }}
-                    >
-                      <path d="M11 7h2v6l4.3 2.6-1 1.7L11 14V7Zm1-5a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8Z" />
-                    </SvgIcon>
+                    />
 
                     <Typography
                       sx={{
@@ -238,11 +238,7 @@ export const UnavailabilityStatusSection = ({
         }}
       >
         <AccordionSummary
-          expandIcon={
-            <SvgIcon sx={{ color: '#6d82a8' }}>
-              <path d="M7 10l5 5 5-5z" />
-            </SvgIcon>
-          }
+          expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#6d82a8' }} />}
           sx={{
             px: 1.75,
             minHeight: 56,
