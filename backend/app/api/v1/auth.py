@@ -567,7 +567,10 @@ async def logout(request: Request, response: Response) -> Response:
     clear_keycloak_state_cookie(response)
     clear_keycloak_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
-    return response@router.post("/auth/tg/exchange", deprecated=True)
+    return response
+
+
+@router.post("/auth/tg/exchange", deprecated=True)
 async def tg_exchange_disabled() -> dict[str, str]:
     raise Forbidden("Telegram legacy authentication is disabled")
 
@@ -580,11 +583,11 @@ async def register_user(
 ) -> RegisterUserResponse:
     UserPolicy.ensure_can_register_user(current_user)
     async with uow:
-        service = UserRegistrationService(uow.users, uow.profiles)
+        service = UserRegistrationService(uow.users, uow.profiles, uow.user_auth_accounts)
         user = await service.register_user(
             current_user,
             user_id=payload.login.strip(),
-            password=payload.password.strip(),
+            password=payload.password.strip() if payload.password else None,
             role_id=payload.role_id,
             id_parent=payload.id_parent.strip() if payload.id_parent else None,
             full_name=payload.full_name.strip() if payload.full_name else None,

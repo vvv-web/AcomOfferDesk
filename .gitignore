@@ -13,6 +13,9 @@ dist/
 build/
 .env
 .env.*
+!.env.example
+!.env.dev.example
+!.env.prod-like.example
 *.log
 *.sqlite3
 .DS_Store

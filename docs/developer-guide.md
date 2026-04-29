@@ -424,3 +424,10 @@ Frontend организован по feature-oriented структуре. Иск
 - [Архитектура и потоки данных](runtime-architecture.md)
 - [Автопривязка Keycloak](keycloak-autolink.md)
 - [Login links](login-links.md)
+<!-- run-scenarios-source-of-truth-2026-04-29 -->
+## Единый источник по окружениям
+
+Единые команды запуска для `dev`, `test`, `prod`, `prod-like`, а также проверки `docker compose ... config` и init-сценарии описаны в:
+- [environments.md](./environments.md)
+
+Если меняется compose/env-контракт, сначала обновляйте `environments.md`, а затем синхронизируйте ссылки на него.

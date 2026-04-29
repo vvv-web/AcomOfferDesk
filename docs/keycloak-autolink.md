@@ -21,7 +21,7 @@
 
 ## APP_ENV и KEYCLOAK_VERIFY_EMAIL (частые путаницы)
 
-- В **`backend/.env` должна быть одна строка `APP_ENV=...`**. Упоминание `development` в комментариях к шаблону — это напоминание для копии на локальную машину, а не «второе значение» в том же файле на сервере.
+- В корневом **`.env` должна быть одна строка `APP_ENV=...`**. Упоминание `development` в комментариях к шаблону — это напоминание для копии на локальную машину, а не «второе значение» в том же файле на сервере.
 - Если **`APP_ENV` не задан** в `.env`, бэкенд (`app/core/config.py`, `Settings`) использует **дефолт `development`**. На production VPS это давало рассинхрон: сервер вёл себя как development в части проверок окружения.
 - **`KEYCLOAK_VERIFY_EMAIL` не является полем `Settings` в Python** — её читает **`infra/keycloak/bootstrap.sh`** при настройке realm (и окружение контейнера bootstrap). Поведение:
   - **явно `false`** → в realm передаётся **`verifyEmail: false`** — регистрация без обязательного подтверждения email в Keycloak (формально «легче» саморегистрация);
@@ -138,7 +138,7 @@ KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED=true
 - нельзя включать dev и prod auto-link одновременно
 - dev auto-link запрещен при `APP_ENV=production`
 
-## Важные переменные `backend/.env`
+## Важные переменные корневого `.env`
 
 - `KEYCLOAK_ENABLED`
 - `KEYCLOAK_REALM`
@@ -161,3 +161,20 @@ KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED=true
 - локальный пользователь уже привязан к другому Keycloak subject
 
 В этих случаях показывается ошибка на `/auth/callback`.
+
+## Сводная таблица сценариев (prod/prod-like)
+
+| Сценарий | Кто создает пользователя | Что создается в локальной БД | Что создается в Keycloak | Первый шаг пользователя | Когда вход успешен |
+|---|---|---|---|---|---|
+| Сотрудник создан админом | Администратор/уполномоченный сотрудник через UI/API `POST /api/v1/users/register` | `users`, `profiles`, запись привязки в `user_auth_accounts` | Аккаунт с тем же `username` и `email` через `ensure_user(...)` | Открывает `/login` и входит через Keycloak | На callback identity успешно синхронизируется и привязка валидна |
+| Контрагент создан вручную | Администратор/сотрудник с правом создания контрагентов (`manual-contractor`) | `users` (роль `contractor`), `profiles`, `company_contacts`, привязка `user_auth_accounts` | Аккаунт с `username` контрагента и рабочим email | На форме Keycloak нажимает `Forgot password`, задает пароль, подтверждает email, затем обычный вход | Email/subject корректно сопоставлены, автопривязка проходит |
+| Самостоятельная регистрация по invite | Сам пользователь по ссылке `/api/v1/auth/oidc/register?invite_token=...` | При callback создается новый локальный `contractor` (обычно `status=review`) через `allow_user_creation=True` | Саморегистрация в Keycloak по invite flow | Открывает invite-ссылку и проходит регистрацию в Keycloak | Callback завершился без `invalid/already_registered`, после модерации статус становится `active` |
+| Повторный вход после logout | Пользователь уже существует | Данные не создаются заново, используется существующая привязка | Сессия создается заново, аккаунт тот же | Нажимает «Войти снова» и проходит обычный OIDC login | Refresh/state cookies и callback-обмен проходят без ошибок |
+
+### Обязательные условия для prod/prod-like
+
+- `APP_ENV=production`
+- `KEYCLOAK_VERIFY_EMAIL=true`
+- `KEYCLOAK_PROD_AUTO_LINK_BY_VERIFIED_EMAIL_ENABLED=true`
+- `KEYCLOAK_DEV_AUTO_LINK_BY_USERNAME_ENABLED=false`
+- Вход и callback только через публичный HTTPS-домен приложения (без dev tunnel-паттернов в test/prod)

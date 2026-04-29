@@ -468,7 +468,7 @@ async def create_manual_contractor(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ManualContractorCreateResponse:
     async with uow:
-        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts)
+        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts, uow.user_auth_accounts)
         created_user_id = await service.create_manual_contractor(
             current_user=current_user,
             data=ManualContractorCreateInput(
@@ -497,7 +497,7 @@ async def update_manual_contractor(
     uow: UnitOfWork = Depends(get_uow),
 ) -> ManualContractorUpdateResponse:
     async with uow:
-        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts)
+        service = ManualContractorService(uow.users, uow.profiles, uow.company_contacts, uow.user_auth_accounts)
         updated_user_id = await service.update_manual_contractor(
             current_user=current_user,
             user_id=user_id,

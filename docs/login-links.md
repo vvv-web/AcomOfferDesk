@@ -23,3 +23,9 @@
 - Telegram-эндпойнты сохранены как legacy для обратной совместимости.
 - Для production-потока используется только email/OIDC.
 - Включение legacy-режима выполняется через `LEGACY_TELEGRAM_ENABLED=true`.
+<!-- docs-linking-marker-2026-04-29 -->
+## Смежные документы
+
+- Детали first login, auto-link и верификации пользователей: [keycloak-autolink.md](./keycloak-autolink.md)
+- Единые сценарии запуска (dev/test/prod): [environments.md](./environments.md)
+- Сетевой периметр и admin-only доступ: [network-perimeter.md](./network-perimeter.md), [admin-access.md](./admin-access.md)

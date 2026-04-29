@@ -145,16 +145,58 @@ def _normalize_notification_email(value: str | None) -> str | None:
         return None
     return normalized
 
+
+async def _bind_keycloak_account(
+    *,
+    user_auth_accounts: UserAuthAccountRepository,
+    user_id: str,
+    keycloak_subject_id: str,
+    username: str,
+    email: str | None,
+) -> None:
+    conflicting_subject = await user_auth_accounts.get_conflicting_subject(
+        provider="keycloak",
+        subject=keycloak_subject_id,
+        exclude_user_id=user_id,
+    )
+    if conflicting_subject is not None:
+        raise Conflict("Keycloak account is already linked to another local user")
+
+    existing_binding = await user_auth_accounts.get_by_user_provider(
+        user_id=user_id,
+        provider="keycloak",
+        include_inactive=True,
+    )
+    if existing_binding is None:
+        await user_auth_accounts.add(
+            UserAuthAccount(
+                id_user=user_id,
+                provider="keycloak",
+                external_subject_id=keycloak_subject_id,
+                external_username=username,
+                external_email=email,
+                is_active=True,
+            )
+        )
+        return
+
+    existing_binding.external_subject_id = keycloak_subject_id
+    existing_binding.external_username = username
+    existing_binding.external_email = email
+    existing_binding.is_active = True
+
 class UserRegistrationService:
     def __init__(
         self,
         users: UserRepository,
         profiles: ProfileRepository,
+        user_auth_accounts: UserAuthAccountRepository,
         *,
         keycloak_admin: KeycloakAdminService | None = None,
     ):
         self._users = users
         self._profiles = profiles
+        self._user_auth_accounts = user_auth_accounts
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     async def register_user(
@@ -162,7 +204,7 @@ class UserRegistrationService:
         current_user: CurrentUser,
         *,
         user_id: str,
-        password: str,
+        password: str | None,
         role_id: int,
         id_parent: str | None,
         full_name: str | None,
@@ -263,11 +305,17 @@ class UserRegistrationService:
                 mail=normalized_mail,
             )
         )
-        await self._keycloak_admin.ensure_user(
+        keycloak_user = await self._keycloak_admin.ensure_user(
             username=user_id,
             email=normalized_mail,
-            password=password.strip(),
             email_verified=False,
+        )
+        await _bind_keycloak_account(
+            user_auth_accounts=self._user_auth_accounts,
+            user_id=user_id,
+            keycloak_subject_id=keycloak_user.id,
+            username=user_id,
+            email=normalized_mail,
         )
         return user
     
@@ -885,12 +933,14 @@ class ManualContractorService:
         users: UserRepository,
         profiles: ProfileRepository,
         company_contacts: CompanyContactRepository,
+        user_auth_accounts: UserAuthAccountRepository,
         *,
         keycloak_admin: KeycloakAdminService | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
+        self._user_auth_accounts = user_auth_accounts
         self._keycloak_admin = keycloak_admin or KeycloakAdminService()
 
     def _normalize_required_text(self, value: str | None, *, field_name: str, max_length: int | None = None) -> str:
@@ -1024,10 +1074,17 @@ class ManualContractorService:
                 note=data.note or PLACEHOLDER_TEXT,
             )
         )
-        await self._keycloak_admin.ensure_user(
+        keycloak_user = await self._keycloak_admin.ensure_user(
             username=login,
             email=_normalize_keycloak_email_value(data.company_mail),
             email_verified=False,
+        )
+        await _bind_keycloak_account(
+            user_auth_accounts=self._user_auth_accounts,
+            user_id=login,
+            keycloak_subject_id=keycloak_user.id,
+            username=login,
+            email=_normalize_keycloak_email_value(data.company_mail),
         )
         return login
 
@@ -1131,11 +1188,18 @@ class ManualContractorService:
         if note is not None:
             company_contact.note = note
 
-        await self._keycloak_admin.ensure_user(
+        keycloak_user = await self._keycloak_admin.ensure_user(
             username=user.id,
             previous_username=original_user_id,
             email=_normalize_keycloak_email_value(company_contact.mail),
             email_verified=False,
+        )
+        await _bind_keycloak_account(
+            user_auth_accounts=self._user_auth_accounts,
+            user_id=user.id,
+            keycloak_subject_id=keycloak_user.id,
+            username=user.id,
+            email=_normalize_keycloak_email_value(company_contact.mail),
         )
 
         return user.id

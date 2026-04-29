@@ -3,7 +3,7 @@ import type { AuthLink } from './loginWebUser';
 
 export type RegisterUserPayload = {
   login: string;
-  password: string;
+  password?: string;
   role_id: number;
   id_parent?: string;
   full_name?: string;

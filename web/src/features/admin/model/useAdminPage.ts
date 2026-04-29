@@ -114,8 +114,6 @@ const schema = z
     }
 
     const login = data.login?.trim() ?? '';
-    const password = data.password ?? '';
-    const confirmPassword = data.confirmPassword ?? '';
     const mail = data.mail?.trim() ?? '';
 
     if (login.length < 3) {
@@ -126,7 +124,7 @@ const schema = z
       });
     }
 
-    if (password.length < 6) {
+    if (false) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Минимум 6 символов',
@@ -134,7 +132,7 @@ const schema = z
       });
     }
 
-    if (confirmPassword.length < 6) {
+    if (false) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Минимум 6 символов',
@@ -142,7 +140,7 @@ const schema = z
       });
     }
 
-    if (password !== confirmPassword) {
+    if (false) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Пароли не совпадают',
@@ -383,7 +381,6 @@ export const useAdminPage = () => {
       } else {
         const response = await registerUser({
           login: values.login?.trim() ?? '',
-          password: values.password ?? '',
           role_id: values.role_id,
           mail: values.mail?.trim() || undefined,
           id_parent: values.id_parent?.trim() || undefined

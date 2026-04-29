@@ -167,18 +167,16 @@ docker network create project_net
 Linux/macOS:
 
 ```bash
-cp compose.env.example .env
-cp backend/env.example backend/.env
+cp .env.example .env
 ```
 
 PowerShell:
 
 ```powershell
-Copy-Item compose.env.example .env
-Copy-Item backend/env.example backend/.env
+Copy-Item .env.example .env
 ```
 
-Минимально проверьте в `backend/.env`:
+Минимально проверьте в корневом `.env`:
 
 - `DATABASE_URL`
 - `KEYCLOAK_*`
@@ -261,8 +259,8 @@ docker compose --profile tunnel up -d localtunnel
 
 После смены публичного URL нужно обновить:
 
-- `backend/.env` -> `PUBLIC_BACKEND_BASE_URL`
-- `backend/.env` -> `WEB_BASE_URL`
+- `.env` -> `PUBLIC_BACKEND_BASE_URL`
+- `.env` -> `WEB_BASE_URL`
 
 И затем пересоздать backend:
 
@@ -278,3 +276,16 @@ docker compose up -d --force-recreate backend
 - разбираетесь в контейнерах, auth и интеграциях, откройте [docs/runtime-architecture.md](docs/runtime-architecture.md)
 - хотите быстро ориентироваться в кодовой базе, смотрите [docs/developer-guide.md](docs/developer-guide.md)
 - меняете auth, роли или регистрацию, обязательно проверьте `README.md`, `docs/keycloak-autolink.md` и `docs/login-links.md`
+
+## Environment and Perimeter
+
+For the current environment split and perimeter rules, use:
+
+- [docs/environments.md](docs/environments.md)
+- [docs/network-perimeter.md](docs/network-perimeter.md)
+- [docs/admin-access.md](docs/admin-access.md)
+
+Для локальной разработки нормальным сценарием считается использование `ngrok`,
+если нужно, чтобы email-ссылки, OIDC redirect/callback и другие внешние переходы
+сразу работали с корректным публичным HTTPS URL. Подробности и команды запуска
+описаны в [docs/environments.md](docs/environments.md).

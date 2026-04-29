@@ -1,21 +1,26 @@
+x-runtime-env: &runtime-env
+  env_file:
+    - ${APP_RUNTIME_ENV_FILE:-./.env}
+
 services:
   keycloak:
+    <<: *runtime-env
     image: quay.io/keycloak/keycloak:26.5
     container_name: keycloak
-    env_file:
-      - ./backend/.env
     entrypoint:
       - /bin/sh
       - -ec
     command:
       - |
         sh /opt/keycloak/bootstrap/prepare-theme.sh
-        exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start-dev}" --import-realm
+        exec /opt/keycloak/bin/kc.sh "${KEYCLOAK_START_COMMAND:-start}" --import-realm
     volumes:
       - ./infra/keycloak/realm-import:/opt/keycloak/data/import:ro
       - ./infra/keycloak/themes:/opt/keycloak/themes-src:ro
       - ./infra/keycloak/prepare-theme.sh:/opt/keycloak/bootstrap/prepare-theme.sh:ro
       - keycloak_data:/opt/keycloak/data
+    expose:
+      - "8080"
     healthcheck:
       test:
         [
@@ -31,10 +36,9 @@ services:
       - project_net
 
   backend:
+    <<: *runtime-env
     build: ./backend
     container_name: backend
-    env_file:
-      - ./backend/.env
     volumes:
       - ./shared:/app/shared:ro
     depends_on:
@@ -44,6 +48,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
       interval: 10s
@@ -59,6 +65,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    expose:
+      - "80"
     healthcheck:
       test: ["CMD-SHELL", "pidof nginx >/dev/null && test -f /usr/share/nginx/html/index.html"]
       interval: 10s
@@ -80,8 +88,8 @@ services:
         condition: service_healthy
       web:
         condition: service_healthy
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     networks:
       - project_net
 
@@ -89,7 +97,7 @@ services:
   # To restore:
   # 1) uncomment this service
   # 2) provide ./tg_bot/.env
-  # 3) enable LEGACY_TELEGRAM_ENABLED=true in backend/.env
+  # 3) enable LEGACY_TELEGRAM_ENABLED=true in the selected root runtime env file
   # tg_bot:
   #   build: ./tg_bot
   #   container_name: tg_bot
@@ -103,8 +111,12 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
-    ports:
-      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in the selected env file}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in the selected env file}
+    expose:
+      - "5672"
+      - "15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
@@ -118,11 +130,11 @@ services:
     container_name: minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in the selected env file}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in the selected env file}
+    expose:
+      - "9000"
+      - "9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -134,63 +146,17 @@ services:
       - project_net
 
   notifications_worker:
+    <<: *runtime-env
     build:
       context: .
       dockerfile: notifications_worker/Dockerfile
     container_name: notifications_worker
-    env_file:
-      - ./backend/.env
-    environment:
-      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+    restart: unless-stopped
     volumes:
       - ./shared:/app/shared:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
-    networks:
-      - project_net
-
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: ngrok
-    command: ["start", "--config", "/etc/ngrok.yml", "--all"]
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend/ngrok.yml:/etc/ngrok.yml:ro
-    ports:
-      - "4040:4040"
-    profiles:
-      - ngrok
-    depends_on:
-      - gateway
-      - backend
-      - minio
-    networks:
-      - project_net
-
-  # TryCloudflare — 530 при нестабильном QUIC/HTTP2, ngrok — ERR_NGROK_9040 (блокировка IP)
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://gateway:80"]
-    profiles:
-      - tunnel
-    depends_on:
-      - gateway
-    networks:
-      - project_net
-
-  # LocalTunnel — работает когда cloudflared 530, ngrok 9040 (блокировка IP)
-  # URL: docker logs localtunnel 2>&1 | grep -E "your url|https://"
-  localtunnel:
-    image: node:20-alpine
-    container_name: localtunnel
-    command: ["sh", "-c", "npx -y localtunnel --port 80 --local-host gateway 2>&1 | tee /dev/stderr"]
-    profiles:
-      - tunnel
-    depends_on:
-      - gateway
     networks:
       - project_net
 

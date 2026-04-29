@@ -23,7 +23,7 @@
 3. Генерирует пароли Postgres и superadmin, пишет их в **`/root/.acom_order_db_postgres_password`** и **`/root/.acom_order_db_superadmin_password`** (права по `umask`).
 4. Делает **`docker compose build`** / **`up`** для Postgres, **Flyway validate + migrate**.
 5. Проверяет: **7** строк в **`roles`**, **`superadmin`** в **`users`**, наличие **`flyway_schema_history`**.
-6. Если есть **`/opt/acome-offer-desk/backend/.env`** (`APP_DIR`), обновляет **`DATABASE_URL`** на хост **`order-database-postgres:5432`** и пересоздаёт **`backend`** и **`notifications_worker`**.
+6. Если есть корневой **`/opt/acome-offer-desk/.env`** (`APP_DIR`), обновляет **`DATABASE_URL`** на хост **`order-database-postgres:5432`** и пересоздаёт **`backend`** и **`notifications_worker`**.
 
 Пример с машины с `gh` CLI:
 
@@ -46,7 +46,7 @@ Workflow **`.github/workflows/deploy.yml`** в этом репозитории *
 - каталог **`/opt/order_database`** и его **`.env`**;
 - healthy-статус контейнера **`order-database-postgres`**;
 - наличие **`flyway_schema_history`**;
-- что **`backend/.env`** уже смотрит на **`order-database-postgres:5432`**.
+- что корневой **`.env`** уже смотрит на **`order-database-postgres:5432`**.
 
 Если одна из этих проверок не проходит, workflow падает с меткой **`ORDER_DB_PREREQUISITE`** и просит сначала привести VPS к состоянию из этого документа, обычно через **`scripts/install-order-database-vps.sh`** до **`INSTALL_SUCCESS`**.
 
@@ -60,8 +60,8 @@ Workflow **`.github/workflows/deploy.yml`** в этом репозитории *
 
 ## Связка с приложением AcomOfferDesk
 
-- В **`backend/.env`** сервис БД в Docker-сети обычно **`order-database-postgres:5432`** (имя контейнера из compose репозитория БД), а не обязательно `postgres`.
-- Шаблоны переменных приложения: **`backend/env.example`**, **`compose.env.example`**.
+- В корневом **`.env`** сервис БД в Docker-сети обычно **`order-database-postgres:5432`** (имя контейнера из compose репозитория БД), а не обязательно `postgres`.
+- Шаблоны переменных приложения: **`.env.example`**, **`.env.dev.example`**, **`.env.prod-like.example`**.
 
 ## Ручной путь (без скрипта)
 

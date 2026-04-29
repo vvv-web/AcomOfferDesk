@@ -232,7 +232,7 @@ export const AdminPageView = () => {
                     error={Boolean(getFieldError('password'))}
                     helperText={getFieldError('password')}
                     {...register('password')}
-                    sx={inputFieldSx}
+                    sx={{ display: 'none' }}
                   />
                   <TextField
                     label="Повторите пароль"
@@ -240,7 +240,7 @@ export const AdminPageView = () => {
                     error={Boolean(getFieldError('confirmPassword'))}
                     helperText={getFieldError('confirmPassword')}
                     {...register('confirmPassword')}
-                    sx={inputFieldSx}
+                    sx={{ display: 'none' }}
                   />
                   <TextField
                     label="E-mail"

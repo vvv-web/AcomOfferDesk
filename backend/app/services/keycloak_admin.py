@@ -40,7 +40,7 @@ class KeycloakAdminService:
         previous_username: str | None = None,
         enabled: bool = True,
         email_verified: bool = False,
-    ) -> None:
+    ) -> KeycloakAdminUser:
         if not settings.keycloak_enabled:
             return
 
@@ -65,6 +65,11 @@ class KeycloakAdminService:
                 enabled=enabled,
                 email_verified=email_verified,
             )
+            current_user = KeycloakAdminUser(
+                id=user_id,
+                username=username,
+                email=normalized_email,
+            )
         else:
             await self._update_user(
                 admin_token,
@@ -75,9 +80,15 @@ class KeycloakAdminService:
                 email_verified=email_verified,
             )
             user_id = current_user.id
+            current_user = KeycloakAdminUser(
+                id=user_id,
+                username=username,
+                email=normalized_email,
+            )
 
         if password is not None:
             await self._set_password(admin_token, user_id=user_id, password=password)
+        return current_user
 
     async def logout_user_sessions(self, *, user_id: str) -> None:
         if not settings.keycloak_enabled:

@@ -59,11 +59,11 @@ proxy_read_timeout 86400;
 
 ## Почта не уходит
 
-**Не задавать** **`SMTP_HOST=127.0.0.1`** в **`backend/.env`** для контейнеров — это не хост VPS. Для Яндекса: **`smtp.yandex.com`**, порт **465**, затем **`docker compose up -d --force-recreate backend notifications_worker`** (при необходимости и **`gateway`**).
+**Не задавать** **`SMTP_HOST=127.0.0.1`** в корневом **`.env`** для контейнеров — это не хост VPS. Для Яндекса: **`smtp.yandex.com`**, порт **465**, затем **`docker compose up -d --force-recreate backend notifications_worker`** (при необходимости и **`gateway`**).
 
 Если в логах **`notifications_worker`** — **`SMTPAuthenticationError: 535`** — проверьте **`EMAIL_ADDRESS`**: реальный ящик (например **`@yandex.ru`**), не **`noreply@localhost`**, и **`EMAIL_APP_PASSWORD`** — пароль приложения для этого ящика.
 
-Если в логах **`backend`** про отключённый IMAP — задать **`IMAP_HOST`**, **`IMAP_PORT`** по **`backend/env.example`**.
+Если в логах **`backend`** сообщение про отключённый IMAP — задать **`IMAP_HOST`**, **`IMAP_PORT`** по шаблону в **`.env.example`**.
 
 ---
 
