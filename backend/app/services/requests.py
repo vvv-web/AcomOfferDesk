@@ -298,7 +298,10 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.ensure_can_edit_owned_unassigned(current_user, request_owner_user_id=request.id_user)
+        await self._ensure_can_edit_owned_unassigned_request(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
 
         if request.status != "open":
             raise Conflict("Only open request can be emailed manually")
@@ -378,8 +381,8 @@ class RequestService:
             )
         ) or data.id_plan_provided
         if has_request_edit_changes:
-            RequestPolicy.ensure_can_edit_owned_unassigned(
-                current_user,
+            await self._ensure_can_edit_owned_unassigned_request(
+                current_user=current_user,
                 request_owner_user_id=request.id_user,
             )
         has_amount_changes = data.initial_amount is not None or data.final_amount is not None
@@ -549,7 +552,10 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
+        await self._ensure_can_edit_request(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
 
         updated_stats = await self._requests.decrement_deleted_alert(request_id=request_id)
         if updated_stats is None:
@@ -577,7 +583,10 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
+        await self._ensure_can_edit_request(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
 
         prepared = await self._file_service.prepare_bytes(
             original_name=file_data.original_name,
@@ -607,7 +616,10 @@ class RequestService:
         if request is None:
             raise NotFound("Request not found")
 
-        RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request.id_user)
+        await self._ensure_can_edit_request(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
 
         detached = await self._requests.detach_file(request_id=request_id, file_id=file_id)
         if not detached:
@@ -630,9 +642,7 @@ class RequestService:
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.ensure_can_view_requests(current_user)
-        owner_scope_ids: list[str] | None = None
-        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
-            owner_scope_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+        owner_scope_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
 
         rows = await self._requests.list_with_stats_and_files(
             current_user_id=current_user.user_id,
@@ -744,8 +754,8 @@ class RequestService:
     
     async def list_open_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
         UserPolicy.ensure_can_view_open_requests(current_user)
-        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
-            owner_scope_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+        owner_scope_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
+        if owner_scope_ids is not None:
             rows = await self._requests.list_open_with_stats_and_files_by_owner_ids(owner_ids=owner_scope_ids)
         else:
             rows = await self._requests.list_open_with_stats_and_files()
@@ -783,8 +793,8 @@ class RequestService:
             raise NotFound("Request not found")
 
         request, stats, owner_profile = request_row
-        if current_user.role_id in {settings.lead_economist_role_id, settings.project_manager_role_id}:
-            allowed_owner_ids = await self._resolve_visible_owner_ids_for_manager(current_user=current_user)
+        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
+        if allowed_owner_ids is not None:
             if request.id_user not in set(allowed_owner_ids):
                 raise Forbidden("Request is outside your management scope")
         request_files = await self._requests.list_files(request_id=request_id)
@@ -854,7 +864,72 @@ class RequestService:
             offers=list(offers_by_id.values()),
         )
 
-    async def _resolve_visible_owner_ids_for_manager(self, *, current_user: CurrentUser) -> list[str]:
+    async def _resolve_visible_owner_ids_for_staff_scope(self, *, current_user: CurrentUser) -> list[str] | None:
+        if current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}:
+            return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=current_user.user_id)
+        if current_user.role_id == settings.economist_role_id:
+            lead_root_user_id = await self._resolve_lead_economist_scope_root_user_id(
+                current_user_id=current_user.user_id,
+            )
+            return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
+        return None
+
+    async def _ensure_can_edit_request(self, *, current_user: CurrentUser, request_owner_user_id: str) -> None:
+        if current_user.role_id != settings.economist_role_id or request_owner_user_id == current_user.user_id:
+            RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
+            return
+
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_UPDATE,
+            message="Insufficient permissions to edit request",
+        )
+        if not await self._is_descendant(
+            ancestor_user_id=current_user.user_id,
+            target_user_id=request_owner_user_id,
+        ):
+            raise Forbidden("Economist can edit only own and subordinate requests")
+
+    async def _ensure_can_edit_owned_unassigned_request(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        if current_user.role_id != settings.economist_role_id or request_owner_user_id == current_user.user_id:
+            RequestPolicy.ensure_can_edit_owned_unassigned(
+                current_user,
+                request_owner_user_id=request_owner_user_id,
+            )
+            return
+
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_UPDATE,
+            message="Insufficient permissions to edit request",
+        )
+        if not await self._is_descendant(
+            ancestor_user_id=current_user.user_id,
+            target_user_id=request_owner_user_id,
+        ):
+            raise Forbidden("Economist can edit only own and subordinate requests")
+
+    async def _resolve_lead_economist_scope_root_user_id(self, *, current_user_id: str) -> str:
+        cursor_id: str | None = current_user_id
+        visited: set[str] = set()
+
+        while cursor_id is not None and cursor_id not in visited:
+            visited.add(cursor_id)
+            cursor_user = await self._users.get_by_id(cursor_id)
+            if cursor_user is None:
+                break
+            if cursor_user.id_role == settings.lead_economist_role_id:
+                return cursor_user.id
+            cursor_id = cursor_user.id_parent
+
+        return current_user_id
+
+    async def _resolve_visible_owner_ids_for_hierarchy_root(self, *, root_user_id: str) -> list[str]:
         rows = await self._users.list_active_user_parent_pairs()
         children_by_parent: dict[str, list[str]] = {}
         for user_id, parent_id in rows:
@@ -862,8 +937,8 @@ class RequestService:
                 continue
             children_by_parent.setdefault(parent_id, []).append(user_id)
 
-        visible: set[str] = {current_user.user_id}
-        queue: list[str] = [current_user.user_id]
+        visible: set[str] = {root_user_id}
+        queue: list[str] = [root_user_id]
         while queue:
             manager_id = queue.pop()
             for child_id in children_by_parent.get(manager_id, []):

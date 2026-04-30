@@ -1,5 +1,14 @@
 # Обзор проекта AcomOfferDesk
 
+## Граница ответственности документа
+
+Этот документ описывает продукт: роли, сущности и бизнес-сценарии.
+
+Смежные документы:
+- [Runtime-архитектура](./runtime-architecture.md)
+- [Навигация по коду](./developer-guide.md)
+- [Аутентификация и онбординг](./auth-and-onboarding.md)
+
 ## Назначение
 
 `AcomOfferDesk` - это продуктовая система для работы с заявками и офферами между внутренними сотрудниками и контрагентами.
@@ -206,4 +215,4 @@ Legacy-модуль для Telegram-сценариев. В основном runt
 
 - За системной архитектурой и потоками данных: [runtime-architecture.md](runtime-architecture.md)
 - За картой кодовой базы и правилами навигации: [developer-guide.md](developer-guide.md)
-- За auth-деталями: [keycloak-autolink.md](keycloak-autolink.md), [login-links.md](login-links.md)
+- За auth-деталями: [auth-and-onboarding.md](auth-and-onboarding.md)

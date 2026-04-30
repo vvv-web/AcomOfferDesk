@@ -42,7 +42,7 @@ LoginResponse = AuthSessionResponse
 
 class RegisterUserRequest(BaseModel):
     login: str = Field(..., min_length=3, max_length=128)
-    password: str = Field(..., min_length=6, max_length=72)
+    password: str | None = Field(default=None, min_length=6, max_length=72)
     role_id: int = Field(..., ge=1)
     id_parent: str | None = Field(default=None, min_length=3, max_length=128)
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -51,7 +51,9 @@ class RegisterUserRequest(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def _validate_password_bytes(cls, value: str) -> str:
+    def _validate_password_bytes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if len(value.encode("utf-8")) > 72:
             raise ValueError("Password too long (max 72 bytes)")
         return value

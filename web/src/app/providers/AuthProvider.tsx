@@ -75,6 +75,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<AuthSession | null>(null);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const bootstrapStartedRef = useRef(false);
+  const loginRedirectStartedRef = useRef(false);
   const lastActivityAtRef = useRef<number>(Date.now());
   const sessionRef = useRef<AuthSession | null>(null);
   const statusRef = useRef<AuthStatus>('bootstrapping');
@@ -163,6 +164,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [applySession, canAttemptSilentRefresh, trackActivity]);
 
   const beginLogin = useCallback((nextPath?: string, options?: { forcePrompt?: boolean }) => {
+    if (loginRedirectStartedRef.current) {
+      return;
+    }
+    loginRedirectStartedRef.current = true;
     const target = nextPath ?? location.pathname ?? '/';
     window.location.assign(buildLoginUrl(target, Boolean(options?.forcePrompt)));
   }, [location.pathname]);

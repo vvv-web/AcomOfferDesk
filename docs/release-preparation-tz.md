@@ -1,4 +1,14 @@
-# Техническое задание: подготовка AcomOfferDesk к production-релизу
+﻿# Техническое задание: подготовка AcomOfferDesk к production-релизу
+
+## Граница ответственности документа
+
+Этот документ — roadmap/ТЗ готовности к production: приоритеты, этапы и критерии завершения.
+
+Смежные документы:
+- [Окружения](./environments.md)
+- [Чек-лист релиза](./release-checklist.md)
+- [Production переменные/секреты](./production-env.md)
+- [Аутентификация и онбординг](./auth-and-onboarding.md)
 
 ## 1. Назначение
 
@@ -30,7 +40,7 @@
 - WebSocket передаёт access token в query string;
 - есть deploy workflow, но нет отдельного обязательного CI-gate;
 - frontend `lint` заявлен в `package.json`, но требует рабочей ESLint-конфигурации;
-- проектовые `.trellis/spec` guidelines пока не заполнены реальными правилами.
+- проектовые стандарты разработки пока не заполнены реальными правилами.
 
 ## 3. Целевое состояние
 
@@ -38,7 +48,7 @@
 
 - публичный доступ идёт только через HTTPS;
 - наружу опубликована только публичная точка входа приложения;
-- Keycloak, cookies, OIDC redirect и WebSocket работают в production-compatible режиме;
+- Keycloak, cookies, OIDC-редирект и WebSocket работают в production-совместимом режиме;
 - служебные интерфейсы доступны только через административный канал;
 - секреты не имеют дефолтных fallback-значений;
 - deploy невозможен без базовых проверок качества;
@@ -70,11 +80,43 @@
 
 Если production обслуживается внешним Nginx/Caddy/Traefik на VPS, TLS лучше завершать на внешнем reverse proxy, а контейнерный `gateway` оставить внутренним сервисом. Если внешнего reverse proxy нет, TLS можно добавить прямо в `gateway`, но тогда нужно отдельно управлять сертификатами и renewal.
 
-Branch flow должен быть явным:
+Поток веток должен быть явным:
 
 - `dev -> test`: после локальной разработки и production-like проверки через `ngrok`;
 - `test -> prod`: только после авто-деплоя, smoke-тестов и ручной проверки бизнес-сценариев в test;
 - hotfix: отдельная процедура, где исправление проходит через `test`, если нет аварийного решения с отдельным approval.
+
+## 4.1. Чеклист этапов
+
+Статус этапов фиксируется прямо в этом документе и обновляется по мере появления
+артефактов в репозитории и подтверждённых изменений в runtime.
+
+| Этап | Статус | Что уже есть | Что ещё нужно для завершения |
+|---|---|---|---|
+| Этап 1. Окружения и branch flow | `[~] В работе` | Есть `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.prod-like.yml`, `docker-compose.init.yml`, `.env.dev.example`, `.env.prod-like.example`, документы `docs/environments.md` и `docs/runtime-architecture.md`, а также `deploy.yml` для ветки `test`. | Добавить `docs/release-checklist.md`, зафиксировать финальный `dev -> test -> prod` gate через отдельный CI и подтвердить, что production-процедура не использует dev/tunnel profiles. |
+| Этап 2. Production-периметр | `[~] В работе` | Добавлены `docker-compose.prod.yml`, `docker-compose.test.yml`, `infra/reverse-proxy/nginx.prod.example.conf`, `docs/production-env.md`, `docs/release-checklist.md`, `scripts/check-prod-perimeter.sh`; обновлены документы по окружениям и периметру. | Подтвердить итоговые настройки на реальном test VPS/домене: TLS, firewall, smoke-проверку issuer/URI редиректа и недоступность служебных UI из публичного интернета. |
+| Этап 3. Аутентификация, health и runtime-hardening | `[ ] Не начат` | Цели и требования сформулированы в этом ТЗ. | Внедрить ticket/cookie auth для WebSocket, `/health/live`, `/health/ready`, отключение публичных docs и readiness checks зависимостей. |
+| Этап 4. CI и качество | `[ ] Не начат` | Есть только `deploy.yml`; отдельного обязательного CI-gate пока нет. | Добавить `.github/workflows/ci.yml`, рабочий ESLint, backend tests, smoke coverage, `.dockerignore` и `npm ci` в Docker build. |
+| Этап 5. Observability и recovery | `[ ] Не начат` | Требования описаны на уровне плана и DoD. | Добавить structured logging, request id, error tracking, alerts, backup/rollback runbooks. |
+| Этап 6. UX-сообщения и стандарты | `[ ] Не начат` | Требования к notification layer и стандартам разработки уже сформулированы. | Внедрить единый слой уведомлений, унифицировать error/empty/retry states, заполнить проектные стандарты разработки, оформить release checklist. |
+
+Обозначения статусов:
+
+- `[x]` выполнен;
+- `[~]` в работе;
+- `[ ]` не начат.
+
+### Чеклист P0-задач
+
+| P0-задача | Статус | Текущее состояние | Что нужно закрыть |
+|---|---|---|---|
+| `5.0` Разделение режимов `dev`, `test`, `prod` | `[~] В работе` | Уже есть отдельные compose-файлы, env-примеры и документ `environments.md`, который фиксирует модель окружений, perimeter и branch flow. | Добавить release checklist, финально закрепить CI-gate перед `test/prod` и подтвердить production-процедуру без dev/tunnel profiles. |
+| `5.1` HTTPS и заголовки безопасности | `[~] В работе` | Добавлен пример внешнего reverse proxy с редиректом `80 -> 443`, `X-Forwarded-*`, заголовками безопасности, WebSocket upgrade и лимитом загрузки. | Проверить на реальном домене/сертификате в test и зафиксировать итоговый edge-конфиг в инфраструктуре VPS. |
+| `5.2` Keycloak production mode | `[~] В работе` | Для `prod`-override зафиксирован запуск Keycloak через `kc.sh start`; env-contract для `KC_HOSTNAME`/proxy/issuer документирован. | Подтвердить в test runtime, что все test/prod env-файлы используют `KEYCLOAK_START_COMMAND=start` и issuer полностью совпадает. |
+| `5.3` Закрытие служебных портов | `[~] В работе` | В `docker-compose.prod.yml` служебные порты не публикуются; для test добавлена loopback-публикация только `gateway` (`127.0.0.1:8080`). | Валидировать firewall/NAT на VPS и проверить извне, что `8000/8080(keycloak direct)/5432/5672/15672/9000/9001/5050` недоступны публично. |
+| `5.4` Секреты и credentials | `[~] В работе` | Добавлен `docs/production-env.md` с перечнем обязательных секретов, минимальными требованиями и ротацией; `.env.prod-like.example` уже без `guest/guest` и `minioadmin/minioadmin`. | Добавить runtime fail-fast в следующих этапах и подтвердить назначение владельцев секретов в операционном контуре. |
+| `5.5` WebSocket auth hardening | `[ ] Не начат` | В ТЗ прямо отмечен текущий риск с access token в query string. | Убрать token из URL, внедрить ticket/cookie-based auth и добавить проверки на invalid/expired/reused сценарии. |
+| `5.6` Health, readiness и API docs | `[ ] Не начат` | В ТЗ прямо отмечен текущий риск: healthcheck завязан на `/docs`. | Внедрить `/health/live`, `/health/ready`, readiness зависимостей и закрыть публичный Swagger/OpenAPI в production. |
 
 ## 5. P0: блокирующие задачи до релиза
 
@@ -124,14 +166,14 @@ Branch flow должен быть явным:
 - `prod` не содержит dev-туннелей и публичных служебных портов;
 - путь продвижения версии между ветками описан и повторяем.
 
-### 5.1. HTTPS и security headers
+### 5.1. HTTPS и заголовки безопасности
 
 Что сделать:
 
 - настроить production-домен и TLS-сертификат;
 - включить редирект `HTTP -> HTTPS`;
 - передавать корректные `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`;
-- добавить security headers на публичной точке входа.
+- добавить заголовки безопасности на публичной точке входа.
 
 Что внедрить:
 
@@ -157,8 +199,8 @@ Branch flow должен быть явным:
 
 - `WEB_BASE_URL`, `PUBLIC_BACKEND_BASE_URL`, `KEYCLOAK_PUBLIC_BASE_URL` используют `https://`;
 - refresh-cookie выставляется с `Secure`;
-- OIDC callback не даёт mixed-content или redirect mismatch;
-- браузер получает security headers на HTML/API responses.
+- OIDC callback не даёт смешанный контент или несовпадение URI редиректа;
+- браузер получает заголовки безопасности на HTML/API-ответах.
 
 ### 5.2. Keycloak production mode
 
@@ -367,7 +409,7 @@ Readiness должен проверять минимум:
 
 Минимальный набор тестов:
 
-- auth: login redirect, callback error path, refresh, logout;
+- аутентификация: редирект на вход, ошибки callback, refresh, logout;
 - permissions: роли и статусы `review`, `active`, `inactive`, `blacklist`;
 - requests/offers: основные happy/forbidden paths;
 - files: расширения, magic signature, размер, пустой файл;
@@ -527,7 +569,7 @@ Frontend smoke:
 
 ## 9. P2: структура и документация проекта
 
-### 9.1. Release checklist
+### 9.1. Чек-лист релиза
 
 Создать `docs/release-checklist.md`.
 
@@ -535,7 +577,7 @@ Frontend smoke:
 
 - проверку env/secrets;
 - проверку доменов и TLS;
-- проверку Keycloak issuer/redirect URIs;
+- проверку Keycloak issuer и URI редиректа;
 - проверку доступности `order_database`;
 - запуск миграций/проверку Flyway history;
 - порядок Keycloak bootstrap;
@@ -557,9 +599,9 @@ Frontend smoke:
 - WebSocket/realtime не работает;
 - frontend отдаёт HTML вместо API JSON.
 
-### 9.3. Project guidelines
+### 9.3. Проектные стандарты
 
-Заполнить `.trellis/spec` реальными правилами проекта:
+Заполнить раздел проектных стандартов реальными правилами проекта:
 
 - backend directory structure;
 - frontend feature structure;
@@ -573,7 +615,7 @@ Frontend smoke:
 Критерии приёмки:
 
 - новый разработчик понимает архитектурные правила без устной передачи знаний;
-- AI-ассистенты получают конкретные проектные стандарты, а не пустые placeholders.
+- разработчики получают конкретные проектные стандарты, а не пустые placeholders.
 
 ## 10. План внедрения
 
@@ -585,24 +627,24 @@ Frontend smoke:
 
 - описать env contracts для `dev`, `test`, `prod`;
 - добавить/описать production-like локальный запуск через `ngrok`;
-- зафиксировать `dev -> test -> prod` promotion flow;
+- зафиксировать `dev -> test -> prod` поток продвижения;
 - разделить auto-deploy в `test` и ручной допуск в `prod`;
 - исключить dev tunnel profiles из `test` и `prod`.
 
-### Этап 2. Production perimeter
+### Этап 2. Production-периметр
 
 Результат: внешний контур безопасен.
 
 Задачи:
 
 - HTTPS;
-- security headers;
+- заголовки безопасности;
 - Keycloak production mode;
 - закрытие служебных портов;
 - замена дефолтных credentials;
 - tunnel/ngrok профили исключены из production.
 
-### Этап 3. Auth, health и runtime hardening
+### Этап 3. Аутентификация, health и runtime-hardening
 
 Результат: auth/realtime/runtime не завязаны на dev-механики.
 
@@ -649,9 +691,9 @@ Frontend smoke:
 - унификация ошибок;
 - empty/error/retry states;
 - release checklist;
-- заполнение `.trellis/spec`.
+- заполнение проектных стандартов разработки.
 
-## 11. Definition of Done
+## 11. Критерии завершения
 
 Релизная подготовка считается завершённой, если:
 
@@ -668,7 +710,7 @@ Frontend smoke:
 - есть release checklist и rollback plan;
 - есть базовая наблюдаемость и error tracking;
 - пользовательские ошибки и статусы унифицированы;
-- `.trellis/spec` содержит реальные правила проекта.
+- раздел проектных стандартов содержит реальные правила проекта.
 
 ## 12. Приоритеты
 
@@ -701,3 +743,5 @@ Frontend smoke:
 - полный notification center;
 - финальная чистка legacy;
 - оптимизация frontend bundle.
+
+

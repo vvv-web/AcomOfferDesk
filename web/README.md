@@ -1,5 +1,14 @@
 # Web (`/web`)
 
+## Граница ответственности документа
+
+Этот README описывает frontend-модуль и навигацию по коду.
+Единый источник правды по запуску окружений и compose-слоям:
+- `docs/environments.md`
+
+Статус локального compose в `/web`:
+- `web/docker-compose.yml` — standalone/локальный вспомогательный сценарий, не основной путь запуска проекта.
+
 Frontend-клиент AcomOfferDesk на `React + TypeScript`. Этот модуль отвечает за пользовательский интерфейс, маршрутизацию, формы, интеграцию с backend API и клиентскую часть auth/realtime-сценариев.
 
 ## Роль модуля в системе
@@ -214,7 +223,7 @@ Frontend использует только Keycloak redirect flow.
 Рекомендуемый способ:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 Точка входа:
@@ -247,4 +256,6 @@ npm run dev
 - верхний уровень проекта: `README.md`
 - общая архитектура: `docs/runtime-architecture.md`
 - навигация по всей кодовой базе: `docs/developer-guide.md`
+- аутентификация и онбординг: `docs/auth-and-onboarding.md`
+- окружения и perimeter: `docs/environments.md`
 
