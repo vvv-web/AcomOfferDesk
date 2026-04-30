@@ -1,5 +1,14 @@
 # PostgreSQL (order_database) на VPS
 
+## Граница ответственности документа
+
+Этот документ покрывает только внешний `order_database` на VPS: Flyway, init, восстановление рассинхронов.
+
+Смежные документы:
+- [VPS troubleshooting](./vps-troubleshooting.md)
+- [Окружения](./environments.md)
+- [Чек-лист релиза](./release-checklist.md)
+
 Источник схемы и init: репозиторий **[alexonderia/order_database](https://github.com/alexonderia/order_database)**, ветка **`main`**.  
 Команды Flyway и профиль `tools`: **[order_database/docs/flyway.md](https://github.com/alexonderia/order_database/blob/main/docs/flyway.md)**.
 

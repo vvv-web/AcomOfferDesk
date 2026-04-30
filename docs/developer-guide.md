@@ -1,5 +1,15 @@
 # Навигация для разработчика
 
+## Граница ответственности документа
+
+Этот документ — навигация по кодовой базе и слоям приложения.
+
+Смежные документы:
+- [Обзор продукта](./project-overview.md)
+- [Runtime-архитектура](./runtime-architecture.md)
+- [Аутентификация и онбординг](./auth-and-onboarding.md)
+- [Окружения](./environments.md)
+
 ## Зачем нужен этот документ
 
 Этот файл помогает быстро сориентироваться в кодовой базе и понять:
@@ -261,7 +271,7 @@ Frontend организован по feature-oriented структуре. Иск
 6. Backend возвращает schema response.
 7. Frontend преобразует и отображает результат.
 
-## 2. Auth поток
+## 2. Поток аутентификации
 
 1. `AuthProvider` и auth-страницы инициируют вход.
 2. Backend auth endpoints запускают OIDC flow.
@@ -397,13 +407,12 @@ Frontend организован по feature-oriented структуре. Иск
 - ownership;
 - context конкретной сущности.
 
-### 3. Auth и onboarding сильно связаны с документацией
+### 3. Аутентификация и онбординг тесно связаны с документацией
 
 При изменениях в auth, login-links, регистрации или роли/статусах нужно синхронизировать:
 
 - `README.md`
-- `docs/keycloak-autolink.md`
-- `docs/login-links.md`
+- `docs/auth-and-onboarding.md`
 
 ### 4. БД не в этом репозитории
 
@@ -422,8 +431,7 @@ Frontend организован по feature-oriented структуре. Иск
 
 - [Обзор проекта](project-overview.md)
 - [Архитектура и потоки данных](runtime-architecture.md)
-- [Автопривязка Keycloak](keycloak-autolink.md)
-- [Login links](login-links.md)
+- [Аутентификация и онбординг](auth-and-onboarding.md)
 <!-- run-scenarios-source-of-truth-2026-04-29 -->
 ## Единый источник по окружениям
 

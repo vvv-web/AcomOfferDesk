@@ -1,5 +1,14 @@
 # Backend (`/backend`)
 
+## Граница ответственности документа
+
+Этот README описывает устройство backend-модуля.
+Единый источник правды по запуску окружений и compose-слоям:
+- `docs/environments.md`
+
+Статус локальных compose-файлов в `/backend`:
+- `backend/docker-compose.yml` и `backend/docker-compose.ngrok.yml` — legacy standalone-сценарии, не основной путь запуска проекта.
+
 `backend` - основной API и бизнес-слой AcomOfferDesk. Именно здесь сосредоточены HTTP endpoints, правила доступа, orchestration бизнес-сценариев, работа с файлами, интеграция с Keycloak, отправка событий и realtime-логика чата.
 
 ## Роль модуля в системе
@@ -264,10 +273,18 @@ app/
 
 ## Запуск
 
-Рекомендуемый путь - запуск в составе всего проекта:
+Рекомендуемый путь — запуск в составе корневого стека.
+
+Dev:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+Production-like локально:
+
+```bash
+docker compose --env-file .env.prod-like.local -f docker-compose.yml -f docker-compose.prod-like.yml up -d --build
 ```
 
 API будет доступен через:
@@ -276,9 +293,9 @@ API будет доступен через:
 
 ## Конфигурация
 
-Основной runtime-конфиг читается из:
+Основной runtime/env-contract задается корневыми env-файлами (`.env.dev`, `.env.prod-like.local`, `.env.test`, `.env.prod`) и передается в сервисы через root compose.
 
-- `backend/.env`
+`backend/.env` — legacy-артефакт и не является источником правды для основного сценария запуска.
 
 Ключевая точка входа в коде:
 
@@ -329,5 +346,5 @@ API будет доступен через:
 - корневой обзор: `README.md`
 - общая архитектура: `docs/runtime-architecture.md`
 - навигация по проекту: `docs/developer-guide.md`
-- auth и autolink: `docs/keycloak-autolink.md`
-- login links: `docs/login-links.md`
+- аутентификация и онбординг: `docs/auth-and-onboarding.md`
+- окружения и perimeter: `docs/environments.md`
