@@ -52,9 +52,15 @@ jobs:
 
             ORDER_DB_DIR=/opt/order_database
             APP_ENV_FILE=/opt/acome-offer-desk/backend/.env
+            COMPOSE_ENV_FILE=backend/.env
+            export APP_RUNTIME_ENV_FILE="./$COMPOSE_ENV_FILE"
 
             if [ ! -f "$ORDER_DB_DIR/docker-compose.yml" ] || [ ! -f "$ORDER_DB_DIR/.env" ]; then
               fail_order_db_prerequisite "order_database is not installed on VPS as documented."
+            fi
+
+            if [ ! -f "$COMPOSE_ENV_FILE" ]; then
+              fail_order_db_prerequisite "$COMPOSE_ENV_FILE is missing; docker compose cannot load runtime env."
             fi
 
             if ! docker network inspect project_net >/dev/null 2>&1; then
@@ -93,21 +99,21 @@ jobs:
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
             fi
 
-            docker compose down --remove-orphans || true
-            docker compose -f docker-compose.init.yml up keycloak_db_prepare
-            if ! docker compose up -d --build; then
+            docker compose --env-file "$COMPOSE_ENV_FILE" down --remove-orphans || true
+            docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_db_prepare
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" up -d --build; then
               echo "=== docker compose ps -a ==="
-              docker compose ps -a || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" ps -a || true
               echo "=== keycloak logs (tail) ==="
-              docker compose logs --tail=160 keycloak || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
               echo "=== backend logs (tail) ==="
-              docker compose logs --tail=160 backend || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 backend || true
               exit 1
             fi
-            if ! docker compose -f docker-compose.init.yml up keycloak_bootstrap; then
+            if ! docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml up keycloak_bootstrap; then
               echo "=== keycloak bootstrap logs (tail) ==="
-              docker compose -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" -f docker-compose.init.yml logs --tail=160 keycloak_bootstrap || true
               echo "=== keycloak logs (tail) ==="
-              docker compose logs --tail=160 keycloak || true
+              docker compose --env-file "$COMPOSE_ENV_FILE" logs --tail=160 keycloak || true
               exit 1
             fi
