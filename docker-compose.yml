@@ -88,8 +88,8 @@ services:
         condition: service_healthy
       web:
         condition: service_healthy
-    expose:
-      - "80"
+    ports:
+      - "127.0.0.1:8080:80"
     networks:
       - project_net
 
