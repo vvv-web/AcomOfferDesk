@@ -43,6 +43,33 @@ jobs:
               fi
             }
 
+            sync_and_migrate_order_database() {
+              local migrations_src="/opt/acome-offer-desk/deploy/order_database/flyway/sql"
+              local backup_dir="$ORDER_DB_DIR/backups"
+              local backup_path
+              local timestamp
+
+              if [ ! -d "$migrations_src" ]; then
+                fail_order_db_prerequisite "Missing order_database migration snapshot: $migrations_src."
+              fi
+
+              set -- "$migrations_src"/V*.sql
+              if [ ! -e "$1" ]; then
+                fail_order_db_prerequisite "No V*.sql files in order_database migration snapshot: $migrations_src."
+              fi
+
+              mkdir -p "$ORDER_DB_DIR/flyway/sql" "$backup_dir"
+              cp -a "$@" "$ORDER_DB_DIR/flyway/sql/"
+
+              timestamp="$(date -u +'%Y%m%d_%H%M%S')"
+              backup_path="$backup_dir/order_database_${timestamp}.dump"
+              echo "ORDER_DB_BACKUP: creating $backup_path"
+              docker exec order-database-postgres pg_dump -U "$ORDER_DB_USER" -d "$ORDER_DB_NAME" -F c > "$backup_path"
+              sha256sum "$backup_path" > "$backup_path.sha256"
+
+              (cd "$ORDER_DB_DIR" && docker compose --profile tools run --rm flyway migrate)
+            }
+
             cd /opt/acome-offer-desk
             git fetch upstream
             git checkout test
@@ -82,6 +109,8 @@ jobs:
               fail_order_db_prerequisite "POSTGRES_USER or POSTGRES_DB is missing in $ORDER_DB_DIR/.env."
             fi
 
+            sync_and_migrate_order_database
+
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'flyway_schema_history';" "1"
 
             # Пустой flyway/sql на диске давал только baseline без версионных миграций → нет user_auth_accounts и 500 на OAuth callback (см. docs/order-database-vps.md).
@@ -94,6 +123,8 @@ jobs:
             fi
 
             require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_auth_accounts';" "1"
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'requests' AND column_name = 'id_plan';" "1"
+            require_order_db_sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('economy_plans', 'economy_plan_request_facts');" "2"
 
             if [ ! -f "$APP_ENV_FILE" ] || ! grep -q '^DATABASE_URL=.*@order-database-postgres:5432/' "$APP_ENV_FILE"; then
               fail_order_db_prerequisite "backend/.env is not wired to order-database-postgres:5432."
