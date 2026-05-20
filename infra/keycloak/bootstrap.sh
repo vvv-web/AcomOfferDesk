@@ -664,7 +664,8 @@ _verify_atomic_permission_roles() {
       verify_failed=1
     fi
     composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
-    if printf '%s' "$composites" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"'; then
+    # Only fail when composites is a non-empty array (avoid false positives on "[]").
+    if printf '%s' "$composites" | grep -Eq '^\[[[:space:]]*\{'; then
       echo "VERIFY_FAIL: permission role '$role_name' must not have composite members"
       verify_failed=1
     fi
@@ -726,13 +727,19 @@ ensure_api_roles_model() {
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
 
-  # Re-apply only when app.* sync left stale composites on leaf roles.
-  if verify_keycloak_permission_model_silent; then
-    echo "KEYCLOAK_BOOTSTRAP: atomic roles OK after app.* sync (skipped second enforce_atomic)"
-  else
-    echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after app.* sync"
+  # app.* sync can briefly leave leaf roles composite=true until enforce_atomic settles.
+  atomic_attempt=1
+  max_atomic_attempts="${KEYCLOAK_BOOTSTRAP_ATOMIC_RETRIES:-8}"
+  while [ "$atomic_attempt" -le "$max_atomic_attempts" ]; do
+    if verify_keycloak_permission_model_silent; then
+      echo "KEYCLOAK_BOOTSTRAP: atomic roles OK after app.* sync (attempt $atomic_attempt)"
+      break
+    fi
+    echo "KEYCLOAK_BOOTSTRAP: enforce_atomic attempt $atomic_attempt/$max_atomic_attempts after app.* sync"
     enforce_atomic_permission_roles
-  fi
+    sleep 3
+    atomic_attempt=$((atomic_attempt + 1))
+  done
 
   verify_keycloak_permission_model
 }

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: acom-offer-desk-pilot
+data:
+  # Pilot learn: AMQP 5672 (R-E2 AMQPS — фаза §8.2)
+  enabled_plugins: |
+    [rabbitmq_management].
+  rabbitmq.conf: |
+    loopback_users.guest = false
+    default_user = acom_rmq

@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-worker
+  namespace: acom-offer-desk-pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications-worker
+  template:
+    metadata:
+      labels:
+        app: notifications-worker
+    spec:
+      containers:
+        - name: worker
+          image: CHANGE_ME_REGISTRY/acom-backend@sha256:CHANGE_ME_DIGEST
+          command: ["celery", "-A", "app.worker", "worker", "-l", "info"]
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env

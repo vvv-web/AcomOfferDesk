@@ -1,0 +1,19 @@
+# Опциональный Job: подготовка схемы/роли БД для Keycloak до import
+# Использовать только если import в entrypoint Keycloak недостаточен.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-db-prepare
+  namespace: acom-offer-desk-pilot
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: prepare
+          image: postgres:16-alpine
+          command: ["/bin/sh", "-c", "echo 'TODO: SQL prepare для Keycloak DB'"]
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets

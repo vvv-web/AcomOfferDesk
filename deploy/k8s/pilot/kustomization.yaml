@@ -1,0 +1,25 @@
+# Kustomize entry — пилот AcomOfferDesk (pop-os k3s)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: acom-offer-desk-pilot
+
+resources:
+  - namespace.yaml
+  - config/rabbitmq-configmap.yaml
+  - data/postgres-statefulset.yaml
+  - workloads/rabbitmq.yaml
+  - workloads/minio.yaml
+  - workloads/keycloak.yaml
+  - workloads/backend.yaml
+  - workloads/web.yaml
+  - workloads/notifications-worker.yaml
+  - networking/ingress.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: acom-offer-desk
+      acom.deploy/environment: pilot
+
+commonAnnotations:
+  acom.deploy/sha: "8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9"

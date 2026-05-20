@@ -1,0 +1,44 @@
+# Keycloak — R-B1 start + import-realm в args (D4 roadmap)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: acom-offer-desk-pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        acom.security/tier: app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.5
+          args: ["start", "--import-realm"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 60
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env
+          volumeMounts:
+            - name: keycloak-data
+              mountPath: /opt/keycloak/data
+      volumes:
+        - name: keycloak-data
+          persistentVolumeClaim:
+            claimName: keycloak-data

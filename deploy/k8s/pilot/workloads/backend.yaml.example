@@ -1,0 +1,54 @@
+# Backend API — readiness /health (R-B4)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: acom-offer-desk-pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+      annotations:
+        acom.deploy/sha: "CHANGE_ME_AOD_DEPLOY_SHA"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: backend
+          image: CHANGE_ME_REGISTRY/acom-backend@sha256:CHANGE_ME_DIGEST
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: acom-offer-desk-pilot
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000

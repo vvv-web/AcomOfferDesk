@@ -1,0 +1,47 @@
+# Job: Flyway migrate — до backend (порядок как deploy.yml)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flyway-migrate
+  namespace: acom-offer-desk-pilot
+  labels:
+    acom.deploy/component: flyway
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        acom.deploy/component: flyway
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flyway
+          image: flyway/flyway:10-alpine
+          # Монтировать ConfigMap/Secret с JDBC URL (sslmode=verify-full, R-D1)
+          env:
+            - name: FLYWAY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: FLYWAY_JDBC_URL
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: FLYWAY_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: FLYWAY_PASSWORD
+          command: ["flyway", "migrate"]
+          volumeMounts:
+            - name: flyway-sql
+              mountPath: /flyway/sql
+              readOnly: true
+      volumes:
+        - name: flyway-sql
+          configMap:
+            name: flyway-sql-vtest
+            # Создать ConfigMap из deploy/order_database/flyway/sql @ test SHA

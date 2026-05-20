@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-init-deploy
+  namespace: acom-offer-desk-pilot
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: acom-backend:8ea43577e06e
+          imagePullPolicy: Never
+          command: ["/bin/sh", "/app/scripts/keycloak-init-deploy.sh"]
+          env:
+            - name: COMPOSE_ENV_FILE
+              value: "/dev/null"
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env

@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-user-role-sync
+  namespace: acom-offer-desk-pilot
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sync
+          image: acom-backend:8ea43577e06e
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.scripts.sync_keycloak_user_app_roles"]
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env

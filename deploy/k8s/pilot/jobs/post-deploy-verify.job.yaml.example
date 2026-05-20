@@ -1,0 +1,29 @@
+# Job: post-deploy-verify — НЕ docker compose exec (G4 roadmap v0.5)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: post-deploy-verify
+  namespace: acom-offer-desk-pilot
+  labels:
+    acom.deploy/component: post-deploy-verify
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1200
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: verify
+          image: CHANGE_ME_REGISTRY/acom-backend@sha256:CHANGE_ME_DIGEST
+          command: ["/bin/sh", "/app/scripts/post-deploy-verify.sh"]
+          env:
+            - name: POST_DEPLOY_BASE_URL
+              value: "https://CHANGE_ME_PILOT_FQDN"
+            - name: SMOKE_S3_ENDPOINT
+              value: "minio:9000"
+            - name: SMOKE_MINIO_TIMEOUT_SECONDS
+              value: "10"
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+          # ServiceAccount + NetworkPolicy: доступ к minio, rabbitmq, Ingress URL

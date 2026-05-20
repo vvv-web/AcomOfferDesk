@@ -1,0 +1,15 @@
+# Пример ConfigMap — несекретные env. Скопировать в configmap.yaml без .example
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acom-backend-env
+  namespace: acom-offer-desk-pilot
+data:
+  APP_ENV: "production"
+  KEYCLOAK_REALM: "CHANGE_ME_REALM"
+  # Внутренний URL Keycloak (DNS Service)
+  KEYCLOAK_INTERNAL_BASE_URL: "http://keycloak:8080/iam"
+  # Публичные URL — совпадают с Ingress (R-G1)
+  KEYCLOAK_PUBLIC_BASE_URL: "https://CHANGE_ME_PILOT_FQDN/iam"
+  # RabbitMQ / MinIO — имена Service в namespace
+  # SMOKE_* — для Job post-deploy-verify

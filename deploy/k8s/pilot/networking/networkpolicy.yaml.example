@@ -1,0 +1,14 @@
+# Заготовка NetworkPolicy — уточнить CIDR egress по политике ИБ
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-data-egress
+  namespace: acom-offer-desk-pilot
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: data
+  policyTypes:
+    - Egress
+  egress: []
+  # Пустой egress = deny all egress для data tier (R-A3)

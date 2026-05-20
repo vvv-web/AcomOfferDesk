@@ -15,6 +15,9 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
+COPY shared ./shared
+COPY scripts ./scripts
 COPY infra/keycloak/bootstrap.sh ./keycloak/bootstrap.sh
+RUN chmod +x ./keycloak/bootstrap.sh ./scripts/*.sh 2>/dev/null || true
 
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "app.main:app"]

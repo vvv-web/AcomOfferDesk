@@ -1,0 +1,47 @@
+# RabbitMQ — R-E2: только TLS listener в prod overlay
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: acom-offer-desk-pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3-management
+          ports:
+            - containerPort: 5671
+              name: amqps
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "ping"]
+          volumeMounts:
+            - name: rabbitmq-config
+              mountPath: /etc/rabbitmq
+      volumes:
+        - name: rabbitmq-config
+          configMap:
+            name: rabbitmq-config
+            # listeners.tcp = none, TLS — из deploy/vps parity
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: acom-offer-desk-pilot
+spec:
+  type: ClusterIP
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqps
+      port: 5671
+      targetPort: 5671

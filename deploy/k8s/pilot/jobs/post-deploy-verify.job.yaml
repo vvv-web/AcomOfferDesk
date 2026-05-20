@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: post-deploy-verify
+  namespace: acom-offer-desk-pilot
+  labels:
+    acom.deploy/component: post-deploy-verify
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1200
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: verify
+          image: acom-backend:8ea43577e06e
+          imagePullPolicy: Never
+          command: ["/bin/sh", "/app/scripts/post-deploy-verify.sh"]
+          env:
+            - name: POST_DEPLOY_BASE_URL
+              value: "http://aod-pilot.local"
+            - name: SMOKE_S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: S3_ENDPOINT
+            - name: SMOKE_MINIO_TIMEOUT_SECONDS
+              value: "10"
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env

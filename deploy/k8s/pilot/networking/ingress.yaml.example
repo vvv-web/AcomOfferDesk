@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: acom-pilot
+  namespace: acom-offer-desk-pilot
+  annotations:
+    # class nginx — подставить имя IngressClass кластера
+    kubernetes.io/ingress.class: nginx
+spec:
+  tls:
+    - hosts:
+        - CHANGE_ME_PILOT_FQDN
+      secretName: acom-pilot-tls
+  rules:
+    - host: CHANGE_ME_PILOT_FQDN
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /iam
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080

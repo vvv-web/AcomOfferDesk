@@ -1,0 +1,27 @@
+# Job: keycloak bootstrap — образ/скрипт с SHA test (R-C4)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-bootstrap
+  namespace: acom-offer-desk-pilot
+  labels:
+    acom.deploy/component: keycloak-bootstrap
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      annotations:
+        acom.deploy/sha: "CHANGE_ME_AOD_DEPLOY_SHA"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          # Образ backend или dedicated init с /app/keycloak/bootstrap.sh
+          image: CHANGE_ME_REGISTRY/acom-backend@sha256:CHANGE_ME_DIGEST
+          command: ["/bin/sh", "/app/keycloak/bootstrap.sh"]
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env

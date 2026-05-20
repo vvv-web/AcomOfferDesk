@@ -1,0 +1,21 @@
+# Job: синхронизация app-ролей Keycloak (после bootstrap)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-user-role-sync
+  namespace: acom-offer-desk-pilot
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sync
+          image: CHANGE_ME_REGISTRY/acom-backend@sha256:CHANGE_ME_DIGEST
+          command:
+            - python
+            - -m
+            - app.scripts.sync_keycloak_user_app_roles
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets

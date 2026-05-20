@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: acom-offer-desk-pilot
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        acom.security/tier: data
+    spec:
+      initContainers:
+        - name: pg-tls-perms
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cp /certs-in/* /certs-out/
+              chmod 600 /certs-out/server.key
+              chown 70:70 /certs-out/*
+          volumeMounts:
+            - name: pg-tls-in
+              mountPath: /certs-in
+              readOnly: true
+            - name: pg-tls
+              mountPath: /certs-out
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: POSTGRES_DB
+          args:
+            - "-c"
+            - "ssl=on"
+            - "-c"
+            - "ssl_cert_file=/etc/ssl/postgres/server.crt"
+            - "-c"
+            - "ssl_key_file=/etc/ssl/postgres/server.key"
+            - "-c"
+            - "ssl_ca_file=/etc/ssl/postgres/ca.crt"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "acom_pilot", "-d", "order_database"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: pg-data
+              mountPath: /var/lib/postgresql/data
+            - name: pg-tls
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: pg-data
+          emptyDir: {}
+        - name: pg-tls-in
+          secret:
+            secretName: postgres-tls
+        - name: pg-tls
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: acom-offer-desk-pilot
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

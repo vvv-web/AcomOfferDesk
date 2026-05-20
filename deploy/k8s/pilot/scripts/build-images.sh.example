@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Сборка и push образов пилота с upstream/test (этап A0, R-B3, R-H2)
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+cd "$REPO_ROOT"
+
+git fetch upstream test
+git checkout test
+git reset --hard upstream/test
+
+export AOD_DEPLOY_SHA="$(git rev-parse HEAD)"
+echo "AOD_DEPLOY_SHA=$AOD_DEPLOY_SHA"
+
+# CHANGE_ME: registry host
+REGISTRY="${REGISTRY:-CHANGE_ME_REGISTRY}"
+
+docker build -t "${REGISTRY}/acom-backend:${AOD_DEPLOY_SHA}" ./backend
+docker build -t "${REGISTRY}/acom-web:${AOD_DEPLOY_SHA}" ./web
+# worker использует тот же Dockerfile backend или отдельный — уточнить по compose
+
+docker push "${REGISTRY}/acom-backend:${AOD_DEPLOY_SHA}"
+docker push "${REGISTRY}/acom-web:${AOD_DEPLOY_SHA}"
+
+echo "Запишите digest: docker inspect --format='{{index .RepoDigests 0}}' ..."
