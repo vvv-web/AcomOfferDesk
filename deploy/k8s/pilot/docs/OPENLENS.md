@@ -2,6 +2,38 @@
 
 Краткая инструкция для GUI-наблюдения за namespace **`acom-offer-desk-pilot`** без секретов в документе.
 
+## Важно: «Metrics not available» в OpenLens
+
+### 1. Кластер может быть исправен, а Lens — нет
+
+Проверка в терминале (источник правды):
+
+```bash
+kubectl get apiservice v1beta1.metrics.k8s.io   # AVAILABLE True
+kubectl top nodes
+kubectl top pods -n acom-offer-desk-pilot
+```
+
+Если команды выше **без ошибки** — **metrics-server работает**. Сообщение в OpenLens часто **не баг k3s**, а ограничение **OpenLens OSS 6.5.x**: UI ожидает **Prometheus**, а не только [metrics-server](https://github.com/kubernetes-sigs/metrics-server). См. [lensapp/lens#8095](https://github.com/lensapp/lens/issues/8095) (в коммерческом Lens metrics-server поддерживается; в OpenLens — нет).
+
+### 2. Pod в статусе Succeeded / Failed — графиков не будет
+
+**Jobs** (`flyway-migrate`, `keycloak-bootstrap` и т.д.) после завершения показывают **Succeeded** или **Failed**. Вкладки CPU/Memory в Lens для таких pod **пустые** даже при рабочем metrics-server — снимаются только **Running** workload’ы.
+
+Для метрик откройте, например: **Deployments → `backend` → Pod → Running**.
+
+### 3. Альтернатива с метриками: Headlamp (уже в кластере)
+
+```bash
+kubectl -n headlamp port-forward svc/headlamp 18090:80
+```
+
+Браузер: http://127.0.0.1:18090 → namespace **`acom-offer-desk-pilot`**.
+
+### 4. Если нужны графики именно в OpenLens
+
+Варианты: **Lens** (платный) с metrics-server, форк [Freelens](https://github.com/freelensapp/freelens), или установка **Prometheus** в кластер и настройка Prometheus URL в OpenLens (тяжелее, отдельный шаг).
+
 ## Установка (Linux, Pop!_OS)
 
 Рекомендуемый способ — **AppImage** из [MuhammedKalkan/OpenLens](https://github.com/MuhammedKalkan/OpenLens/releases):

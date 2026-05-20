@@ -68,9 +68,10 @@ curl -sk --connect-timeout 3 https://10.16.69.1:6443/healthz   # 401 Unauthorize
 
 ## OpenLens
 
-- После фикса: **Refresh** кластера в Lens → CPU/Memory на **Running** pod’ах.
-- **Logs** у pod: Workloads → Pods → pod → панель справа → **Logs**; или ПКМ → Logs; для Job → Workloads → Jobs → pod.
-- У **Failed** pod метрик может не быть — смотреть Logs/Events.
+- После фикса node-ip: **`kubectl top`** и Metrics API **Available** — кластер в порядке.
+- **OpenLens OSS** может всё равно писать «Metrics not available» — UI не использует metrics-server как коммерческий Lens ([issue #8095](https://github.com/lensapp/lens/issues/8095)); см. `OPENLENS.md` → Headlamp или `kubectl top`.
+- Графики только у **Running** pod; у **Succeeded** Job (`flyway-migrate`) — пусто по дизайну.
+- **Logs** у pod: Workloads → Pods → pod → **Logs**; для Job → Workloads → Jobs.
 
 См. также: `deploy/k8s/pilot/docs/OPENLENS.md`.
 
