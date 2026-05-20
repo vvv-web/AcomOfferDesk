@@ -30,9 +30,41 @@ kubectl -n headlamp port-forward svc/headlamp 18090:80
 
 Браузер: http://127.0.0.1:18090 → namespace **`acom-offer-desk-pilot`**.
 
-### 4. Если нужны графики именно в OpenLens
+### 4. Графики в OpenLens — Prometheus (установлен на pop-os)
 
-Варианты: **Lens** (платный) с metrics-server, форк [Freelens](https://github.com/freelensapp/freelens), или установка **Prometheus** в кластер и настройка Prometheus URL в OpenLens (тяжелее, отдельный шаг).
+OpenLens OSS **не рисует** графики только от metrics-server. На pop-os установлен минимальный **kube-prometheus-stack** (namespace **`monitoring`**).
+
+**URL для OpenLens** (настройки кластера → Prometheus):
+
+```text
+http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090
+```
+
+**Шаги в OpenLens 6.5:**
+
+1. Выберите кластер **default** → иконка **шестерёнки** (Cluster Settings) или **Settings**.
+2. Раздел **Prometheus** / **Metrics**.
+3. Укажите URL выше (или **Service**: `kube-prometheus-kube-prome-prometheus`, namespace `monitoring`, port `9090`).
+4. **Save** → перезапустите OpenLens или **Disconnect / Reconnect** кластер.
+5. Откройте **Running** pod (например `backend`), не **Succeeded** Job.
+
+**Проверка в терминале:**
+
+```bash
+kubectl -n monitoring get pods
+kubectl -n monitoring port-forward svc/kube-prometheus-kube-prome-prometheus 9090:9090
+curl -sf http://127.0.0.1:9090/-/healthy
+```
+
+**Переустановка** (из корня репо):
+
+```bash
+./deploy/k8s/pilot/scripts/install-prometheus-openlens.sh
+```
+
+Values: `deploy/k8s/pilot/monitoring/helm-values-kube-prometheus-minimal.yaml` (Grafana/Alertmanager выкл., node-exporter выкл. — порт 9100 занят на хосте).
+
+Другие варианты: платный **Lens** (metrics-server), [Freelens](https://github.com/freelensapp/freelens).
 
 ## Установка (Linux, Pop!_OS)
 

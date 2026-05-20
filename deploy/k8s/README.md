@@ -35,4 +35,5 @@
 |----------|------------|
 | [pilot/docs/OPENLENS.md](pilot/docs/OPENLENS.md) | GUI, метрики, Logs, namespace `acom-offer-desk-pilot` |
 | [pilot/docs/K3S_HOST_NETWORKING.md](pilot/docs/K3S_HOST_NETWORKING.md) | node-ip, metrics-server, CoreDNS (инцидент 2026-05-20) |
+| [pilot/docs/OPENLENS.md](pilot/docs/OPENLENS.md) + Prometheus URL | Графики CPU/Memory в OpenLens OSS |
 | [.planning/k8s-pilot-popos/STATE.md](../../.planning/k8s-pilot-popos/STATE.md) | Статус шагов 0–12, blockers, git policy |

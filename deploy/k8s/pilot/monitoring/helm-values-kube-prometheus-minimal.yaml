@@ -1,0 +1,45 @@
+# Минимальный kube-prometheus-stack для OpenLens OSS (pop-os k3s).
+# Установка:
+#   helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f deploy/k8s/pilot/monitoring/helm-values-kube-prometheus-minimal.yaml
+
+grafana:
+  enabled: false
+
+alertmanager:
+  enabled: false
+
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+    patch:
+      enabled: false
+  tls:
+    enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    resources:
+      requests:
+        memory: 384Mi
+      limits:
+        memory: 768Mi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+kube-state-metrics:
+  resources:
+    limits:
+      memory: 128Mi
+
+# На pop-os порт 9100 уже занят на хосте — node-exporter отключён.
+# Метрики pod/node идут через kubelet/cAdvisor ServiceMonitor.
+prometheus-node-exporter:
+  enabled: false
