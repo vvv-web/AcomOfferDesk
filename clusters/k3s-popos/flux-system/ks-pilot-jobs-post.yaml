@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: pilot-jobs-post
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: pilot-jobs-bootstrap
+    - name: pilot-apps
+  interval: 10m
+  timeout: 20m
+  wait: true
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: acomofferdesk
+  path: ./deploy/k8s/pilot/flux-phases/jobs-post

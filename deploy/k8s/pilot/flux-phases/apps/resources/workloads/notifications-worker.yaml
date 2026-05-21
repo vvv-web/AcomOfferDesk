@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-worker
+  namespace: acom-offer-desk-pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications-worker
+  template:
+    metadata:
+      labels:
+        app: notifications-worker
+    spec:
+      containers:
+        - name: worker
+          image: acom-notifications-worker:8ea43577e06e
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.main"]
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "celery"]
+            initialDelaySeconds: 60
+            periodSeconds: 30

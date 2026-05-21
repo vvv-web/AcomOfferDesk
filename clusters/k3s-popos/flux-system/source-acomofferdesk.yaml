@@ -1,0 +1,12 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: acomofferdesk
+  namespace: flux-system
+spec:
+  interval: 1m
+  # Приватный репо: добавить spec.secretRef и url ssh://git@github.com/vvv-web/AcomOfferDesk.git
+  url: https://github.com/vvv-web/AcomOfferDesk.git
+  ref:
+    branch: k8s-pilot-popos
+  timeout: 60s

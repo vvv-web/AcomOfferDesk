@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: acom-offer-desk-pilot
+resources:
+  - resources/jobs/keycloak-db-prepare.job.yaml
+  - resources/jobs/keycloak-bootstrap.job.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: acom-offer-desk
+      acom.deploy/environment: pilot

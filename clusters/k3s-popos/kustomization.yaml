@@ -1,0 +1,11 @@
+# Точка входа: Flux CR для пилота pop-os (применять в flux-system).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system/source-acomofferdesk.yaml
+  - flux-system/ks-pilot-base.yaml
+  - flux-system/ks-pilot-infra.yaml
+  - flux-system/ks-pilot-jobs-migrate.yaml
+  - flux-system/ks-pilot-jobs-bootstrap.yaml
+  - flux-system/ks-pilot-apps.yaml
+  - flux-system/ks-pilot-jobs-post.yaml

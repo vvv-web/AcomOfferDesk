@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: acom-offer-desk-pilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+      annotations:
+        acom.deploy/sha: "8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: backend
+          image: acom-backend:8ea43577e06e
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 45
+            periodSeconds: 15
+          envFrom:
+            - secretRef:
+                name: acom-app-secrets
+            - configMapRef:
+                name: acom-backend-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: acom-offer-desk-pilot
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000

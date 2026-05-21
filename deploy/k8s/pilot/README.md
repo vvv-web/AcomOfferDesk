@@ -21,6 +21,17 @@ echo "Пилот: test @ $AOD_DEPLOY_SHA"
 
 Используется в labels манифестов, Job bootstrap и при сборке образов.
 
+## Flux GitOps (ветка `k8s-pilot-popos`)
+
+```bash
+./deploy/k8s/pilot/flux-phases/sync-hardlinks.sh   # после правок YAML в pilot/
+git push origin k8s-pilot-popos
+kubectl apply -k clusters/k3s-popos
+flux reconcile kustomization pilot-jobs-post -n flux-system --with-source
+```
+
+См. [`docs/FLUX.md`](docs/FLUX.md), [`runbooks/README-flux-k3s-popos.md`](../../../runbooks/README-flux-k3s-popos.md).
+
 ## Apply (черновик)
 
 ```bash

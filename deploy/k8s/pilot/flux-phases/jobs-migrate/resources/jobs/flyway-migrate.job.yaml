@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flyway-migrate
+  namespace: acom-offer-desk-pilot
+  labels:
+    acom.deploy/component: flyway
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        acom.deploy/component: flyway
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flyway
+          image: flyway/flyway:10-alpine
+          env:
+            - name: FLYWAY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: FLYWAY_JDBC_URL
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: FLYWAY_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: FLYWAY_PASSWORD
+          command: ["flyway", "migrate"]
+          volumeMounts:
+            - name: flyway-sql
+              mountPath: /flyway/sql
+              readOnly: true
+            - name: pg-ca
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: flyway-sql
+          configMap:
+            name: flyway-sql-vtest
+        - name: pg-ca
+          secret:
+            secretName: postgres-tls

@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: acom-offer-desk-pilot
+resources:
+  - resources/workloads/backend.yaml
+  - resources/workloads/web.yaml
+  - resources/workloads/notifications-worker.yaml
+  - resources/networking/ingress.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: acom-offer-desk
+      acom.deploy/environment: pilot
+commonAnnotations:
+  acom.deploy/sha: "8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9"
