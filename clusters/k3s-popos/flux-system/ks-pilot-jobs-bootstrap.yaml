@@ -9,6 +9,7 @@ spec:
   interval: 10m
   timeout: 20m
   wait: true
+  force: true
   prune: true
   sourceRef:
     kind: GitRepository
