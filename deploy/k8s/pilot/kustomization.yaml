@@ -4,6 +4,15 @@ kind: Kustomization
 
 namespace: acom-offer-desk-pilot
 
+configMapGenerator:
+  - name: pilot-job-scripts
+    files:
+      - scripts/write-pilot-env.py
+      - scripts/keycloak-init-deploy-k8s.sh
+      - scripts/post-deploy-verify-k8s.sh
+    options:
+      disableNameSuffixHash: true
+
 resources:
   - namespace.yaml
   - config/rabbitmq-configmap.yaml

@@ -9,14 +9,23 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      volumes:
+        - name: pilot-scripts
+          configMap:
+            name: pilot-job-scripts
+            defaultMode: 0555
       containers:
         - name: init
           image: acom-backend:8ea43577e06e
           imagePullPolicy: Never
-          command: ["/bin/sh", "/app/scripts/keycloak-init-deploy.sh"]
+          command: ["/bin/sh", "/pilot-scripts/keycloak-init-deploy-k8s.sh"]
+          volumeMounts:
+            - name: pilot-scripts
+              mountPath: /pilot-scripts
+              readOnly: true
           env:
-            - name: COMPOSE_ENV_FILE
-              value: "/dev/null"
+            - name: KEYCLOAK_INTERNAL_BASE_URL
+              value: "http://keycloak:8080/iam"
           envFrom:
             - secretRef:
                 name: acom-app-secrets

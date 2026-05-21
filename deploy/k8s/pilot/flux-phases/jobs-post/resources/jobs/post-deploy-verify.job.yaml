@@ -11,19 +11,31 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      volumes:
+        - name: pilot-scripts
+          configMap:
+            name: pilot-job-scripts
+            defaultMode: 0555
       containers:
         - name: verify
           image: acom-backend:8ea43577e06e
           imagePullPolicy: Never
-          command: ["/bin/sh", "/app/scripts/post-deploy-verify.sh"]
+          command: ["/bin/sh", "/pilot-scripts/post-deploy-verify-k8s.sh"]
+          volumeMounts:
+            - name: pilot-scripts
+              mountPath: /pilot-scripts
+              readOnly: true
           env:
-            - name: POST_DEPLOY_BASE_URL
-              value: "http://aod-pilot.local"
+            - name: PILOT_INGRESS_HOST
+              value: "aod-pilot.local"
+            - name: PILOT_INGRESS_SVC
+              value: "ingress-nginx-controller.ingress-nginx.svc.cluster.local"
+            - name: KEYCLOAK_INTERNAL_BASE_URL
+              value: "http://keycloak:8080/iam"
             - name: SMOKE_S3_ENDPOINT
-              valueFrom:
-                secretKeyRef:
-                  name: acom-app-secrets
-                  key: S3_ENDPOINT
+              value: "minio:9000"
+            - name: SMOKE_SKIP_RABBITMQ
+              value: "true"
             - name: SMOKE_MINIO_TIMEOUT_SECONDS
               value: "10"
           envFrom:

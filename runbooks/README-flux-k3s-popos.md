@@ -54,6 +54,23 @@ kubectl get pods,jobs -n acom-offer-desk-pilot
 flux get kustomizations -n flux-system
 ```
 
+## Post-Jobs (K8s, не docker)
+
+Jobs `keycloak-init-deploy` и `post-deploy-verify` **не** вызывают `scripts/*.sh` с VPS/docker.
+
+- ConfigMap `pilot-job-scripts` (фаза `pilot-base`): `deploy/k8s/pilot/scripts/*-k8s.sh`
+- Ingress: path `/health` → `backend:8000`, smoke через `curl -H "Host: aod-pilot.local"` к `ingress-nginx-controller.ingress-nginx.svc.cluster.local`
+- Keycloak: `python -m app.scripts.check_keycloak_permission_model` (+ `--repair` при необходимости)
+
+После правок манифестов:
+
+```bash
+./deploy/k8s/pilot/flux-phases/sync-hardlinks.sh
+git push origin k8s-pilot-popos
+kubectl delete job keycloak-init-deploy post-deploy-verify -n acom-offer-desk-pilot --ignore-not-found
+flux reconcile kustomization pilot-jobs-post -n flux-system --with-source
+```
+
 Prometheus для Lens: `http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090` (см. `deploy/k8s/pilot/docs/OPENLENS.md`).
 
 ## Suspend (учебный контур)

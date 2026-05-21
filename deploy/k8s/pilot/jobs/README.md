@@ -24,8 +24,10 @@
 | `keycloak-db-prepare.job.yaml.example` | Подготовка БД Keycloak до import |
 | `keycloak-bootstrap.job.yaml.example` | `infra/keycloak/bootstrap.sh` @ AOD_DEPLOY_SHA |
 | `keycloak-user-role-sync.job.yaml.example` | sync ролей JWT |
-| `keycloak-init-deploy.job.yaml.example` | логика `scripts/keycloak-init-deploy.sh` |
-| `post-deploy-verify.job.yaml.example` | **без** `docker compose exec` |
+| `keycloak-init-deploy.job.yaml` | `pilot-scripts/keycloak-init-deploy-k8s.sh` (Keycloak deploy gate/repair) |
+| `post-deploy-verify.job.yaml` | `pilot-scripts/post-deploy-verify-k8s.sh` (ingress curl + postgres/minio/KC) |
+| `keycloak-init-deploy.job.yaml.example` | VPS: `scripts/keycloak-init-deploy.sh` (docker) |
+| `post-deploy-verify.job.yaml.example` | VPS: `scripts/post-deploy-verify.sh` (docker) |
 
 ## Повторный запуск
 
