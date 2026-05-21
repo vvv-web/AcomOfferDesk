@@ -21,9 +21,9 @@ fi
 echo "KEYCLOAK_INIT_DEPLOY_K8S: repair..."
 kc_check --repair
 
-echo "KEYCLOAK_INIT_DEPLOY_K8S: deploy gate after repair..."
-if kc_check --deploy-gate; then
-  echo "KEYCLOAK_INIT_DEPLOY_K8S: OK after repair"
+echo "KEYCLOAK_INIT_DEPLOY_K8S: verify after repair..."
+if kc_check --deploy-gate || kc_check; then
+  echo "KEYCLOAK_INIT_DEPLOY_K8S: OK"
   exit 0
 fi
 

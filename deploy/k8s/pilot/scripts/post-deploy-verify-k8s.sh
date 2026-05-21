@@ -42,12 +42,29 @@ esac
 echo "=== post-deploy K8s: postgres + minio ==="
 python - <<'PY'
 import asyncio
+import os
+import re
 import sys
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 from app.scripts.smoke_services import Reporter, _check_postgres, _check_s3_minio, _load_env_file
 
+
+def pilot_asyncpg_dsn(raw: str) -> str:
+    """Pilot in-cluster Postgres: asyncpg + sslmode=require (avoid duplicate ssl= kwarg)."""
+    dsn = re.sub(r"^postgresql\+[^:]+", "postgresql", raw.strip())
+    parts = urlsplit(dsn)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not k.lower().startswith("ssl")]
+    if not any(k == "sslmode" for k, _ in query):
+        query.append(("sslmode", "require"))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
 async def main() -> int:
     env_map = _load_env_file("/tmp/pilot.env")
+    raw = os.environ.get("DATABASE_URL") or env_map.get("DATABASE_URL", "")
+    if raw:
+        env_map["SMOKE_DATABASE_URL"] = pilot_asyncpg_dsn(raw)
     reporter = Reporter()
     await _check_postgres(reporter, env_map)
     await _check_s3_minio(reporter, env_map)
@@ -65,5 +82,9 @@ fi
 
 echo "POST_DEPLOY_VERIFY_K8S: Keycloak model failed — repair" >&2
 python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}" --repair
-python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}"
-echo "POST_DEPLOY_VERIFY_K8S: all checks passed after repair"
+if python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}"; then
+  echo "POST_DEPLOY_VERIFY_K8S: all checks passed after repair"
+  exit 0
+fi
+echo "POST_DEPLOY_VERIFY_K8S: Keycloak check still failing" >&2
+exit 1
