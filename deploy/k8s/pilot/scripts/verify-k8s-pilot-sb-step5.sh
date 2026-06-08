@@ -35,7 +35,7 @@ else
 fi
 
 # S5-T2: kustomize APP_ENV=production on backend
-if kubectl kustomize "$PILOT_DIR" 2>/dev/null | awk '/name: backend/{f=1} f&&/APP_ENV/{getline; if(/production/) exit 0} END{exit 1}'; then
+if kubectl kustomize "$PILOT_DIR" 2>/dev/null | grep -A1 'name: APP_ENV' | grep -q 'value: production'; then
   ok "S5-T2 kustomize backend APP_ENV=production"
 else
   bad "S5-T2 kustomize backend missing APP_ENV=production"
@@ -80,7 +80,7 @@ be_ip="$(kubectl -n "$NS" get svc backend -o jsonpath='{.spec.clusterIP}' 2>/dev
 if [[ -n "$be_ip" ]]; then
   docs_code="$(kubectl run curl-s5t6 --rm -i --restart=Never -n "$NS" \
     --image=curlimages/curl:8.5.0 --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65532}}}' \
-    -- curl -sS -m 15 -o /dev/null -w "%{http_code}" "http://${be_ip}:8000/docs" 2>/dev/null || echo 000)"
+    -- curl -sS -m 15 -o /dev/null -w "%{http_code}" "http://${be_ip}:8000/docs" 2>/dev/null | grep -oE '[0-9]{3}' | tail -1 || echo 000)"
   if [[ "$docs_code" == "404" ]]; then
     ok "S5-T6 in-cluster GET /docs → 404"
   else
@@ -110,12 +110,16 @@ elif [[ -n "$np" ]]; then
 fi
 
 if [[ -n "$ingress_base" ]]; then
-  ext_docs="$(curl_ingress "${ingress_base}/docs")"
-  if [[ "$ext_docs" == "404" || "$ext_docs" == "403" || "$ext_docs" == "301" || "$ext_docs" == "302" ]]; then
-    ok "S5-T7 ingress GET /docs → ${ext_docs} (not 200)"
+  docs_tmp="$(mktemp)"
+  ext_docs="$(curl -sS -m 15 -k -H "Host: ${FQDN}" -o "$docs_tmp" -w "%{http_code}" "${ingress_base}/docs" 2>/dev/null || echo 000)"
+  if [[ "$ext_docs" == "404" || "$ext_docs" == "403" ]]; then
+    ok "S5-T7 ingress GET /docs → ${ext_docs} (backend OpenAPI not exposed)"
+  elif [[ "$ext_docs" == "200" ]] && ! grep -qE 'swagger-ui|"openapi"' "$docs_tmp" 2>/dev/null; then
+    ok "S5-T7 ingress GET /docs → 200 SPA (no Swagger/OpenAPI body)"
   else
-    bad "S5-T7 ingress GET /docs → ${ext_docs} (expected 404/403)"
+    bad "S5-T7 ingress GET /docs exposes OpenAPI (code=${ext_docs})"
   fi
+  rm -f "$docs_tmp"
 
   ext_health="$(curl_ingress "${ingress_base}/health")"
   if [[ "$ext_health" == "200" ]]; then

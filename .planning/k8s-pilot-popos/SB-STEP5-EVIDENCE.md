@@ -2,7 +2,8 @@
 
 **Дата:** 2026-06-08  
 **Namespace:** `acom-offer-desk-pilot`  
-**Ветка:** `k8s-pilot-popos`  
+**Ветка:** `k8s-pilot-popos` @ `68b61cb`  
+**Образ:** `acom-backend:7aba20a5a9fd`  
 **VPS prod:** не трогали
 
 ## Что задеплоено
@@ -37,6 +38,8 @@ cd backend && python3 -m pytest tests/unit/test_prod_openapi_surface.py -q
 | S5-T7b ingress /health → 200 | **PASS** |
 | S5-T8 live readinessProbe path | **PASS** |
 | unit tests | **PASS** 4/4 |
+
+**SUMMARY:** pass=10 fail=0 skip=0 → **PASS** (2026-06-08, Flux @ `68b61cb`)
 
 ## Операции
 
