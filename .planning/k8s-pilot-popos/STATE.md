@@ -195,7 +195,7 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Сделано:** `settings.openapi_enabled`; FastAPI `docs_url=None` in production; `verify-k8s-pilot-sb-step5.sh`.
 
-**Вердикт SB шаг 5:** **PASS** — R-B4; evidence `SB-STEP5-EVIDENCE.md`.
+**Вердикт SB шаг 5:** **PASS** — R-B4; `verify-k8s-pilot-sb-step5.sh` **10/10**; Flux @ `68b61cb`; evidence `SB-STEP5-EVIDENCE.md`.
 
 ## Следующие действия
 
