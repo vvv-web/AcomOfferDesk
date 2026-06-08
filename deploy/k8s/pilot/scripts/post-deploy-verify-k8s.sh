@@ -4,8 +4,13 @@ set -eu
 
 ENV_PATH="${PILOT_ENV_FILE:-/tmp/pilot.env}"
 INGRESS_SVC="${PILOT_INGRESS_SVC:-ingress-nginx-controller.ingress-nginx.svc.cluster.local}"
-INGRESS_HOST="${PILOT_INGRESS_HOST:-aod-pilot.local}"
-INGRESS_BASE="http://${INGRESS_SVC}"
+INGRESS_HOST="${PILOT_INGRESS_HOST:-pilot.acom-offer-desk.ru}"
+INGRESS_SCHEME="${PILOT_INGRESS_SCHEME:-https}"
+INGRESS_BASE="${INGRESS_SCHEME}://${INGRESS_SVC}"
+CURL_TLS_FLAG=""
+if [ "${INGRESS_SCHEME}" = "https" ]; then
+  CURL_TLS_FLAG="-k"
+fi
 
 export KEYCLOAK_INTERNAL_BASE_URL="${KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080/iam}"
 export SMOKE_S3_ENDPOINT="${SMOKE_S3_ENDPOINT:-minio:9000}"
@@ -16,10 +21,10 @@ export PYTHONUNBUFFERED=1
 python /pilot-scripts/write-pilot-env.py "${ENV_PATH}"
 
 http_code() {
-  curl -sS -m "${SMOKE_HTTP_TIMEOUT_SECONDS}" -H "Host: ${INGRESS_HOST}" -o /dev/null -w "%{http_code}" "$1" || echo "000"
+  curl -sS -m "${SMOKE_HTTP_TIMEOUT_SECONDS}" ${CURL_TLS_FLAG} -H "Host: ${INGRESS_HOST}" -o /dev/null -w "%{http_code}" "$1" || echo "000"
 }
 
-echo "=== post-deploy K8s: ingress HTTP (Host: ${INGRESS_HOST}) ==="
+echo "=== post-deploy K8s: ingress ${INGRESS_SCHEME} (Host: ${INGRESS_HOST}) ==="
 hc="$(http_code "${INGRESS_BASE}/health")"
 if [ "${hc}" != "200" ]; then
   echo "[FAIL] Backend health: HTTP ${hc}" >&2

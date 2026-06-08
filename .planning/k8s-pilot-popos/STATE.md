@@ -10,6 +10,8 @@
 | **AOD_DEPLOY_SHA** | `8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9` |
 | **Ветка** | `k8s-pilot-popos` (fork-only; база = `test` @ `d7f2af1`, parity `upstream/test`) |
 | **VPS prod** | не трогали |
+| **SB-пилот (§8.2)** | **Шаг 0 PASS**; **Шаг 1 PARTIAL**; **Шаг 2 PASS** (2026-06-08) — TLS Ingress + FQDN Keycloak |
+| **Flux @** | `005a977` — `pilot-base` Ready; `pilot-infra` Unknown (reconcile); `pilot-apps`/jobs **не Ready** (deps); Tailscale throw `10.43.0.0/16` table 52 **OK** |
 
 ## Git policy: fork-only, branch k8s-pilot-popos, upstream read-only
 
@@ -53,7 +55,7 @@
 
 **Services:** `postgres`, `rabbitmq`, `minio`, `keycloak`, `backend`, `web`
 
-**Ingress:** `acom-pilot` (class `nginx`, host `aod-pilot.local`)
+**Ingress:** `acom-pilot` (class `nginx`, host `pilot.acom-offer-desk.ru`, TLS `acom-pilot-tls`, ports 80+443)
 
 **Jobs Complete:** `postgres-init-schema`, `flyway-migrate`, `keycloak-db-prepare`
 
@@ -66,7 +68,7 @@
 - Инструкция: **`deploy/k8s/pilot/docs/OPENLENS.md`** (namespace `acom-offer-desk-pilot`, метрики, Logs, Jobs/Ingress).
 - k3s сеть / metrics-server: **`deploy/k8s/pilot/docs/K3S_HOST_NETWORKING.md`** (node-ip `10.16.69.1`, не Tailscale `10.131.209.1`).
 - kubeconfig: `~/.kube/config`, context **`default`**, API **`https://127.0.0.1:6443`**.
-- `/etc/hosts`: `127.0.0.1 aod-pilot.local` — **уже есть**.
+- `/etc/hosts` для браузера: `127.0.0.1 pilot.acom-offer-desk.ru` (или LB `10.16.67.241`); legacy `aod-pilot.local` больше не в Ingress.
 
 ## k3s host networking (2026-05-20, pop-os)
 
@@ -110,9 +112,49 @@ WEB_IP=$(kubectl -n acom-offer-desk-pilot get svc web -o jsonpath='{.spec.cluste
 curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 ```
 
+## SB Шаг 1 — тест 2026-06-08 (канвас)
+
+| Тест | Результат | Evidence |
+|------|-----------|----------|
+| T1 образы в k3s | **PASS** | 3× `acom-*:8ea43577e06e` (`k3s ctr images import`) |
+| T2 backend | **PASS** | `deploy/backend` 1/1 |
+| T3 web | **PASS** | `deploy/web` 1/1 |
+| T4 worker | **PASS** | `deploy/notifications-worker` 1/1 |
+| T5 keycloak | **PASS** | `deploy/keycloak` 1/1 (schema `keycloak` re-created job) |
+| T6 /health | **PASS** | `curl localhost:8000/health` → `{"status":"ok"}` |
+| T7a Tailscale×10.43 | **PASS** | `ip route show table 52` → `throw 10.43.0.0/16`; timer `install-k3s-tailscale-exclude-service-cidr.sh` |
+| T7 Flux pilot-apps | **FAIL** | `flux get` 2026-06-08: `pilot-base` Ready; `pilot-infra` Unknown (reconcile); `pilot-apps`/jobs False (deps) |
+| T8 ErrImageNeverPull | **PASS** | после import; stale pods удалены |
+
+**Сделано:** Tailscale exclude Service CIDR (`K3S_HOST_NETWORKING.md` § Tailscale); `apply-pilot-secrets.sh`, import образов, `keycloak-db-prepare` re-run, rollout restart app deploys.
+
+**Блокер T7:** цепочка `pilot-infra` → jobs → `pilot-apps` не зелёная (`HealthCheckFailed`/deps); после throw — `flux reconcile kustomization pilot-infra -n flux-system --with-source`.
+
+**Вердикт SB шаг 1:** **PARTIAL** — app + /health OK, Tailscale routing OK; ждём все pilot-* Kustomization Ready для PASS.
+
+## SB Шаг 2 — тест 2026-06-08 (Edge TLS + hostname)
+
+| Тест | Результат | Evidence |
+|------|-----------|----------|
+| S2-T1 kustomize tls | **PASS** | `spec.tls.secretName: acom-pilot-tls` |
+| S2-T2 TLS secret | **PASS** | `generate-pilot-ingress-tls.sh` → `secret/acom-pilot-tls` |
+| S2-T3 Ingress tls host | **PASS** | `kubectl get ingress` → `pilot.acom-offer-desk.ru`, ports 80,443 |
+| S2-T4 KC_HOSTNAME https | **PASS** | `https://pilot.acom-offer-desk.ru/iam` |
+| S2-T5 HTTPS /health | **PASS** | `curl -k -H Host:… https://10.16.67.241/health` → 200 |
+| S2-T6 OIDC redirect FQDN | **PASS** | `Location: https://pilot.acom-offer-desk.ru/iam/realms/...` |
+
+**Сделано:** `networking/ingress.yaml` TLS + ssl-redirect; `apply-pilot-secrets.sh` https + `KC_HOSTNAME_STRICT*`; `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**.
+
+**Зависимость:** Flux git revision `005a977` — TLS применён kubectl; после `git push origin k8s-pilot-popos` reconcile `pilot-apps`.
+
+**Вердикт SB шаг 2:** **PASS** — R-A2, R-G1 (learn self-signed TLS).
+
 ## Следующие действия
 
-1. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).
+1. **SB Шаг 3:** NetworkPolicy (R-A3, R-D3) — не начинать без явного approve.
+2. **`/etc/hosts`:** `127.0.0.1 pilot.acom-offer-desk.ru` для браузера.
+3. **Flux chain:** `git push origin k8s-pilot-popos` → `flux reconcile kustomization pilot-infra -n flux-system --with-source` → `pilot-apps` Ready.
+2. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).
 2. Дождаться `kubectl -n acom-offer-desk-pilot wait --for=condition=complete job/keycloak-bootstrap --timeout=3600s` (следить в OpenLens: Jobs → `keycloak-bootstrap`).
 3. После Complete: `kubectl apply -f deploy/k8s/pilot/jobs/keycloak-user-role-sync.job.yaml`
 4. Заполнить **`backend/.env`** (chmod 600) → `./deploy/k8s/pilot/scripts/apply-pilot-secrets.sh` + **`patch-secrets-service-ips.sh`** (значения не печатать).

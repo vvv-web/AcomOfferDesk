@@ -27,7 +27,9 @@ spec:
               readOnly: true
           env:
             - name: PILOT_INGRESS_HOST
-              value: "aod-pilot.local"
+              value: "pilot.acom-offer-desk.ru"
+            - name: PILOT_INGRESS_SCHEME
+              value: "https"
             - name: PILOT_INGRESS_SVC
               value: "ingress-nginx-controller.ingress-nginx.svc.cluster.local"
             - name: KEYCLOAK_INTERNAL_BASE_URL

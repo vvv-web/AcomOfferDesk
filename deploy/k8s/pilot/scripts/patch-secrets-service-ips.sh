@@ -2,6 +2,8 @@
 # Workaround when cluster DNS (CoreDNS kubernetes plugin) is broken — use ClusterIP.
 set -euo pipefail
 NS="${NAMESPACE:-acom-offer-desk-pilot}"
+FQDN="${PILOT_FQDN:-pilot.acom-offer-desk.ru}"
+SCHEME="${PILOT_URL_SCHEME:-https}"
 
 ip_of() {
   kubectl -n "$NS" get svc "$1" -o jsonpath='{.spec.clusterIP}'
@@ -39,8 +41,11 @@ kubectl -n "$NS" patch configmap acom-backend-env --type merge -p "$(python3 - <
 import json
 print(json.dumps({"data": {
   "KEYCLOAK_INTERNAL_BASE_URL": f"http://${KC_IP}:8080/iam",
-  "KEYCLOAK_PUBLIC_BASE_URL": "http://aod-pilot.local/iam",
-  "KEYCLOAK_ISSUER_URL": "http://aod-pilot.local/iam/realms/acom-offerdesk",
+  "KEYCLOAK_PUBLIC_BASE_URL": "${SCHEME}://${FQDN}/iam",
+  "KEYCLOAK_ISSUER_URL": "${SCHEME}://${FQDN}/iam/realms/acom-offerdesk",
+  "KC_HOSTNAME": "${SCHEME}://${FQDN}/iam",
+  "WEB_BASE_URL": "${SCHEME}://${FQDN}",
+  "PUBLIC_BACKEND_BASE_URL": "${SCHEME}://${FQDN}",
 }}))
 PY
 )"
