@@ -2,7 +2,7 @@
 
 **Дата:** 2026-06-08  
 **Namespace:** `acom-offer-desk-pilot`  
-**Ветка:** `k8s-pilot-popos`  
+**Ветка:** `k8s-pilot-popos` @ `f812f48`  
 **VPS prod:** не трогали
 
 ## Что задеплоено
@@ -37,7 +37,24 @@
 | S6-T10 live backend SA | **PASS** |
 | S6-T11 secret managed-by label | **PASS** |
 
-**SUMMARY:** pass=11 fail=0 skip=0 → **PASS**
+**SUMMARY:** pass=11 fail=0 skip=0 → **PASS** (повторный прогон после live remediation)
+
+## Live remediation (S6-T10)
+
+**Симптом:** в git/kustomize уже был `serviceAccountName: acom-pilot-runtime`, но live `Deployment/backend` (и web, notifications-worker) шли с пустым SA → S6-T10 **FAIL**.
+
+**Исправление (2026-06-08):**
+
+```bash
+export KUBECONFIG=~/.kube/config
+kubectl apply -k deploy/k8s/pilot
+kubectl -n acom-offer-desk-pilot rollout restart \
+  deploy/backend deploy/web deploy/notifications-worker \
+  deploy/keycloak deploy/minio deploy/rabbitmq sts/postgres
+./deploy/k8s/pilot/scripts/verify-k8s-pilot-sb-step6.sh
+```
+
+**Live SA после rollout:** backend/web/notifications-worker → `acom-pilot-runtime`; keycloak/minio/rabbitmq/postgres → `acom-pilot-data`.
 
 ## Операции
 
@@ -47,10 +64,12 @@ kubectl apply -f deploy/k8s/pilot/rbac/secrets-rbac.yaml
 PILOT_ALLOW_LEARN_PLACEHOLDERS=1 ./deploy/k8s/pilot/scripts/apply-pilot-secrets.sh
 kubectl apply -k deploy/k8s/pilot
 git push origin k8s-pilot-popos
-flux reconcile source git flux-system -n flux-system
+flux reconcile source git acomofferdesk -n flux-system
 flux reconcile kustomization pilot-base -n flux-system --with-source
 flux reconcile kustomization pilot-apps -n flux-system --with-source
 ```
+
+**Flux (2026-06-08):** `pilot-base` Ready @ `f812f48` (RBAC в GitOps); `pilot-infra`/`pilot-apps` — reconcile в очереди (зависимость migrate chain).
 
 ## Вердикт
 
