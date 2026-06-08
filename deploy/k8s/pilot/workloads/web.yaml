@@ -17,7 +17,7 @@ spec:
       serviceAccountName: acom-pilot-runtime
       containers:
         - name: web
-          image: acom-web:8ea43577e06e
+          image: acom-web:e214e03fdc74
           imagePullPolicy: Never
           ports:
             - containerPort: 80

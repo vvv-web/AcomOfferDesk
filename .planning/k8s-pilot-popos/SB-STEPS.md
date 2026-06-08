@@ -22,7 +22,13 @@
 
 После каждого шага: обновить колонку «Пилот K8s» в `docs/security-sb-checklist.md`, строку в `SECURITY-SB-R-MAPPING.md`, checkpoint в `STATE.md`.
 
-**Текущий фокус:** **Шаг 7** — CI инварианты (R-C3); шаг 6 закрыт 2026-06-08.
+**Шаг 7 (2026-06-08):** **PASS** — см. `SB-STEP7-EVIDENCE.md`.
+**Шаг 8 (2026-06-08):** **PASS** — см. `SB-STEP8-EVIDENCE.md`.
+**Шаг 9 (2026-06-08):** **PASS** — см. `SB-STEP9-EVIDENCE.md`.
+**Шаг 10 (2026-06-08):** **PASS** — см. `SB-STEP10-EVIDENCE.md`.
+**Шаг 11 (2026-06-08):** **PASS** — см. `SB-STEP11-EVIDENCE.md`.
+**Шаг 12 (2026-06-08):** **PASS** — см. `SB-STEP12-EVIDENCE.md`.
+**Текущий фокус:** **Шаги 7–12 PASS** (2026-06-08). SB пилот §8.2 закрыт на learn-кластере.
 
 **Шаг 6 (2026-06-08):** **PASS** — R-C2 live; RBAC `rbac/secrets-rbac.yaml`; runbook; placeholder guard; `verify-k8s-pilot-sb-step6.sh` **11/11**; см. `SB-STEP6-EVIDENCE.md`.
 

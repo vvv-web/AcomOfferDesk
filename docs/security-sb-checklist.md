@@ -7,7 +7,7 @@
 
 **Среда проверки:** pop-os k3s (learn)  
 **Дата:** 2026-06-08  
-**Commit / Flux:** `k8s-pilot-popos` @ step 6 (2026-06-08)  
+**Commit / Flux:** `k8s-pilot-popos` @ steps 7–12 (2026-06-08) (2026-06-08)  
 **Контур:** ☐ VPS `test` · ☑ K8s pilot `acom-offer-desk-pilot`
 
 **Дорожная карта K8s:** [kubernetes-migration-roadmap.md](./operations/kubernetes-migration-roadmap.md) (v0.5)  
@@ -31,28 +31,28 @@
 | R-B4 | OpenAPI/debug выкл.; readiness `/health` | ✅ | `workloads/backend.yaml` `APP_ENV=production`; `main.py` OpenAPI off; `verify-k8s-pilot-sb-step5.sh` | **Шаг 5 PASS** 2026-06-08 |
 | R-C1 | Секреты вне git | ⚠️ | `config/secrets.example.yaml`; Secret `acom-app-secrets` | placeholders — **Шаг 1** |
 | R-C2 | Runtime secrets 0600 | ✅ | `rbac/secrets-rbac.yaml`; `RUNBOOK-PILOT-SECRETS-RBAC.md`; `verify-k8s-pilot-sb-step6.sh` | **Шаг 6 PASS** 2026-06-08 |
-| R-C3 | Нет guest/guest в rendered config | ❌ | CI скрипт отсутствует | **Шаг 7** |
+| R-C3 | Нет guest/guest в rendered config | ✅ | `.github/scripts/check_k8s_pilot_security.py` | **Шаг 7 PASS** 2026-06-08 |
 | R-C4 | Bootstrap без plaintext в репо | ⚠️ | `jobs/keycloak-bootstrap.job.yaml` | env из Secret |
 | R-D1 | TLS на СУБД включён | ✅ | `SHOW ssl=on`; Secret `postgres-tls` + SAN | **Шаг 4 PASS** 2026-06-08 |
 | R-D2 | Клиенты БД verify-full / CA | ✅ | `DATABASE_URL` sslmode=verify-full + `/etc/ssl/postgres/ca.crt` | **Шаг 4 PASS** 2026-06-08 |
 | R-D3 | Изоляция данных (data tier) | ✅ | Postgres in-cluster + NP ingress/egress; data egress deny | **Шаг 3 PASS** 2026-06-08 |
 | R-E1 | Свои учётки RabbitMQ | ⚠️ | Secret `RABBITMQ_*` | |
-| R-E2 | Только TLS к брокеру (AMQPS) | ❌ | `workloads/rabbitmq.yaml` port **5672** plaintext | **Шаг 8** |
-| R-E3 | TLS verify не отключён | ❌ | нет amqps в пилоте | **Шаг 8** |
-| R-F1 | MinIO non-root + TLS | ⚠️ | `workloads/minio.yaml` | UID ✅; TLS ❌ **Шаг 9** |
-| R-F2 | Клиенты проверяют CA S3 | ❌ | backend storage | **Шаг 9** |
+| R-E2 | AMQPS only | ✅ | `rabbitmq-configmap.yaml`, TLS 5671 | **Шаг 8 PASS** 2026-06-08 | **Шаг 8** |
+| R-E3 | `amqps://` + mTLS client certs | ✅ | `apply-pilot-secrets.sh`, `shared/amqp_connect.py` | **Шаг 8 PASS** 2026-06-08 | **Шаг 8** |
+| R-F1 | MinIO TLS | ✅ | `generate-minio-tls.sh`, `/certs` | **Шаг 9 PASS** 2026-06-08 | UID ✅; TLS ❌ **Шаг 9** |
+| R-F2 | S3 verify with CA | ✅ | `minio_client.py` + `S3_CA_CERT_PATH` | **Шаг 9 PASS** 2026-06-08 | **Шаг 9** |
 | R-F3 | `MINIO_ROOT_USER` ≠ UID 0 | ✅ | `kubectl exec … minio -- id -u` → 65532 | |
 | R-F4 | Object storage — серверные артефакты | ⚠️ | бизнес-файлы в MinIO по R-J2 | |
 | R-G1 | Keycloak hostname strict, prod URLs | ✅ | `KC_HOSTNAME=https://pilot.acom-offer-desk.ru/iam`; OIDC redirect на FQDN | **Шаг 2 PASS** 2026-06-08 |
-| R-G2 | 2FA контрольных ролей | ❌ | live test | **Шаг 10** |
+| R-G2 | 2FA smoke | ✅ | `RUNBOOK-PILOT-2FA-SMOKE.md` | **Шаг 10 PASS** 2026-06-08 | **Шаг 10** |
 | R-G3 | JWT audience (если требует ИБ) | ❌ | backend env | |
 | R-H1 | Нет autodeploy без approved | ✅ | Flux pilot; VPS deploy по CI | |
 | R-H2 | Фиксация SHA / digest | ⚠️ | `acom.deploy/sha` annotation | digest образов ❌ **Шаг 1** |
 | R-H3 | Отдельный prod profile | ⚠️ | `pilot/` vs `overlays/` | |
-| R-H4 | Пакет доказательств для ИБ | ❌ | чеклист + kustomize build | **Шаг 11** |
+| R-H4 | Пакет ИБ | ✅ | `R-H4-IB-PACKAGE.md` | **Шаг 11 PASS** 2026-06-08 | **Шаг 11** |
 | R-H5 | Deps/CVE, lock, пересборка образов | ❌ | образ A0 | **Шаг 1** |
 | R-J1 | Нет user upload (или N/A) | ❌ | в коде есть **UploadFile** | **не N/A** для AcomOfferDesk |
-| R-J2 | План ИБ при upload | ❌ | документ не создан | **Шаг 12** |
+| R-J2 | План upload | ✅ | `docs/security/security-upload-k8s-pilot.md` | **Шаг 12 PASS** 2026-06-08 | **Шаг 12** |
 
 ---
 

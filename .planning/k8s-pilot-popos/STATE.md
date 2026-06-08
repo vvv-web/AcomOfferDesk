@@ -233,3 +233,7 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 kubectl -n acom-offer-desk-pilot logs job/keycloak-bootstrap --tail=80
 kubectl -n acom-offer-desk-pilot get pods -l job-name=keycloak-bootstrap
 ```
+
+## SB steps 7–12 (2026-06-08)
+
+**PASS** on pop-os pilot — AMQPS, MinIO TLS, CI gate, R-H4 package, R-J2 upload plan. VPS prod untouched.
