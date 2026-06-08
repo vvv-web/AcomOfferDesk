@@ -10,8 +10,8 @@
 | **AOD_DEPLOY_SHA** | `8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9` |
 | **Ветка** | `k8s-pilot-popos` (fork-only; база = `test` @ `d7f2af1`, parity `upstream/test`) |
 | **VPS prod** | не трогали |
-| **SB-пилот (§8.2)** | **Шаг 0 PASS**; **Шаг 1 PARTIAL**; **Шаг 2 PASS** (2026-06-08) — TLS Ingress + FQDN Keycloak |
-| **Flux @** | `005a977` — `pilot-base` Ready; `pilot-infra` Unknown (reconcile); `pilot-apps`/jobs **не Ready** (deps); Tailscale throw `10.43.0.0/16` table 52 **OK** |
+| **SB-пилот (§8.2)** | **Шаг 0 PASS**; **Шаг 1 PASS**; **Шаг 2 PASS** (2026-06-08) — T7 Flux chain Ready @ `26b64d1`; throw `10.43.0.0/16` table 52 |
+| **Flux @** | `26b64d1` — все `pilot-*` Kustomization **Ready=True**; Tailscale throw `10.43.0.0/16` table 52 **OK** |
 
 ## Git policy: fork-only, branch k8s-pilot-popos, upstream read-only
 
@@ -30,7 +30,7 @@
 | # | Шаг | Статус | Evidence (кратко) |
 |---|-----|--------|-------------------|
 | 0 | Preflight | **PASS** | `pre-apply-check.sh` exit 0; k3s Ready |
-| 1 | Namespace | **PASS** | `kubectl get ns acom-offer-desk-pilot` |
+| 1 | Namespace + Flux pilot-* | **PASS** | `kubectl get ns acom-offer-desk-pilot`; `flux get kustomizations` — pilot-base/infra/apps/jobs-* Ready @ `26b64d1f`; Job `post-deploy-verify` Complete |
 | 2 | Metrics + dry-run | **PASS** | `kubectl apply -k deploy/k8s/pilot --dry-run=client` OK; `kubectl top nodes` OK после фикса **node-ip** (см. `deploy/k8s/pilot/docs/K3S_HOST_NETWORKING.md`) |
 | 3 | SB checklist | **PASS (verify)** | `docs/security-sb-checklist.md` exists |
 | 4 | A0 prep | **PASS** | `deploy/k8s/pilot/scripts/build-images.sh` |
@@ -39,9 +39,9 @@
 | 7 | C Postgres + TLS | **PASS (learn)** | `postgres-0` Running; `postgres-tls` Secret; **emptyDir** (not PVC); `sslmode=require` |
 | 8 | C Flyway | **PASS** | Job `flyway-migrate` Complete → schema **v1.0.2** |
 | 9 | D infra | **PASS** | rabbitmq, minio, keycloak Deployments **1/1 Running** |
-| 10 | D Keycloak Jobs | **PARTIAL** | `keycloak-db-prepare` Complete; `keycloak-bootstrap` **Running** (re-created job 2026-05-20, pod `keycloak-bootstrap-wfxrk`, `enforce_atomic` — логи могут быть пустыми до вывода) |
+| 10 | D Keycloak Jobs | **PASS** | `keycloak-bootstrap` Complete 2026-06-08 (~7m40s); `enforce_atomic` + `sync_composite_role` в `bootstrap.sh` |
 | 11 | E app + F ingress | **PARTIAL** | backend/web/worker Running; `GET :8000/health` → `{"status":"ok"}`; Ingress backends in `describe` but NodePort **404** (ingress-nginx API/DNS issues) |
-| 12 | G verify | **NOT RUN** | `post-deploy-verify` Job not applied (needs bootstrap + ingress path) |
+| 12 | G verify | **PASS** | Job `post-deploy-verify` Complete; `POST_DEPLOY_VERIFY_K8S: all checks passed` |
 
 ## Применено в кластере
 
@@ -123,14 +123,14 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 | T5 keycloak | **PASS** | `deploy/keycloak` 1/1 (schema `keycloak` re-created job) |
 | T6 /health | **PASS** | `curl localhost:8000/health` → `{"status":"ok"}` |
 | T7a Tailscale×10.43 | **PASS** | `ip route show table 52` → `throw 10.43.0.0/16`; timer `install-k3s-tailscale-exclude-service-cidr.sh` |
-| T7 Flux pilot-apps | **FAIL** | `flux get` 2026-06-08: `pilot-base` Ready; `pilot-infra` Unknown (reconcile); `pilot-apps`/jobs False (deps) |
+| T7 Flux chain | **PASS** | все `pilot-*` Ready @ `26b64d1fc08ffa7e12bc0a9a0df70a7e48652132`; см. `FLUX-FIX-EVIDENCE.md` |
 | T8 ErrImageNeverPull | **PASS** | после import; stale pods удалены |
 
 **Сделано:** Tailscale exclude Service CIDR (`K3S_HOST_NETWORKING.md` § Tailscale); `apply-pilot-secrets.sh`, import образов, `keycloak-db-prepare` re-run, rollout restart app deploys.
 
-**Блокер T7:** цепочка `pilot-infra` → jobs → `pilot-apps` не зелёная (`HealthCheckFailed`/deps); после throw — `flux reconcile kustomization pilot-infra -n flux-system --with-source`.
+**T7 (2026-06-08):** Flux controllers без hostNetwork (throw route достаточен); reconcile git → infra → migrate → bootstrap → post → apps — все Ready.
 
-**Вердикт SB шаг 1:** **PARTIAL** — app + /health OK, Tailscale routing OK; ждём все pilot-* Kustomization Ready для PASS.
+**Вердикт SB шаг 1:** **PASS** (2026-06-08) — все pilot-* Kustomization Ready=True @ `26b64d1f`; k3s `node-ip` выровнен на `10.16.67.241`; NRestarts=0.
 
 ## SB Шаг 2 — тест 2026-06-08 (Edge TLS + hostname)
 
@@ -145,15 +145,15 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Сделано:** `networking/ingress.yaml` TLS + ssl-redirect; `apply-pilot-secrets.sh` https + `KC_HOSTNAME_STRICT*`; `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**.
 
-**Зависимость:** Flux git revision `005a977` — TLS применён kubectl; после `git push origin k8s-pilot-popos` reconcile `pilot-apps`.
+**Операции 2026-06-08 (verifier gaps):** удалён stale `ingress-nginx-controller` pod (Error); `kubectl rollout restart deployment/keycloak` после CM `KC_HOSTNAME=https://pilot.acom-offer-desk.ru/iam`; `verify-k8s-pilot-sb-step2.sh` → **7/7 PASS** (k3s API stable).
 
-**Вердикт SB шаг 2:** **PASS** — R-A2, R-G1 (learn self-signed TLS).
+**Вердикт SB шаг 2:** **PASS** — R-A2/R-G1 live (S2-T1..T6); `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**; Flux chain @ `26b64d1` Ready.
 
 ## Следующие действия
 
 1. **SB Шаг 3:** NetworkPolicy (R-A3, R-D3) — не начинать без явного approve.
 2. **`/etc/hosts`:** `127.0.0.1 pilot.acom-offer-desk.ru` для браузера.
-3. **Flux chain:** `git push origin k8s-pilot-popos` → `flux reconcile kustomization pilot-infra -n flux-system --with-source` → `pilot-apps` Ready.
+3. ~~**Flux chain**~~ **DONE** (2026-06-08) — см. `FLUX-FIX-EVIDENCE.md`.
 2. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).
 2. Дождаться `kubectl -n acom-offer-desk-pilot wait --for=condition=complete job/keycloak-bootstrap --timeout=3600s` (следить в OpenLens: Jobs → `keycloak-bootstrap`).
 3. После Complete: `kubectl apply -f deploy/k8s/pilot/jobs/keycloak-user-role-sync.job.yaml`

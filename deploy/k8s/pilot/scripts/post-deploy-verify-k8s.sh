@@ -86,7 +86,8 @@ if python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}
 fi
 
 echo "POST_DEPLOY_VERIFY_K8S: Keycloak model failed — repair" >&2
-python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}" --repair
+# --repair exits 1 when pre-repair checks fail; must not abort under set -e before final verify.
+python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}" --repair || true
 if python -m app.scripts.check_keycloak_permission_model --env-file "${ENV_PATH}"; then
   echo "POST_DEPLOY_VERIFY_K8S: all checks passed after repair"
   exit 0
