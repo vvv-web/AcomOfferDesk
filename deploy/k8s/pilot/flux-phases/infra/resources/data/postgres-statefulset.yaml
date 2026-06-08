@@ -15,6 +15,7 @@ spec:
         app: postgres
         acom.security/tier: data
     spec:
+      serviceAccountName: acom-pilot-data
       initContainers:
         - name: pg-tls-perms
           image: busybox:1.36

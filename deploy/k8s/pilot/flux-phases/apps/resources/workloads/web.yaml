@@ -14,6 +14,7 @@ spec:
         app: web
         acom.security/tier: app
     spec:
+      serviceAccountName: acom-pilot-runtime
       containers:
         - name: web
           image: acom-web:8ea43577e06e
