@@ -57,4 +57,4 @@ kubectl -n acom-offer-desk-pilot rollout restart statefulset/postgres deployment
 
 **SB Step 4: PASS** — Postgres TLS включён; клиент backend на `verify-full` с CA; rabbitmq non-root.
 
-**Следующий фокус:** Шаг 5 (R-B4 prod profile) — **не начинать без approve**.
+**Следующий фокус:** ~~Шаг 5~~ **PASS** — см. `SB-STEP5-EVIDENCE.md`.

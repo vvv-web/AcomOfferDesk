@@ -347,5 +347,9 @@ class Settings(BaseSettings):
         base = (self.public_backend_base_url or self.web_base_url or "http://localhost:8080").rstrip("/")
         return f"{base}/api/v1/auth/callback"
 
+    @property
+    def openapi_enabled(self) -> bool:
+        return self.app_env != "production"
+
 
 settings = Settings()

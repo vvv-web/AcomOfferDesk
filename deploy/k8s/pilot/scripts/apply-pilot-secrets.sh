@@ -81,7 +81,7 @@ metadata:
   name: acom-backend-env
   namespace: ${NS}
 data:
-  APP_ENV: "pilot"
+  APP_ENV: "production"
   KEYCLOAK_REALM: "acom-offerdesk"
   KEYCLOAK_INTERNAL_BASE_URL: "http://keycloak:8080/iam"
   KEYCLOAK_PUBLIC_BASE_URL: "${SCHEME}://${FQDN}/iam"

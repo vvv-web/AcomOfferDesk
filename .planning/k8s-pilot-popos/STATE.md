@@ -182,9 +182,24 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Вердикт SB шаг 4:** **PASS** — R-D1/R-D2/R-B2; evidence `SB-STEP4-EVIDENCE.md`.
 
+## SB Шаг 5 (2026-06-08) — R-B4 prod profile
+
+| Тест | Результат | Evidence |
+|------|-----------|----------|
+| S5-T1 readiness /health in kustomize | **PASS** | `workloads/backend.yaml` |
+| S5-T2 APP_ENV=production | **PASS** | deployment env + `apply-pilot-secrets.sh` |
+| S5-T3 ingress no /docs route | **PASS** | `networking/ingress.yaml` |
+| S5-T6 in-cluster /docs → 404 | **PASS** | backend `main.py` OpenAPI off |
+| S5-T7 ingress /health → 200 | **PASS** | |
+| unit tests `test_prod_openapi_surface.py` | **PASS** | 4/4 |
+
+**Сделано:** `settings.openapi_enabled`; FastAPI `docs_url=None` in production; `verify-k8s-pilot-sb-step5.sh`.
+
+**Вердикт SB шаг 5:** **PASS** — R-B4; evidence `SB-STEP5-EVIDENCE.md`.
+
 ## Следующие действия
 
-1. **SB Шаг 5:** prod profile app (R-B4) — readiness `/health`, `/docs` закрыт.
+1. **SB Шаг 6:** секреты и RBAC (R-C2) — runbook + RBAC без лишнего `get secrets`.
 2. **`/etc/hosts`:** `127.0.0.1 pilot.acom-offer-desk.ru` для браузера.
 3. ~~**Flux chain**~~ **DONE** (2026-06-08) — см. `FLUX-FIX-EVIDENCE.md`.
 2. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).

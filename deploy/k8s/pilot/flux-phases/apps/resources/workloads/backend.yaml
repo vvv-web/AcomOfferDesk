@@ -42,6 +42,8 @@ spec:
             - configMapRef:
                 name: acom-backend-env
           env:
+            - name: APP_ENV
+              value: production
             - name: PGSSLMODE
               value: verify-full
             - name: PGSSLROOTCERT

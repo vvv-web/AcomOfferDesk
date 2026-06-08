@@ -98,7 +98,14 @@ async def lifespan(_: FastAPI):
             leader_lock.release()
 
 
-app = FastAPI(title="Order Backend", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Order Backend",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.openapi_enabled else None,
+    redoc_url="/redoc" if settings.openapi_enabled else None,
+    openapi_url="/openapi.json" if settings.openapi_enabled else None,
+)
 
 cors_allow_origins = settings.resolved_cors_allow_origins
 if cors_allow_origins:

@@ -3,7 +3,7 @@
 **Канон требований:** [security-board-requirements](https://github.com/vvv-web/security-board-requirements) v1.1  
 **Чеклист статусов:** [`docs/security-sb-checklist.md`](../../../../docs/security-sb-checklist.md)  
 **Дорожная карта:** [`docs/operations/kubernetes-migration-roadmap.md`](../../../../docs/operations/kubernetes-migration-roadmap.md) §4.2, §8.2  
-**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** step 4 (проверять `flux get kustomizations`)  
+**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** step 5 (проверять `flux get kustomizations`)  
 **SB Шаг 1:** **PARTIAL** (2026-06-08) — см. [STATE.md](../../../../.planning/k8s-pilot-popos/STATE.md) § «SB Шаг 1»
 
 **Легенда:** ✅ закрыто · ⚠️ частично · ❌ gap · 📋 следующий шаг (см. [SB-STEPS.md](../../../../.planning/k8s-pilot-popos/SB-STEPS.md))
@@ -16,7 +16,7 @@
 | **R-B1** | `workloads/keycloak.yaml`, `flux-phases/infra/resources/workloads/keycloak.yaml` | ⚠️ | `args: ["start", "--import-realm"]` ✅; deploy **1/1 Running** (2026-06-08, T5 PASS). Job `keycloak-bootstrap` — **PARTIAL** (**Шаг 1** / **Шаг 10**) |
 | **R-B2** | `workloads/{backend,keycloak,minio,web,notifications-worker,rabbitmq}.yaml` | ✅ | backend/keycloak/minio/worker: **65532**; rabbitmq: **999** + `runAsNonRoot`. **Шаг 4 PASS** 2026-06-08 |
 | **R-B3** | `workloads/*.yaml`, `scripts/build-images.sh` | ⚠️ | `acom-{backend,web,notifications-worker}:8ea43577e06e` **imported** (`k3s ctr images import`, T1/T8 PASS); теги не `@sha256`, registry gap — **Шаг 1 PARTIAL** |
-| **R-B4** | `workloads/backend.yaml` (probes, env) | ❌ | Readiness на `/health`, `APP_ENV=production`, smoke `/docs` закрыт — не проверено. **Шаг 5** |
+| **R-B4** | `workloads/backend.yaml`, `backend/app/main.py` | ✅ | readiness `/health`; `APP_ENV=production`; `/docs`/`/openapi.json` → 404. **Шаг 5 PASS** 2026-06-08 |
 | **R-C1** | `config/secrets.example.yaml`, Secret `acom-app-secrets` | ⚠️ | В git только example; live Secret есть — убрать placeholders. **Шаг 1** |
 | **R-C2** | RBAC + операторский runbook | ❌ | Нет документа RBAC для Secret; аналог chmod 600 на VPS. **Шаг 6** |
 | **R-C3** | *(нет)* `.github/scripts/check_k8s_pilot_security.py` | ❌ | Нет CI на `kustomize build` (как `check_vps_compose_security.py`). **Шаг 7** |
@@ -65,7 +65,7 @@
 | Pod Security Standards | namespace labels / PSS restricted | ❌ |
 | SealedSecrets / ESO | вместо ручного `kubectl create secret` | ❌ |
 | Ingress TLS | `generate-pilot-ingress-tls.sh` → `acom-pilot-tls` | ✅ learn self-signed |
-| Verify script | `scripts/verify-k8s-pilot-sb-step{2,3,4}.sh` | ✅ |
+| Verify script | `scripts/verify-k8s-pilot-sb-step{2,3,4,5}.sh` | ✅ |
 
 ## Быстрые команды проверки
 
