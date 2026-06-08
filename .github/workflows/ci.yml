@@ -106,3 +106,14 @@ jobs:
 
       - name: Build frontend
         run: npm --prefix web run build
+
+  k8s-pilot-security:
+    name: K8s Pilot Security Gate (SB R-C3+)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/k8s-pilot-popos' || contains(github.event.pull_request.head.ref, 'k8s-pilot')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+      - name: SB step 7 — kustomize security scan
+        run: python3 .github/scripts/check_k8s_pilot_security.py --through-step 7
