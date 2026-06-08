@@ -5,7 +5,11 @@ metadata:
   namespace: acom-offer-desk-pilot
 spec:
   backoffLimit: 1
+  activeDeadlineSeconds: 600
   template:
+    metadata:
+      labels:
+        acom.security/tier: app
     spec:
       restartPolicy: Never
       containers:
@@ -15,8 +19,9 @@ spec:
             - /bin/sh
             - -ec
             - |
-              until pg_isready -h "$PGHOST" -p 5432 -U "$KC_DB_USERNAME" -d "$KC_DB_URL_DATABASE"; do sleep 2; done
               export PGSSLMODE=require
+              export PGSSLROOTCERT=/etc/ssl/postgres/ca.crt
+              until pg_isready -h "$PGHOST" -p 5432 -U "$KC_DB_USERNAME" -d "$KC_DB_URL_DATABASE"; do sleep 2; done
               PGPASSWORD="$KC_DB_PASSWORD" psql -h "$PGHOST" -U "$KC_DB_USERNAME" -d "$KC_DB_URL_DATABASE" -v ON_ERROR_STOP=1 \
                 -c "CREATE SCHEMA IF NOT EXISTS \"$KC_DB_SCHEMA\" AUTHORIZATION \"$KC_DB_USERNAME\";"
           env:
