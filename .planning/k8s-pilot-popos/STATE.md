@@ -237,3 +237,9 @@ kubectl -n acom-offer-desk-pilot get pods -l job-name=keycloak-bootstrap
 ## SB steps 7–12 (2026-06-08)
 
 **PASS** on pop-os pilot — AMQPS, MinIO TLS, CI gate, R-H4 package, R-J2 upload plan. VPS prod untouched.
+
+### Remediation SB 7–12 smoke (2026-06-08, commit 809d7a7)
+
+- **Root cause:** TLS/AMQPS манифесты были только локально; Flux с GitHub (f5de168/e214e03) крутил MinIO HTTP + RabbitMQ :5672, а `S3_SECURE=true` и новый backend `e214e03` ждали HTTPS → CrashLoopBackOff.
+- **Fix:** push `809d7a7` (minio/rabbitmq infra, rabbitmq-config AMQPS, backend/worker TLS mounts); `generate-minio-tls.sh`; reconcile pilot-base/infra/apps → **809d7a7 Ready**.
+- **Verify:** `verify-k8s-pilot-sb-step7.sh` 6/6 PASS; `step8.sh` 8/8 PASS; backend 1/1 RS Running, `/health` 200; MinIO `https://minio:9000` + CA 200.
