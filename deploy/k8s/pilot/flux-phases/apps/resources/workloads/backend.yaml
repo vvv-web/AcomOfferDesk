@@ -14,14 +14,14 @@ spec:
         app: backend
         acom.security/tier: app
       annotations:
-        acom.deploy/sha: "8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9"
+        acom.deploy/sha: "7aba20a5a9fda02112952dfac841c168d1298178"
     spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
       containers:
         - name: backend
-          image: acom-backend:8ea43577e06e
+          image: acom-backend:7aba20a5a9fd
           imagePullPolicy: Never
           ports:
             - containerPort: 8000

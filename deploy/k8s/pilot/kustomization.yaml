@@ -32,4 +32,4 @@ labels:
       acom.deploy/environment: pilot
 
 commonAnnotations:
-  acom.deploy/sha: "8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9"
+  acom.deploy/sha: "7aba20a5a9fda02112952dfac841c168d1298178"
