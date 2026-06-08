@@ -4,9 +4,14 @@ metadata:
   name: rabbitmq-config
   namespace: acom-offer-desk-pilot
 data:
-  # Pilot learn: AMQP 5672 (R-E2 AMQPS — фаза §8.2)
   enabled_plugins: |
     [rabbitmq_management].
   rabbitmq.conf: |
     loopback_users.guest = false
-    default_user = acom_rmq
+    listeners.tcp = none
+    listeners.ssl.default = 5671
+    ssl_options.cacertfile = /etc/rabbitmq/tls/ca_certificate.pem
+    ssl_options.certfile = /etc/rabbitmq/tls/server_certificate.pem
+    ssl_options.keyfile = /etc/rabbitmq/tls/server_key.pem
+    ssl_options.verify = verify_peer
+    ssl_options.fail_if_no_peer_cert = true

@@ -20,9 +20,16 @@ spec:
         runAsUser: 65532
       containers:
         - name: worker
-          image: acom-notifications-worker:8ea43577e06e
+          image: acom-notifications-worker:e214e03fdc74
           imagePullPolicy: Never
           command: ["python", "-m", "app.main"]
+          env:
+            - name: RABBITMQ_SSL_CAFILE
+              value: /etc/ssl/rabbitmq/ca.crt
+            - name: RABBITMQ_SSL_CERTFILE
+              value: /etc/ssl/rabbitmq/client.crt
+            - name: RABBITMQ_SSL_KEYFILE
+              value: /etc/ssl/rabbitmq/client.key
           envFrom:
             - secretRef:
                 name: acom-app-secrets
@@ -33,3 +40,19 @@ spec:
               command: ["pgrep", "-f", "celery"]
             initialDelaySeconds: 60
             periodSeconds: 30
+          volumeMounts:
+            - name: rabbitmq-tls
+              mountPath: /etc/ssl/rabbitmq
+              readOnly: true
+
+      volumes:
+        - name: rabbitmq-tls
+          secret:
+            secretName: rabbitmq-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: client.crt
+                path: client.crt
+              - key: client.key
+                path: client.key

@@ -22,14 +22,18 @@ spec:
       containers:
         - name: minio
           image: minio/minio:RELEASE.2024-12-18T13-15-44Z
-          args: ["server", "/data", "--console-address", ":9001"]
+          args: ["server", "/data", "--certs-dir", "/certs", "--console-address", ":9001"]
           ports:
             - containerPort: 9000
             - containerPort: 9001
+          env:
+            - name: MINIO_SERVER_URL
+              value: "https://minio:9000"
           readinessProbe:
             httpGet:
               path: /minio/health/ready
               port: 9000
+              scheme: HTTPS
             periodSeconds: 10
           envFrom:
             - secretRef:
@@ -37,9 +41,29 @@ spec:
           volumeMounts:
             - name: minio-data
               mountPath: /data
+            - name: minio-tls
+              mountPath: /certs
+              readOnly: true
+            - name: minio-tls-ca
+              mountPath: /certs/CAs
+              readOnly: true
       volumes:
         - name: minio-data
           emptyDir: {}
+        - name: minio-tls
+          secret:
+            secretName: minio-tls
+            items:
+              - key: private.key
+                path: private.key
+              - key: public.crt
+                path: public.crt
+        - name: minio-tls-ca
+          secret:
+            secretName: minio-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service
