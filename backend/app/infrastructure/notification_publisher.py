@@ -1,4 +1,5 @@
 from __future__ import annotations
+from shared.amqp_connect import connect_robust_amqp
 
 import json
 
@@ -9,7 +10,7 @@ from shared.broker import EXCHANGE
 
 
 async def publish_notification(event_type: str, payload: dict) -> None:
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_robust_amqp(settings.rabbitmq_url)
     try:
         channel = await connection.channel()
         exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)

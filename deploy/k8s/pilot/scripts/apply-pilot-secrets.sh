@@ -29,7 +29,9 @@ SCHEME="${PILOT_URL_SCHEME:-https}"
 PG_SSL_QS="sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
 DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${PG_DB}?${PG_SSL_QS}"
 FLYWAY_JDBC="jdbc:postgresql://postgres:5432/${PG_DB}?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
-CELERY_BROKER="amqp://${RMQ_USER}:${RMQ_PASS}@rabbitmq.${NS}.svc.cluster.local:5672/"
+RMQ_HOST="rabbitmq.${NS}.svc.cluster.local"
+CELERY_BROKER="amqps://${RMQ_USER}:${RMQ_PASS}@${RMQ_HOST}:5671/"
+RABBITMQ_URL="$CELERY_BROKER"
 
 critical_values=(
   "$PG_PASS" "$KC_BOOT" "$APP_BOOT" "$JWT_SEC" "$RMQ_PASS" "$MINIO_PASS"
@@ -74,13 +76,14 @@ kubectl -n "$NS" create secret generic acom-app-secrets \
   --from-literal=RABBITMQ_DEFAULT_USER="$RMQ_USER" \
   --from-literal=RABBITMQ_DEFAULT_PASS="$RMQ_PASS" \
   --from-literal=CELERY_BROKER_URL="$CELERY_BROKER" \
+  --from-literal=RABBITMQ_URL="$RABBITMQ_URL" \
   --from-literal=MINIO_ROOT_USER="$MINIO_USER" \
   --from-literal=MINIO_ROOT_PASSWORD="$MINIO_PASS" \
   --from-literal=S3_ENDPOINT="minio:9000" \
   --from-literal=S3_ACCESS_KEY="$MINIO_USER" \
   --from-literal=S3_SECRET_KEY="$MINIO_PASS" \
   --from-literal=S3_BUCKET="acom-offer-desk" \
-  --from-literal=S3_SECURE="false" \
+  --from-literal=S3_SECURE="true" \
   --from-literal=EMAIL_ADDRESS="pilot@example.com" \
   --from-literal=EMAIL_APP_PASSWORD="pilot_email_change_me" \
   --from-literal=SMTP_HOST="smtp.example.com" \
@@ -125,7 +128,7 @@ data:
   KC_HOSTNAME_STRICT_HTTPS: "true"
   KC_PROXY_HEADERS: "xforwarded"
   KEYCLOAK_START_COMMAND: "start"
-  S3_SECURE: "false"
+  S3_SECURE: "true"
 EOF
 
 if [[ "$using_learn" -eq 1 ]]; then

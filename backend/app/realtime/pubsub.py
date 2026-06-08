@@ -6,6 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 import aio_pika
+from shared.amqp_connect import connect_robust_amqp
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class RabbitMQRealtimePubSub:
             return True
 
         try:
-            self._connection = await aio_pika.connect_robust(self._url)
+            self._connection = await connect_robust_amqp(self._url)
             self._channel = await self._connection.channel()
             self._exchange = await self._channel.declare_exchange(
                 self._exchange_name,

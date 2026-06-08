@@ -5,6 +5,7 @@ import logging
 import os
 
 import aio_pika
+from shared.amqp_connect import connect_robust_amqp
 from aio_pika.abc import AbstractRobustConnection
 from aiormq.exceptions import AMQPConnectionError
 
@@ -24,7 +25,7 @@ async def _connect_with_retry(rabbitmq_url: str) -> AbstractRobustConnection:
 
     while True:
         try:
-            connection = await aio_pika.connect_robust(rabbitmq_url)
+            connection = await connect_robust_amqp(rabbitmq_url)
             logger.info("Connected to RabbitMQ")
             return connection
         except AMQPConnectionError:

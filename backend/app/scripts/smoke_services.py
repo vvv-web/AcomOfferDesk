@@ -367,6 +367,7 @@ async def _check_s3_minio(reporter: Reporter, env_map: dict[str, str]) -> None:
 
 
 async def _check_rabbitmq(reporter: Reporter, env_map: dict[str, str]) -> None:
+from shared.amqp_connect import connect_robust_amqp  # noqa: E402
     rabbitmq_url = _coalesce(env_map, "SMOKE_RABBITMQ_URL", "RABBITMQ_URL")
     if not rabbitmq_url:
         reporter.warn("RabbitMQ", "RABBITMQ_URL is missing, check skipped")
@@ -381,7 +382,7 @@ async def _check_rabbitmq(reporter: Reporter, env_map: dict[str, str]) -> None:
     try:
 
         async def _connect_and_close() -> None:
-            connection = await aio_pika.connect_robust(rabbitmq_url, timeout=7)
+            connection = await connect_robust_amqp(rabbitmq_url, timeout=7)
             await connection.close()
 
         await asyncio.wait_for(_connect_and_close(), timeout=15.0)
