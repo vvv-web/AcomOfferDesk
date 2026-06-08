@@ -145,6 +145,8 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Сделано:** `networking/ingress.yaml` TLS + ssl-redirect; `apply-pilot-secrets.sh` https + `KC_HOSTNAME_STRICT*`; `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**.
 
+**Keycloak rollout (2026-06-08):** CrashLoop на новом pod — не SA/RBAC, а **нет схемы `keycloak`** в Postgres (`KC_DB_SCHEMA`) после ephemeral `emptyDir` у postgres; старый pod на RS `7b8484b68c` (SA `default`) держал rollout. **Фикс:** initContainer `keycloak-db-schema` в `workloads/keycloak.yaml` + `keycloak-db-prepare.job.yaml` на `KC_DB_*`; live **1/1** `acom-pilot-data` (`keycloak-555b47b579-*`); `verify-k8s-pilot-sb-step6.sh` **11/11 PASS**.
+
 **Операции 2026-06-08 (verifier gaps):** удалён stale `ingress-nginx-controller` pod (Error); `kubectl rollout restart deployment/keycloak` после CM `KC_HOSTNAME=https://pilot.acom-offer-desk.ru/iam`; `verify-k8s-pilot-sb-step2.sh` → **7/7 PASS** (k3s API stable).
 
 **Вердикт SB шаг 2:** **PASS** — R-A2/R-G1 live (S2-T1..T6); `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**; Flux chain @ `26b64d1` Ready.
@@ -203,6 +205,7 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 |------|-----------|----------|
 | S6-T1 RBAC in kustomize | **PASS** | `rbac/secrets-rbac.yaml` |
 | S6-T3 runtime SA on workloads | **PASS** | `serviceAccountName` backend/web/worker/data |
+| S6-T10 live backend SA | **PASS** | `kubectl apply -k` + rollout restart (был пустой SA) |
 | S6-T7 runtime no get secrets | **PASS** | `kubectl auth can-i` |
 | S6-T8 operator get named secret | **PASS** | resourceNames Role |
 | S6-T11 secret managed-by label | **PASS** | `apply-pilot-secrets.sh` |

@@ -54,6 +54,8 @@ kubectl -n acom-offer-desk-pilot rollout restart \
 ./deploy/k8s/pilot/scripts/verify-k8s-pilot-sb-step6.sh
 ```
 
+
+**Keycloak (2026-06-08):** заявка SA `acom-pilot-data` для keycloak **корректна** после rollout; падение было из‑за отсутствия DB schema `keycloak`, не из‑за ServiceAccount.
 **Live SA после rollout:** backend/web/notifications-worker → `acom-pilot-runtime`; keycloak/minio/rabbitmq/postgres → `acom-pilot-data`.
 
 ## Операции
