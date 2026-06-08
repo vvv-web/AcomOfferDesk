@@ -56,9 +56,10 @@ else
   bad "S3-T3b deny-data-egress policyTypes='${egress_types}'"
 fi
 
-# S3-T4: data-tier pods labeled
+# S3-T4: data-tier pods labeled (Running only — ignore stale Completed pods)
 for app in postgres rabbitmq minio; do
-  tier="$(kubectl -n "$NS" get pods -l "app=${app}" -o jsonpath='{.items[0].metadata.labels.acom\.security/tier}' 2>/dev/null || true)"
+  tier="$(kubectl -n "$NS" get pods -l "app=${app}" --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.labels.acom\.security/tier}' 2>/dev/null || true)"
   if [[ "$tier" == "data" ]]; then
     ok "S3-T4 pod app=${app} acom.security/tier=data"
   else
@@ -68,7 +69,8 @@ done
 
 # S3-T5: app-tier pods labeled
 for app in backend web notifications-worker keycloak; do
-  tier="$(kubectl -n "$NS" get pods -l "app=${app}" -o jsonpath='{.items[0].metadata.labels.acom\.security/tier}' 2>/dev/null || true)"
+  tier="$(kubectl -n "$NS" get pods -l "app=${app}" --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.labels.acom\.security/tier}' 2>/dev/null || true)"
   if [[ "$tier" == "app" ]]; then
     ok "S3-T5 pod app=${app} acom.security/tier=app"
   else
@@ -77,11 +79,12 @@ for app in backend web notifications-worker keycloak; do
 done
 
 # S3-T6: data-tier egress to internet blocked (wget/curl to 1.1.1.1)
-data_pod="$(kubectl -n "$NS" get pods -l 'acom.security/tier=data' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+data_pod="$(kubectl -n "$NS" get pods -l 'acom.security/tier=data' --field-selector=status.phase=Running \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 if [[ -z "$data_pod" ]]; then
   skp "S3-T6 no data-tier pod for egress probe"
 else
-  if kubectl -n "$NS" exec "$data_pod" -- sh -c 'wget -q -T 3 -O /dev/null http://1.1.1.1 2>/dev/null'; then
+  if kubectl -n "$NS" exec "$data_pod" -- sh -c 'command -v wget >/dev/null && wget -q -T 3 -O /dev/null http://1.1.1.1 2>/dev/null || (command -v curl >/dev/null && curl -sf -m 3 http://1.1.1.1 >/dev/null)'; then
     bad "S3-T6 data pod ${data_pod} reached internet (1.1.1.1) — egress not denied"
   else
     ok "S3-T6 data pod ${data_pod} cannot reach internet (egress deny)"

@@ -10,8 +10,8 @@
 | **AOD_DEPLOY_SHA** | `8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9` |
 | **Ветка** | `k8s-pilot-popos` (fork-only; база = `test` @ `d7f2af1`, parity `upstream/test`) |
 | **VPS prod** | не трогали |
-| **SB-пилот (§8.2)** | **Шаг 0 PASS**; **Шаг 1 PASS**; **Шаг 2 PASS** (2026-06-08) — T7 Flux chain Ready @ `26b64d1`; throw `10.43.0.0/16` table 52 |
-| **Flux @** | `26b64d1` — все `pilot-*` Kustomization **Ready=True**; Tailscale throw `10.43.0.0/16` table 52 **OK** |
+| **SB-пилот (§8.2)** | **Шаг 0–3 PASS** (2026-06-08); шаг 3 — NetworkPolicy 14/14; фокус **шаг 4** |
+| **Flux @** | `912bcba` — `pilot-apps`/`pilot-infra` Ready; jobs-bootstrap/post зависят от migrate chain |
 
 ## Git policy: fork-only, branch k8s-pilot-popos, upstream read-only
 
