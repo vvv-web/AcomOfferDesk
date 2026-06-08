@@ -12,6 +12,7 @@ spec:
     metadata:
       labels:
         app: notifications-worker
+        acom.security/tier: app
     spec:
       containers:
         - name: worker

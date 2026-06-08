@@ -40,7 +40,8 @@ link apps \
   workloads/backend.yaml \
   workloads/web.yaml \
   workloads/notifications-worker.yaml \
-  networking/ingress.yaml
+  networking/ingress.yaml \
+  networking/networkpolicy.yaml
 
 link jobs-post \
   jobs/keycloak-user-role-sync.job.yaml \

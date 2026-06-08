@@ -6,6 +6,7 @@ resources:
   - resources/workloads/web.yaml
   - resources/workloads/notifications-worker.yaml
   - resources/networking/ingress.yaml
+  - resources/networking/networkpolicy.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: acom-offer-desk

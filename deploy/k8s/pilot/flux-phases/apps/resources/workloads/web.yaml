@@ -12,6 +12,7 @@ spec:
     metadata:
       labels:
         app: web
+        acom.security/tier: app
     spec:
       containers:
         - name: web

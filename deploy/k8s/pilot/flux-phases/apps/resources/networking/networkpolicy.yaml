@@ -1,0 +1,44 @@
+# SB Step 3 (R-A3, R-D3): data-tier egress deny; labels acom.security/tier=data|app
+# Ref: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-data-egress
+  namespace: acom-offer-desk-pilot
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: data
+  policyTypes:
+    - Egress
+  egress:
+    # Cluster DNS only — data tier must not reach the internet (R-A3)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Same-namespace pod traffic (app→data already allowed by default ingress)
+    - to:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-tier-ingress-from-app
+  namespace: acom-offer-desk-pilot
+spec:
+  podSelector:
+    matchLabels:
+      acom.security/tier: data
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              acom.security/tier: app

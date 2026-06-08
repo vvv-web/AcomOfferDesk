@@ -12,6 +12,7 @@ spec:
     metadata:
       labels:
         app: minio
+        acom.security/tier: data
     spec:
       securityContext:
         runAsUser: 65532

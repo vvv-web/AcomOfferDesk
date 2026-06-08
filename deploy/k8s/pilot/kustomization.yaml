@@ -24,6 +24,7 @@ resources:
   - workloads/web.yaml
   - workloads/notifications-worker.yaml
   - networking/ingress.yaml
+  - networking/networkpolicy.yaml
 
 labels:
   - pairs:

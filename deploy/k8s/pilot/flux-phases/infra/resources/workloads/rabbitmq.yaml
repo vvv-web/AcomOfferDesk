@@ -12,6 +12,7 @@ spec:
     metadata:
       labels:
         app: rabbitmq
+        acom.security/tier: data
     spec:
       containers:
         - name: rabbitmq
