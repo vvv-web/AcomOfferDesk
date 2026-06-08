@@ -10,8 +10,8 @@
 | **AOD_DEPLOY_SHA** | `8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9` |
 | **Ветка** | `k8s-pilot-popos` (fork-only; база = `test` @ `d7f2af1`, parity `upstream/test`) |
 | **VPS prod** | не трогали |
-| **SB-пилот (§8.2)** | **Шаг 0–3 PASS** (2026-06-08); шаг 3 — NetworkPolicy 14/14; фокус **шаг 4** |
-| **Flux @** | `912bcba` — `pilot-apps`/`pilot-infra` Ready; jobs-bootstrap/post зависят от migrate chain |
+| **SB-пилот (§8.2)** | **Шаг 0–4 PASS** (2026-06-08); шаг 4 — Postgres TLS verify-full + rabbitmq non-root; фокус **шаг 5** |
+| **Flux @** | step 4 commit — `pilot-apps`/`pilot-infra` Ready; jobs-bootstrap/post зависят от migrate chain |
 
 ## Git policy: fork-only, branch k8s-pilot-popos, upstream read-only
 
@@ -165,9 +165,26 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Вердикт SB шаг 3:** **PASS** — R-A3/R-D3; evidence `SB-STEP3-EVIDENCE.md`.
 
+## SB Шаг 4 — тест 2026-06-08 (Postgres TLS + non-root)
+
+| Тест | Результат | Evidence |
+|------|-----------|----------|
+| S4-T1 kustomize ssl=on | **PASS** | `data/postgres-statefulset.yaml` |
+| S4-T2 rabbitmq runAsNonRoot | **PASS** | uid **999** |
+| S4-T3 backend postgres-tls mount | **PASS** | `PGSSLMODE=verify-full` |
+| S4-T5 postgres SHOW ssl | **PASS** | `on` |
+| S4-T7 DATABASE_URL verify-full | **PASS** | `apply-pilot-secrets.sh` |
+| S4-T8 rabbitmq non-root | **PASS** | `id -u` → 999 |
+| S4-T9 backend /health | **PASS** | TLS client OK |
+| S4-T10 asyncpg verify-full | **PASS** | from backend pod |
+
+**Сделано:** `generate-postgres-tls.sh` SAN; `verify-k8s-pilot-sb-step4.sh`; rabbitmq `securityContext`; backend CA mount.
+
+**Вердикт SB шаг 4:** **PASS** — R-D1/R-D2/R-B2; evidence `SB-STEP4-EVIDENCE.md`.
+
 ## Следующие действия
 
-1. **SB Шаг 4:** Postgres TLS + non-root rabbitmq (R-D1, R-D2, R-B2).
+1. **SB Шаг 5:** prod profile app (R-B4) — readiness `/health`, `/docs` закрыт.
 2. **`/etc/hosts`:** `127.0.0.1 pilot.acom-offer-desk.ru` для браузера.
 3. ~~**Flux chain**~~ **DONE** (2026-06-08) — см. `FLUX-FIX-EVIDENCE.md`.
 2. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).

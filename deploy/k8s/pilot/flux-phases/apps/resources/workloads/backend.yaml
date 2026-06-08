@@ -41,6 +41,19 @@ spec:
                 name: acom-app-secrets
             - configMapRef:
                 name: acom-backend-env
+          env:
+            - name: PGSSLMODE
+              value: verify-full
+            - name: PGSSLROOTCERT
+              value: /etc/ssl/postgres/ca.crt
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: postgres-tls
 ---
 apiVersion: v1
 kind: Service

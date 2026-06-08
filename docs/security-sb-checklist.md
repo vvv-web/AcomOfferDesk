@@ -7,7 +7,7 @@
 
 **Среда проверки:** pop-os k3s (learn)  
 **Дата:** 2026-06-08  
-**Commit / Flux:** `k8s-pilot-popos` @ `912bcba`  
+**Commit / Flux:** `k8s-pilot-popos` @ step 4 (2026-06-08)  
 **Контур:** ☐ VPS `test` · ☑ K8s pilot `acom-offer-desk-pilot`
 
 **Дорожная карта K8s:** [kubernetes-migration-roadmap.md](./operations/kubernetes-migration-roadmap.md) (v0.5)  
@@ -26,15 +26,15 @@
 | R-A2 | TLS на edge; strict hostname IdP | ✅ | `networking/ingress.yaml` `spec.tls` + `acom-pilot-tls`; HTTPS `/health` → 200 | **Шаг 2 PASS** 2026-06-08 |
 | R-A3 | Сегментация сетей (edge/app/data) | ✅ | `networking/networkpolicy.yaml` + labels `acom.security/tier` | **Шаг 3 PASS** 2026-06-08 |
 | R-B1 | Keycloak `start`, не `start-dev` | ⚠️ | `workloads/keycloak.yaml` args `start` | deploy **1/1 Running** 2026-06-08; bootstrap job — **Шаг 1** / **Шаг 10** |
-| R-B2 | Контейнеры non-root | ⚠️ | backend/keycloak/minio 65532; rabbitmq без SC | **Шаг 4** |
+| R-B2 | Контейнеры non-root | ✅ | backend/keycloak/minio 65532; rabbitmq uid 999 + runAsNonRoot | **Шаг 4 PASS** 2026-06-08 |
 | R-B3 | Образы `@sha256`, без `:latest` | ⚠️ | import `acom-*:8ea43577e06e` в k3s (`ctr images import`); `@sha256`/registry — gap | **Шаг 1 PARTIAL** |
 | R-B4 | OpenAPI/debug выкл.; readiness `/health` | ❌ | `workloads/backend.yaml` | **Шаг 5** |
 | R-C1 | Секреты вне git | ⚠️ | `config/secrets.example.yaml`; Secret `acom-app-secrets` | placeholders — **Шаг 1** |
 | R-C2 | Runtime secrets 0600 | ❌ | RBAC + runbook | **Шаг 6** |
 | R-C3 | Нет guest/guest в rendered config | ❌ | CI скрипт отсутствует | **Шаг 7** |
 | R-C4 | Bootstrap без plaintext в репо | ⚠️ | `jobs/keycloak-bootstrap.job.yaml` | env из Secret |
-| R-D1 | TLS на СУБД включён | ⚠️ | `data/postgres-statefulset.yaml` ssl=on; Secret `postgres-tls` | подтвердить `SHOW ssl` |
-| R-D2 | Клиенты БД verify-full / CA | ❌ | `DATABASE_URL` в secrets | **Шаг 4** |
+| R-D1 | TLS на СУБД включён | ✅ | `SHOW ssl=on`; Secret `postgres-tls` + SAN | **Шаг 4 PASS** 2026-06-08 |
+| R-D2 | Клиенты БД verify-full / CA | ✅ | `DATABASE_URL` sslmode=verify-full + `/etc/ssl/postgres/ca.crt` | **Шаг 4 PASS** 2026-06-08 |
 | R-D3 | Изоляция данных (data tier) | ✅ | Postgres in-cluster + NP ingress/egress; data egress deny | **Шаг 3 PASS** 2026-06-08 |
 | R-E1 | Свои учётки RabbitMQ | ⚠️ | Secret `RABBITMQ_*` | |
 | R-E2 | Только TLS к брокеру (AMQPS) | ❌ | `workloads/rabbitmq.yaml` port **5672** plaintext | **Шаг 8** |

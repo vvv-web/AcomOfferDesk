@@ -8,7 +8,8 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
   -keyout "$WORKDIR/server.key" -out "$WORKDIR/server.crt" \
-  -subj "/CN=postgres.acom-offer-desk-pilot.svc"
+  -subj "/CN=postgres" \
+  -addext "subjectAltName=DNS:postgres,DNS:postgres.${NS}.svc,DNS:postgres.${NS}.svc.cluster.local"
 cp "$WORKDIR/server.crt" "$WORKDIR/ca.crt"
 
 kubectl -n "$NS" create secret generic postgres-tls \

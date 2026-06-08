@@ -56,12 +56,14 @@ from app.scripts.smoke_services import Reporter, _check_postgres, _check_s3_mini
 
 
 def pilot_asyncpg_dsn(raw: str) -> str:
-    """Pilot in-cluster Postgres: asyncpg + sslmode=require (avoid duplicate ssl= kwarg)."""
+    """Pilot in-cluster Postgres: preserve sslmode/sslrootcert from DATABASE_URL (R-D2)."""
     dsn = re.sub(r"^postgresql\+[^:]+", "postgresql", raw.strip())
     parts = urlsplit(dsn)
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not k.lower().startswith("ssl")]
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not k.lower().startswith("ssl=")]
     if not any(k == "sslmode" for k, _ in query):
-        query.append(("sslmode", "require"))
+        query.append(("sslmode", "verify-full"))
+    if not any(k == "sslrootcert" for k, _ in query):
+        query.append(("sslrootcert", "/etc/ssl/postgres/ca.crt"))
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 

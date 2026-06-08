@@ -20,8 +20,9 @@ PG_DB="${PILOT_PG_DB:-order_database}"
 RMQ_USER="${PILOT_RMQ_USER:-acom_rmq}"
 RMQ_PASS="${PILOT_RMQ_PASS:-pilot_rmq_change_me}"
 
-DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@${PG_IP}:5432/${PG_DB}?sslmode=require"
-FLYWAY_JDBC="jdbc:postgresql://${PG_IP}:5432/${PG_DB}?sslmode=require"
+PG_SSL_QS="sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
+DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@${PG_IP}:5432/${PG_DB}?${PG_SSL_QS}"
+FLYWAY_JDBC="jdbc:postgresql://${PG_IP}:5432/${PG_DB}?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
 CELERY_BROKER="amqp://${RMQ_USER}:${RMQ_PASS}@${RMQ_IP}:5672/"
 
 kubectl -n "$NS" patch secret acom-app-secrets --type merge -p "$(python3 - <<PY

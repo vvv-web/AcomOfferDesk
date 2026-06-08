@@ -20,9 +20,10 @@ MINIO_PASS="${PILOT_MINIO_PASS:-pilot_minio_change_me}"
 
 FQDN="${PILOT_FQDN:-pilot.acom-offer-desk.ru}"
 SCHEME="${PILOT_URL_SCHEME:-https}"
-# Pilot learn: sslmode=require (IP/DNS workaround); §8.2 → verify-full + CA
-DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${PG_DB}?sslmode=require"
-FLYWAY_JDBC="jdbc:postgresql://postgres:5432/${PG_DB}?sslmode=require"
+# SB step 4 (R-D2): verify-full + CA mount at /etc/ssl/postgres/ca.crt
+PG_SSL_QS="sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
+DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${PG_DB}?${PG_SSL_QS}"
+FLYWAY_JDBC="jdbc:postgresql://postgres:5432/${PG_DB}?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
 CELERY_BROKER="amqp://${RMQ_USER}:${RMQ_PASS}@rabbitmq.${NS}.svc.cluster.local:5672/"
 
 kubectl -n "$NS" create secret generic acom-app-secrets \

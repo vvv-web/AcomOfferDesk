@@ -10,7 +10,7 @@
 | **1** | Функциональный каркас | R-B3, R-C1, R-H2, R-H5 | Образы в k3s (`ctr images import` или registry+digest); backend/web Running; Flux `pilot-apps` Ready |
 | **2** | Edge TLS + hostname | R-A2, R-G1 | Ingress `spec.tls`; Keycloak login redirect на FQDN — **PASS** 2026-06-08 (`verify-k8s-pilot-sb-step2.sh` 7/7)¹ |
 | **3** | NetworkPolicy | R-A3, R-D3 | `kubectl get networkpolicy` ≥1; data-tier deny egress — **PASS** 2026-06-08 (`verify-k8s-pilot-sb-step3.sh` 14/14) |
-| **4** | Postgres TLS + non-root везде | R-D1, R-D2, R-B2 | `SHOW ssl=on`; `DATABASE_URL` verify-full; rabbitmq securityContext |
+| **4** | Postgres TLS + non-root везде | R-D1, R-D2, R-B2 | `SHOW ssl=on`; `DATABASE_URL` verify-full; rabbitmq securityContext — **PASS** 2026-06-08 (`verify-k8s-pilot-sb-step4.sh`) |
 | **5** | Prod profile app | R-B4 | readiness `/health`; `/docs` недоступен снаружи |
 | **6** | Секреты и RBAC | R-C2 | Runbook: кто создаёт Secret; RBAC без лишнего `get secrets` |
 | **7** | CI инварианты | R-C3 | `check_k8s_pilot_security.py` на `kustomize build` |
@@ -22,7 +22,9 @@
 
 После каждого шага: обновить колонку «Пилот K8s» в `docs/security-sb-checklist.md`, строку в `SECURITY-SB-R-MAPPING.md`, checkpoint в `STATE.md`.
 
-**Текущий фокус:** **Шаг 4** — Postgres TLS + non-root (R-D1, R-D2, R-B2).
+**Текущий фокус:** **Шаг 5** — prod profile app (R-B4); шаг 4 закрыт 2026-06-08.
+
+**Шаг 4 (2026-06-08):** **PASS** — R-D1/R-D2/R-B2 live; `verify-k8s-pilot-sb-step4.sh`; см. `SB-STEP4-EVIDENCE.md`.
 
 **Шаг 3 (2026-06-08):** **PASS** — R-A3/R-D3 live; `networking/networkpolicy.yaml` + tier labels; Flux `pilot-apps` @ `912bcba`; `verify-k8s-pilot-sb-step3.sh` **14/14 PASS** — см. `SB-STEP3-EVIDENCE.md`.
 

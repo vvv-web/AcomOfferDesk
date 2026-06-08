@@ -3,7 +3,7 @@
 **Канон требований:** [security-board-requirements](https://github.com/vvv-web/security-board-requirements) v1.1  
 **Чеклист статусов:** [`docs/security-sb-checklist.md`](../../../../docs/security-sb-checklist.md)  
 **Дорожная карта:** [`docs/operations/kubernetes-migration-roadmap.md`](../../../../docs/operations/kubernetes-migration-roadmap.md) §4.2, §8.2  
-**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** `912bcba` (проверять `flux get kustomizations`)  
+**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** step 4 (проверять `flux get kustomizations`)  
 **SB Шаг 1:** **PARTIAL** (2026-06-08) — см. [STATE.md](../../../../.planning/k8s-pilot-popos/STATE.md) § «SB Шаг 1»
 
 **Легенда:** ✅ закрыто · ⚠️ частично · ❌ gap · 📋 следующий шаг (см. [SB-STEPS.md](../../../../.planning/k8s-pilot-popos/SB-STEPS.md))
@@ -14,15 +14,15 @@
 | **R-A2** | `networking/ingress.yaml`, `scripts/generate-pilot-ingress-tls.sh`, Secret `acom-pilot-tls` | ✅ | `spec.tls` + nginx ssl-redirect; learn self-signed. **Шаг 2 PASS** 2026-06-08 |
 | **R-A3** | `networking/networkpolicy.yaml` | ✅ | `deny-data-egress` + `data-tier-ingress-from-app`; labels tier app/data. **Шаг 3 PASS** 2026-06-08 |
 | **R-B1** | `workloads/keycloak.yaml`, `flux-phases/infra/resources/workloads/keycloak.yaml` | ⚠️ | `args: ["start", "--import-realm"]` ✅; deploy **1/1 Running** (2026-06-08, T5 PASS). Job `keycloak-bootstrap` — **PARTIAL** (**Шаг 1** / **Шаг 10**) |
-| **R-B2** | `workloads/{backend,keycloak,minio,web,notifications-worker}.yaml` | ⚠️ | backend/keycloak/minio: `runAsNonRoot` + **65532**; **rabbitmq** без securityContext. **Шаг 4** |
+| **R-B2** | `workloads/{backend,keycloak,minio,web,notifications-worker,rabbitmq}.yaml` | ✅ | backend/keycloak/minio/worker: **65532**; rabbitmq: **999** + `runAsNonRoot`. **Шаг 4 PASS** 2026-06-08 |
 | **R-B3** | `workloads/*.yaml`, `scripts/build-images.sh` | ⚠️ | `acom-{backend,web,notifications-worker}:8ea43577e06e` **imported** (`k3s ctr images import`, T1/T8 PASS); теги не `@sha256`, registry gap — **Шаг 1 PARTIAL** |
 | **R-B4** | `workloads/backend.yaml` (probes, env) | ❌ | Readiness на `/health`, `APP_ENV=production`, smoke `/docs` закрыт — не проверено. **Шаг 5** |
 | **R-C1** | `config/secrets.example.yaml`, Secret `acom-app-secrets` | ⚠️ | В git только example; live Secret есть — убрать placeholders. **Шаг 1** |
 | **R-C2** | RBAC + операторский runbook | ❌ | Нет документа RBAC для Secret; аналог chmod 600 на VPS. **Шаг 6** |
 | **R-C3** | *(нет)* `.github/scripts/check_k8s_pilot_security.py` | ❌ | Нет CI на `kustomize build` (как `check_vps_compose_security.py`). **Шаг 7** |
 | **R-C4** | `jobs/keycloak-bootstrap.job.yaml`, `flux-phases/jobs-bootstrap/...` | ⚠️ | Job из Secret; realm-import без паролей — проверить CM/импорт. |
-| **R-D1** | `data/postgres-statefulset.yaml`, `scripts/generate-postgres-tls.sh`, Secret `postgres-tls` | ⚠️ | `ssl=on` в manifest; live `SHOW ssl` — подтвердить. **Шаг 4** |
-| **R-D2** | `config/secrets.example.yaml` (`DATABASE_URL` sslmode) | ❌ | `verify-full` + CA в Secret — проверить rendered URL в `acom-app-secrets`. **Шаг 4** |
+| **R-D1** | `data/postgres-statefulset.yaml`, `scripts/generate-postgres-tls.sh`, Secret `postgres-tls` | ✅ | live `SHOW ssl=on`; cert SAN `DNS:postgres`. **Шаг 4 PASS** 2026-06-08 |
+| **R-D2** | `config/secrets.example.yaml`, `apply-pilot-secrets.sh`, backend mount | ✅ | `DATABASE_URL` sslmode=verify-full + sslrootcert; backend PGSSL*. **Шаг 4 PASS** 2026-06-08 |
 | **R-D3** | `data/postgres-statefulset.yaml` + **R-A3** NetworkPolicy | ✅ | data-tier NP live; ingress app-only. **Шаг 3 PASS** 2026-06-08 |
 | **R-E1** | `config/secrets.example.yaml`, `workloads/rabbitmq.yaml` | ⚠️ | Учётки из Secret; guest не проверен скриптом. |
 | **R-E2** | `workloads/rabbitmq.yaml`, `config/rabbitmq-configmap.yaml` | ❌ | **Plain AMQP 5672** в Service и containerPort; нет `listeners.tcp=none` / TLS. **Шаг 8** |
@@ -65,7 +65,7 @@
 | Pod Security Standards | namespace labels / PSS restricted | ❌ |
 | SealedSecrets / ESO | вместо ручного `kubectl create secret` | ❌ |
 | Ingress TLS | `generate-pilot-ingress-tls.sh` → `acom-pilot-tls` | ✅ learn self-signed |
-| Verify script | `scripts/verify-k8s-pilot-sb-step2.sh` (шаг 2) | ✅ |
+| Verify script | `scripts/verify-k8s-pilot-sb-step{2,3,4}.sh` | ✅ |
 
 ## Быстрые команды проверки
 
