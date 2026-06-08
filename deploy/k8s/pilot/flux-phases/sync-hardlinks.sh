@@ -21,6 +21,7 @@ link() {
 
 link base \
   namespace.yaml \
+  rbac/secrets-rbac.yaml \
   config/rabbitmq-configmap.yaml
 
 link infra \

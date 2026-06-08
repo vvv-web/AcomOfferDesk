@@ -3,7 +3,7 @@
 **Канон требований:** [security-board-requirements](https://github.com/vvv-web/security-board-requirements) v1.1  
 **Чеклист статусов:** [`docs/security-sb-checklist.md`](../../../../docs/security-sb-checklist.md)  
 **Дорожная карта:** [`docs/operations/kubernetes-migration-roadmap.md`](../../../../docs/operations/kubernetes-migration-roadmap.md) §4.2, §8.2  
-**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** step 5 (проверять `flux get kustomizations`)  
+**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** step 6 (проверять `flux get kustomizations`)  
 **SB Шаг 1:** **PARTIAL** (2026-06-08) — см. [STATE.md](../../../../.planning/k8s-pilot-popos/STATE.md) § «SB Шаг 1»
 
 **Легенда:** ✅ закрыто · ⚠️ частично · ❌ gap · 📋 следующий шаг (см. [SB-STEPS.md](../../../../.planning/k8s-pilot-popos/SB-STEPS.md))
@@ -18,7 +18,7 @@
 | **R-B3** | `workloads/*.yaml`, `scripts/build-images.sh` | ⚠️ | `acom-{backend,web,notifications-worker}:8ea43577e06e` **imported** (`k3s ctr images import`, T1/T8 PASS); теги не `@sha256`, registry gap — **Шаг 1 PARTIAL** |
 | **R-B4** | `workloads/backend.yaml`, `backend/app/main.py` | ✅ | readiness `/health`; `APP_ENV=production`; `/docs`/`/openapi.json` → 404. **Шаг 5 PASS** 2026-06-08 |
 | **R-C1** | `config/secrets.example.yaml`, Secret `acom-app-secrets` | ⚠️ | В git только example; live Secret есть — убрать placeholders. **Шаг 1** |
-| **R-C2** | RBAC + операторский runbook | ❌ | Нет документа RBAC для Secret; аналог chmod 600 на VPS. **Шаг 6** |
+| **R-C2** | `rbac/secrets-rbac.yaml`, `docs/RUNBOOK-PILOT-SECRETS-RBAC.md` | ✅ | runtime SA без `get secrets`; operator SA + resourceNames. **Шаг 6 PASS** 2026-06-08 |
 | **R-C3** | *(нет)* `.github/scripts/check_k8s_pilot_security.py` | ❌ | Нет CI на `kustomize build` (как `check_vps_compose_security.py`). **Шаг 7** |
 | **R-C4** | `jobs/keycloak-bootstrap.job.yaml`, `flux-phases/jobs-bootstrap/...` | ⚠️ | Job из Secret; realm-import без паролей — проверить CM/импорт. |
 | **R-D1** | `data/postgres-statefulset.yaml`, `scripts/generate-postgres-tls.sh`, Secret `postgres-tls` | ✅ | live `SHOW ssl=on`; cert SAN `DNS:postgres`. **Шаг 4 PASS** 2026-06-08 |
@@ -65,7 +65,7 @@
 | Pod Security Standards | namespace labels / PSS restricted | ❌ |
 | SealedSecrets / ESO | вместо ручного `kubectl create secret` | ❌ |
 | Ingress TLS | `generate-pilot-ingress-tls.sh` → `acom-pilot-tls` | ✅ learn self-signed |
-| Verify script | `scripts/verify-k8s-pilot-sb-step{2,3,4,5}.sh` | ✅ |
+| Verify script | `scripts/verify-k8s-pilot-sb-step{2,3,4,5,6}.sh` | ✅ |
 
 ## Быстрые команды проверки
 

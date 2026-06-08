@@ -15,6 +15,7 @@ configMapGenerator:
 
 resources:
   - namespace.yaml
+  - rbac/secrets-rbac.yaml
   - config/rabbitmq-configmap.yaml
   - data/postgres-statefulset.yaml
   - workloads/rabbitmq.yaml

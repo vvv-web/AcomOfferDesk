@@ -7,7 +7,7 @@
 
 **Среда проверки:** pop-os k3s (learn)  
 **Дата:** 2026-06-08  
-**Commit / Flux:** `k8s-pilot-popos` @ step 5 (2026-06-08)  
+**Commit / Flux:** `k8s-pilot-popos` @ step 6 (2026-06-08)  
 **Контур:** ☐ VPS `test` · ☑ K8s pilot `acom-offer-desk-pilot`
 
 **Дорожная карта K8s:** [kubernetes-migration-roadmap.md](./operations/kubernetes-migration-roadmap.md) (v0.5)  
@@ -30,7 +30,7 @@
 | R-B3 | Образы `@sha256`, без `:latest` | ⚠️ | import `acom-*:8ea43577e06e` в k3s (`ctr images import`); `@sha256`/registry — gap | **Шаг 1 PARTIAL** |
 | R-B4 | OpenAPI/debug выкл.; readiness `/health` | ✅ | `workloads/backend.yaml` `APP_ENV=production`; `main.py` OpenAPI off; `verify-k8s-pilot-sb-step5.sh` | **Шаг 5 PASS** 2026-06-08 |
 | R-C1 | Секреты вне git | ⚠️ | `config/secrets.example.yaml`; Secret `acom-app-secrets` | placeholders — **Шаг 1** |
-| R-C2 | Runtime secrets 0600 | ❌ | RBAC + runbook | **Шаг 6** |
+| R-C2 | Runtime secrets 0600 | ✅ | `rbac/secrets-rbac.yaml`; `RUNBOOK-PILOT-SECRETS-RBAC.md`; `verify-k8s-pilot-sb-step6.sh` | **Шаг 6 PASS** 2026-06-08 |
 | R-C3 | Нет guest/guest в rendered config | ❌ | CI скрипт отсутствует | **Шаг 7** |
 | R-C4 | Bootstrap без plaintext в репо | ⚠️ | `jobs/keycloak-bootstrap.job.yaml` | env из Secret |
 | R-D1 | TLS на СУБД включён | ✅ | `SHOW ssl=on`; Secret `postgres-tls` + SAN | **Шаг 4 PASS** 2026-06-08 |

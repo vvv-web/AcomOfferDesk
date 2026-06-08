@@ -10,7 +10,7 @@
 | **AOD_DEPLOY_SHA** | `8ea43577e06e5fd8072d1e1438b9f102e0b3b8b9` |
 | **Ветка** | `k8s-pilot-popos` (fork-only; база = `test` @ `d7f2af1`, parity `upstream/test`) |
 | **VPS prod** | не трогали |
-| **SB-пилот (§8.2)** | **Шаг 0–4 PASS** (2026-06-08); шаг 4 — Postgres TLS verify-full + rabbitmq non-root; фокус **шаг 5** |
+| **SB-пилот (§8.2)** | **Шаг 0–6 PASS** (2026-06-08); шаг 6 — secrets RBAC + placeholder guard; фокус **шаг 7** |
 | **Flux @** | step 4 commit — `pilot-apps`/`pilot-infra` Ready; jobs-bootstrap/post зависят от migrate chain |
 
 ## Git policy: fork-only, branch k8s-pilot-popos, upstream read-only
@@ -197,9 +197,23 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Вердикт SB шаг 5:** **PASS** — R-B4; `verify-k8s-pilot-sb-step5.sh` **10/10**; Flux @ `68b61cb`; evidence `SB-STEP5-EVIDENCE.md`.
 
+## SB Шаг 6 (2026-06-08) — R-C2 secrets RBAC
+
+| Тест | Результат | Evidence |
+|------|-----------|----------|
+| S6-T1 RBAC in kustomize | **PASS** | `rbac/secrets-rbac.yaml` |
+| S6-T3 runtime SA on workloads | **PASS** | `serviceAccountName` backend/web/worker/data |
+| S6-T7 runtime no get secrets | **PASS** | `kubectl auth can-i` |
+| S6-T8 operator get named secret | **PASS** | resourceNames Role |
+| S6-T11 secret managed-by label | **PASS** | `apply-pilot-secrets.sh` |
+
+**Сделано:** runbook `RUNBOOK-PILOT-SECRETS-RBAC.md`; placeholder guard в apply-скрипте; `verify-k8s-pilot-sb-step6.sh`.
+
+**Вердикт SB шаг 6:** **PASS** — R-C2; `verify-k8s-pilot-sb-step6.sh` **11/11**; evidence `SB-STEP6-EVIDENCE.md`.
+
 ## Следующие действия
 
-1. **SB Шаг 6:** секреты и RBAC (R-C2) — runbook + RBAC без лишнего `get secrets`.
+1. **SB Шаг 7:** CI инварианты (R-C3) — `check_k8s_pilot_security.py` (**не начинать без approve**).
 2. **`/etc/hosts`:** `127.0.0.1 pilot.acom-offer-desk.ru` для браузера.
 3. ~~**Flux chain**~~ **DONE** (2026-06-08) — см. `FLUX-FIX-EVIDENCE.md`.
 2. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).

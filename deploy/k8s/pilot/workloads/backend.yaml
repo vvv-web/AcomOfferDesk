@@ -16,6 +16,7 @@ spec:
       annotations:
         acom.deploy/sha: "7aba20a5a9fda02112952dfac841c168d1298178"
     spec:
+      serviceAccountName: acom-pilot-runtime
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

@@ -14,6 +14,7 @@ spec:
         app: minio
         acom.security/tier: data
     spec:
+      serviceAccountName: acom-pilot-data
       securityContext:
         runAsUser: 65532
         runAsGroup: 65532

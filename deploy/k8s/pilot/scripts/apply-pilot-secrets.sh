@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Создаёт Secret/ConfigMap пилота. Значения — learn-only placeholders (не prod).
-# При наличии backend/.env (chmod 600) — можно расширить: --from-env-file=...
+# Создаёт Secret/ConfigMap пилота. Операторский скрипт (R-C2) — см. RUNBOOK-PILOT-SECRETS-RBAC.md
 set -euo pipefail
 
 NS="${NAMESPACE:-acom-offer-desk-pilot}"
 REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 
-# Learn defaults — пользователь должен заменить перед SB-пилотом
+learn_placeholder_detected() {
+  local val="$1"
+  local lower
+  lower="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')"
+  [[ "$lower" == *change_me* || "$lower" == *placeholder* || "$lower" == *example.com* ]]
+}
+
+# Learn defaults — заменить перед SB; без PILOT_ALLOW_LEARN_PLACEHOLDERS=1 скрипт откажется
 PG_USER="${PILOT_PG_USER:-acom_pilot}"
 PG_PASS="${PILOT_PG_PASSWORD:-pilot_pg_change_me}"
 PG_DB="${PILOT_PG_DB:-order_database}"
@@ -20,11 +26,28 @@ MINIO_PASS="${PILOT_MINIO_PASS:-pilot_minio_change_me}"
 
 FQDN="${PILOT_FQDN:-pilot.acom-offer-desk.ru}"
 SCHEME="${PILOT_URL_SCHEME:-https}"
-# SB step 4 (R-D2): verify-full + CA mount at /etc/ssl/postgres/ca.crt
 PG_SSL_QS="sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
 DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${PG_DB}?${PG_SSL_QS}"
 FLYWAY_JDBC="jdbc:postgresql://postgres:5432/${PG_DB}?sslmode=verify-full&sslrootcert=/etc/ssl/postgres/ca.crt"
 CELERY_BROKER="amqp://${RMQ_USER}:${RMQ_PASS}@rabbitmq.${NS}.svc.cluster.local:5672/"
+
+critical_values=(
+  "$PG_PASS" "$KC_BOOT" "$APP_BOOT" "$JWT_SEC" "$RMQ_PASS" "$MINIO_PASS"
+  "${PILOT_KC_ADMIN_CLIENT_SECRET:-pilot_kc_admin_client_secret_change_me}"
+)
+
+using_learn=0
+for v in "${critical_values[@]}"; do
+  if learn_placeholder_detected "$v"; then
+    using_learn=1
+    break
+  fi
+done
+
+if [[ "$using_learn" -eq 1 && "${PILOT_ALLOW_LEARN_PLACEHOLDERS:-0}" != "1" ]]; then
+  echo "FAIL: learn placeholders detected; set real PILOT_* env or PILOT_ALLOW_LEARN_PLACEHOLDERS=1 (learn-only)" >&2
+  exit 1
+fi
 
 kubectl -n "$NS" create secret generic acom-app-secrets \
   --from-literal=POSTGRES_USER="$PG_USER" \
@@ -74,6 +97,14 @@ kubectl -n "$NS" create secret generic acom-app-secrets \
   --from-literal=KC_DB_SCHEMA=keycloak \
   --dry-run=client -o yaml | kubectl apply -f -
 
+secret_labels=(acom.security/managed-by=acom-pilot-operator)
+if [[ "$using_learn" -eq 1 ]]; then
+  secret_labels+=(acom.security/learn-placeholder=true)
+else
+  kubectl -n "$NS" label secret acom-app-secrets acom.security/learn-placeholder- 2>/dev/null || true
+fi
+kubectl -n "$NS" label secret acom-app-secrets "${secret_labels[@]}" --overwrite
+
 kubectl -n "$NS" apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -97,4 +128,8 @@ data:
   S3_SECURE: "false"
 EOF
 
-echo "OK: acom-app-secrets + acom-backend-env (learn placeholders — см. STATE.md blockers)"
+if [[ "$using_learn" -eq 1 ]]; then
+  echo "OK: acom-app-secrets + acom-backend-env (learn placeholders — label acom.security/learn-placeholder=true)"
+else
+  echo "OK: acom-app-secrets + acom-backend-env (operator-managed, no learn placeholders)"
+fi
