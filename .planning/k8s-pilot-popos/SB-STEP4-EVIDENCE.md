@@ -2,7 +2,7 @@
 
 **Дата:** 2026-06-08  
 **Namespace:** `acom-offer-desk-pilot`  
-**Ветка:** `k8s-pilot-popos`  
+**Ветка:** `k8s-pilot-popos` @ `8b62de6`  
 **VPS prod:** не трогали
 
 ## Что задеплоено
@@ -38,7 +38,7 @@
 | S4-T9 backend /health | **PASS** |
 | S4-T10 asyncpg verify-full from backend | **PASS** |
 
-**SUMMARY:** см. вывод скрипта после `git push` + Flux reconcile + rollout.
+**SUMMARY:** pass=11 fail=0 skip=0 → **PASS** (2026-06-08, Flux @ `8b62de6`)
 
 ## Операции
 
