@@ -3,7 +3,7 @@
 **Канон требований:** [security-board-requirements](https://github.com/vvv-web/security-board-requirements) v1.1  
 **Чеклист статусов:** [`docs/security-sb-checklist.md`](../../../../docs/security-sb-checklist.md)  
 **Дорожная карта:** [`docs/operations/kubernetes-migration-roadmap.md`](../../../../docs/operations/kubernetes-migration-roadmap.md) §4.2, §8.2  
-**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** `005a977` (проверять `flux get kustomizations`)  
+**Namespace:** `acom-offer-desk-pilot` · **Ветка:** `k8s-pilot-popos` · **Flux revision:** `912bcba` (проверять `flux get kustomizations`)  
 **SB Шаг 1:** **PARTIAL** (2026-06-08) — см. [STATE.md](../../../../.planning/k8s-pilot-popos/STATE.md) § «SB Шаг 1»
 
 **Легенда:** ✅ закрыто · ⚠️ частично · ❌ gap · 📋 следующий шаг (см. [SB-STEPS.md](../../../../.planning/k8s-pilot-popos/SB-STEPS.md))
@@ -12,7 +12,7 @@
 |----|------------------------------|--------|-------------------|
 | **R-A1** | `workloads/*.yaml`, `data/postgres-statefulset.yaml`, `flux-phases/*/resources/**` | ⚠️ | В манифестах **ClusterIP**; live: `kubectl get svc` — без NodePort для app. Проверить `ss -tlnp` на node. |
 | **R-A2** | `networking/ingress.yaml`, `scripts/generate-pilot-ingress-tls.sh`, Secret `acom-pilot-tls` | ✅ | `spec.tls` + nginx ssl-redirect; learn self-signed. **Шаг 2 PASS** 2026-06-08 |
-| **R-A3** | `networking/networkpolicy.yaml.example` (нет `networkpolicy.yaml`) | ❌ | Только **.example**; в кластере **0 NetworkPolicy**. Скопировать, labels `acom.security/tier`, применить. **Шаг 3** |
+| **R-A3** | `networking/networkpolicy.yaml` | ✅ | `deny-data-egress` + `data-tier-ingress-from-app`; labels tier app/data. **Шаг 3 PASS** 2026-06-08 |
 | **R-B1** | `workloads/keycloak.yaml`, `flux-phases/infra/resources/workloads/keycloak.yaml` | ⚠️ | `args: ["start", "--import-realm"]` ✅; deploy **1/1 Running** (2026-06-08, T5 PASS). Job `keycloak-bootstrap` — **PARTIAL** (**Шаг 1** / **Шаг 10**) |
 | **R-B2** | `workloads/{backend,keycloak,minio,web,notifications-worker}.yaml` | ⚠️ | backend/keycloak/minio: `runAsNonRoot` + **65532**; **rabbitmq** без securityContext. **Шаг 4** |
 | **R-B3** | `workloads/*.yaml`, `scripts/build-images.sh` | ⚠️ | `acom-{backend,web,notifications-worker}:8ea43577e06e` **imported** (`k3s ctr images import`, T1/T8 PASS); теги не `@sha256`, registry gap — **Шаг 1 PARTIAL** |
@@ -23,7 +23,7 @@
 | **R-C4** | `jobs/keycloak-bootstrap.job.yaml`, `flux-phases/jobs-bootstrap/...` | ⚠️ | Job из Secret; realm-import без паролей — проверить CM/импорт. |
 | **R-D1** | `data/postgres-statefulset.yaml`, `scripts/generate-postgres-tls.sh`, Secret `postgres-tls` | ⚠️ | `ssl=on` в manifest; live `SHOW ssl` — подтвердить. **Шаг 4** |
 | **R-D2** | `config/secrets.example.yaml` (`DATABASE_URL` sslmode) | ❌ | `verify-full` + CA в Secret — проверить rendered URL в `acom-app-secrets`. **Шаг 4** |
-| **R-D3** | `data/postgres-statefulset.yaml` + **R-A3** NetworkPolicy | ❌ | Postgres in-cluster ✅; изоляция data-tier без NP — ❌. **Шаг 3** |
+| **R-D3** | `data/postgres-statefulset.yaml` + **R-A3** NetworkPolicy | ✅ | data-tier NP live; ingress app-only. **Шаг 3 PASS** 2026-06-08 |
 | **R-E1** | `config/secrets.example.yaml`, `workloads/rabbitmq.yaml` | ⚠️ | Учётки из Secret; guest не проверен скриптом. |
 | **R-E2** | `workloads/rabbitmq.yaml`, `config/rabbitmq-configmap.yaml` | ❌ | **Plain AMQP 5672** в Service и containerPort; нет `listeners.tcp=none` / TLS. **Шаг 8** |
 | **R-E3** | backend/worker env `CELERY_BROKER_URL` | ❌ | Нет `amqps://` + verify в пилоте. **Шаг 8** |

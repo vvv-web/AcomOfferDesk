@@ -149,9 +149,25 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **Вердикт SB шаг 2:** **PASS** — R-A2/R-G1 live (S2-T1..T6); `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**; Flux chain @ `26b64d1` Ready.
 
+## SB Шаг 3 — тест 2026-06-08 (NetworkPolicy)
+
+| Тест | Результат | Evidence |
+|------|-----------|----------|
+| S3-T1 kustomize NP | **PASS** | `networking/networkpolicy.yaml` in `kustomization.yaml` |
+| S3-T2 live NP count | **PASS** | `kubectl get networkpolicy` → 2 |
+| S3-T3 deny-data-egress | **PASS** | `policyTypes: [Egress]` |
+| S3-T4 data tier labels | **PASS** | postgres, rabbitmq, minio `acom.security/tier=data` |
+| S3-T5 app tier labels | **PASS** | backend, web, worker, keycloak `tier=app` |
+| S3-T6 egress deny | **PASS** | minio pod cannot reach 1.1.1.1 |
+| S3-T7 app→data health | **PASS** | backend `/health` 200 after NP |
+
+**Сделано:** `networkpolicy.yaml` (deny-data-egress + data-tier-ingress-from-app); tier labels on workloads; Flux `pilot-apps` @ `912bcba`; `verify-k8s-pilot-sb-step3.sh` **14/14 PASS**.
+
+**Вердикт SB шаг 3:** **PASS** — R-A3/R-D3; evidence `SB-STEP3-EVIDENCE.md`.
+
 ## Следующие действия
 
-1. **SB Шаг 3:** NetworkPolicy (R-A3, R-D3) — не начинать без явного approve.
+1. **SB Шаг 4:** Postgres TLS + non-root rabbitmq (R-D1, R-D2, R-B2).
 2. **`/etc/hosts`:** `127.0.0.1 pilot.acom-offer-desk.ru` для браузера.
 3. ~~**Flux chain**~~ **DONE** (2026-06-08) — см. `FLUX-FIX-EVIDENCE.md`.
 2. **OpenLens:** запустить AppImage → Add Cluster из `~/.kube/config` → namespace **`acom-offer-desk-pilot`** (см. `deploy/k8s/pilot/docs/OPENLENS.md`).

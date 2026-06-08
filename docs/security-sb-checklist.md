@@ -7,7 +7,7 @@
 
 **Среда проверки:** pop-os k3s (learn)  
 **Дата:** 2026-06-08  
-**Commit / Flux:** `k8s-pilot-popos` @ `005a977`  
+**Commit / Flux:** `k8s-pilot-popos` @ `912bcba`  
 **Контур:** ☐ VPS `test` · ☑ K8s pilot `acom-offer-desk-pilot`
 
 **Дорожная карта K8s:** [kubernetes-migration-roadmap.md](./operations/kubernetes-migration-roadmap.md) (v0.5)  
@@ -24,7 +24,7 @@
 |----|---------------------|-----------|------------------------|------------|
 | R-A1 | Внутренние сервисы не на 0.0.0.0 хоста; снаружи 443/80 | ⚠️ | `workloads/*.yaml` — ClusterIP; `kubectl get svc -n acom-offer-desk-pilot` | Ingress на node; app без NodePort |
 | R-A2 | TLS на edge; strict hostname IdP | ✅ | `networking/ingress.yaml` `spec.tls` + `acom-pilot-tls`; HTTPS `/health` → 200 | **Шаг 2 PASS** 2026-06-08 |
-| R-A3 | Сегментация сетей (edge/app/data) | ❌ | `networking/networkpolicy.yaml.example` не применён | **Шаг 3** |
+| R-A3 | Сегментация сетей (edge/app/data) | ✅ | `networking/networkpolicy.yaml` + labels `acom.security/tier` | **Шаг 3 PASS** 2026-06-08 |
 | R-B1 | Keycloak `start`, не `start-dev` | ⚠️ | `workloads/keycloak.yaml` args `start` | deploy **1/1 Running** 2026-06-08; bootstrap job — **Шаг 1** / **Шаг 10** |
 | R-B2 | Контейнеры non-root | ⚠️ | backend/keycloak/minio 65532; rabbitmq без SC | **Шаг 4** |
 | R-B3 | Образы `@sha256`, без `:latest` | ⚠️ | import `acom-*:8ea43577e06e` в k3s (`ctr images import`); `@sha256`/registry — gap | **Шаг 1 PARTIAL** |
@@ -35,7 +35,7 @@
 | R-C4 | Bootstrap без plaintext в репо | ⚠️ | `jobs/keycloak-bootstrap.job.yaml` | env из Secret |
 | R-D1 | TLS на СУБД включён | ⚠️ | `data/postgres-statefulset.yaml` ssl=on; Secret `postgres-tls` | подтвердить `SHOW ssl` |
 | R-D2 | Клиенты БД verify-full / CA | ❌ | `DATABASE_URL` в secrets | **Шаг 4** |
-| R-D3 | Изоляция данных (data tier) | ❌ | StatefulSet есть; NP нет | **Шаг 3** |
+| R-D3 | Изоляция данных (data tier) | ✅ | Postgres in-cluster + NP ingress/egress; data egress deny | **Шаг 3 PASS** 2026-06-08 |
 | R-E1 | Свои учётки RabbitMQ | ⚠️ | Secret `RABBITMQ_*` | |
 | R-E2 | Только TLS к брокеру (AMQPS) | ❌ | `workloads/rabbitmq.yaml` port **5672** plaintext | **Шаг 8** |
 | R-E3 | TLS verify не отключён | ❌ | нет amqps в пилоте | **Шаг 8** |

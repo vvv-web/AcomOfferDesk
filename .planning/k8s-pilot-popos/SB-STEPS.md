@@ -8,8 +8,8 @@
 |-----|------------|----------------|---------------|
 | **0** | Зафиксировать baseline | `docs/security-sb-checklist.md`, `SECURITY-SB-R-MAPPING.md`, Graph RAG | Документы в ветке `k8s-pilot-popos` |
 | **1** | Функциональный каркас | R-B3, R-C1, R-H2, R-H5 | Образы в k3s (`ctr images import` или registry+digest); backend/web Running; Flux `pilot-apps` Ready |
-| **2** | Edge TLS + hostname | R-A2, R-G1 | Ingress `spec.tls`; Keycloak login redirect на FQDN |
-| **3** | NetworkPolicy | R-A3, R-D3 | `kubectl get networkpolicy` ≥1; data-tier deny egress |
+| **2** | Edge TLS + hostname | R-A2, R-G1 | Ingress `spec.tls`; Keycloak login redirect на FQDN — **PASS** 2026-06-08 (`verify-k8s-pilot-sb-step2.sh` 7/7)¹ |
+| **3** | NetworkPolicy | R-A3, R-D3 | `kubectl get networkpolicy` ≥1; data-tier deny egress — **PASS** 2026-06-08 (`verify-k8s-pilot-sb-step3.sh` 14/14) |
 | **4** | Postgres TLS + non-root везде | R-D1, R-D2, R-B2 | `SHOW ssl=on`; `DATABASE_URL` verify-full; rabbitmq securityContext |
 | **5** | Prod profile app | R-B4 | readiness `/health`; `/docs` недоступен снаружи |
 | **6** | Секреты и RBAC | R-C2 | Runbook: кто создаёт Secret; RBAC без лишнего `get secrets` |
@@ -22,6 +22,10 @@
 
 После каждого шага: обновить колонку «Пилот K8s» в `docs/security-sb-checklist.md`, строку в `SECURITY-SB-R-MAPPING.md`, checkpoint в `STATE.md`.
 
-**Текущий фокус:** **Шаг 3** — NetworkPolicy (R-A3, R-D3); шаг 2 **PASS** (2026-06-08).
+**Текущий фокус:** **Шаг 4** — Postgres TLS + non-root (R-D1, R-D2, R-B2).
 
-**Шаг 2 (2026-06-08):** Ingress `spec.tls` + FQDN `pilot.acom-offer-desk.ru`; `verify-k8s-pilot-sb-step2.sh` **7/7 PASS**; Flux git revision ещё `005a977` — TLS применён вручную, после `git push origin k8s-pilot-popos` reconcile `pilot-apps`.
+**Шаг 3 (2026-06-08):** **PASS** — R-A3/R-D3 live; `networking/networkpolicy.yaml` + tier labels; Flux `pilot-apps` @ `912bcba`; `verify-k8s-pilot-sb-step3.sh` **14/14 PASS** — см. `SB-STEP3-EVIDENCE.md`.
+
+**Шаг 2 (2026-06-08):** **PASS** — R-A2/R-G1 live; Ingress `spec.tls` + FQDN `pilot.acom-offer-desk.ru`; `verify-k8s-pilot-sb-step2.sh` **7/7 PASS** (agents 2081552b, f8ca2d16).
+
+**¹ Footnote (шаг 2):** Flux `pilot-apps` still on git `005a977` until `git push origin k8s-pilot-popos` + `flux reconcile kustomization pilot-infra -n flux-system --with-source` — TLS/hostname applied live in cluster; GitOps parity pending, does not block SB step 2 PASS.
