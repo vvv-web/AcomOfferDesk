@@ -22,7 +22,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: backend
-          image: acom-backend:7aba20a5a9fd
+          image: acom-backend:e214e03fdc74
           imagePullPolicy: Never
           ports:
             - containerPort: 8000
@@ -49,14 +49,46 @@ spec:
               value: verify-full
             - name: PGSSLROOTCERT
               value: /etc/ssl/postgres/ca.crt
+            - name: RABBITMQ_SSL_CAFILE
+              value: /etc/ssl/rabbitmq/ca.crt
+            - name: RABBITMQ_SSL_CERTFILE
+              value: /etc/ssl/rabbitmq/client.crt
+            - name: RABBITMQ_SSL_KEYFILE
+              value: /etc/ssl/rabbitmq/client.key
+            - name: S3_CA_CERT_PATH
+              value: /etc/ssl/minio/ca.crt
           volumeMounts:
             - name: postgres-tls
               mountPath: /etc/ssl/postgres
               readOnly: true
+            - name: rabbitmq-tls
+              mountPath: /etc/ssl/rabbitmq
+              readOnly: true
+            - name: minio-tls
+              mountPath: /etc/ssl/minio
+              readOnly: true
+
       volumes:
         - name: postgres-tls
           secret:
             secretName: postgres-tls
+        - name: rabbitmq-tls
+          secret:
+            secretName: rabbitmq-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: client.crt
+                path: client.crt
+              - key: client.key
+                path: client.key
+        - name: minio-tls
+          secret:
+            secretName: minio-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+
 ---
 apiVersion: v1
 kind: Service

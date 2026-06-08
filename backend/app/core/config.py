@@ -193,6 +193,7 @@ class Settings(BaseSettings):
     s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
     s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
     s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
+    s3_ca_cert_path: str | None = Field(default=None, validation_alias="S3_CA_CERT_PATH")
     s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
     max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")

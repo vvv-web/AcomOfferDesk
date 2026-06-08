@@ -5,6 +5,7 @@ from datetime import timedelta
 from urllib.parse import urlsplit, urlunsplit
 
 import anyio
+import urllib3
 from minio import Minio
 from minio.error import S3Error
 
@@ -13,11 +14,18 @@ from app.core.config import settings
 
 class MinioStorage:
     def __init__(self) -> None:
+        http_client = None
+        if settings.s3_secure and settings.s3_ca_cert_path:
+            http_client = urllib3.PoolManager(
+                cert_reqs="CERT_REQUIRED",
+                ca_certs=settings.s3_ca_cert_path,
+            )
         self._client = Minio(
             endpoint=settings.s3_endpoint,
             access_key=settings.s3_access_key,
             secret_key=settings.s3_secret_key,
             secure=settings.s3_secure,
+            http_client=http_client,
         )
 
     async def ensure_bucket_exists(self, *, bucket: str) -> None:
