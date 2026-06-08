@@ -30,7 +30,7 @@
 | # | Шаг | Статус | Evidence (кратко) |
 |---|-----|--------|-------------------|
 | 0 | Preflight | **PASS** | `pre-apply-check.sh` exit 0; k3s Ready |
-| 1 | Namespace + Flux pilot-* | **PASS** | `kubectl get ns acom-offer-desk-pilot`; `flux get kustomizations` — pilot-base/infra/apps/jobs-* Ready @ `26b64d1f`; Job `post-deploy-verify` Complete |
+| 1 | Namespace + Flux pilot-* | **PASS** | `kubectl get ns acom-offer-desk-pilot`; `flux get kustomizations` — pilot-base/infra/apps/jobs-* Ready @ `4213530`; Job `post-deploy-verify` Complete |
 | 2 | Metrics + dry-run | **PASS** | `kubectl apply -k deploy/k8s/pilot --dry-run=client` OK; `kubectl top nodes` OK после фикса **node-ip** (см. `deploy/k8s/pilot/docs/K3S_HOST_NETWORKING.md`) |
 | 3 | SB checklist | **PASS (verify)** | `docs/security-sb-checklist.md` exists |
 | 4 | A0 prep | **PASS** | `deploy/k8s/pilot/scripts/build-images.sh` |
@@ -130,7 +130,7 @@ curl -sf "http://${WEB_IP}:80/" -o /dev/null -w '%{http_code}\n'
 
 **T7 (2026-06-08):** Flux controllers без hostNetwork (throw route достаточен); reconcile git → infra → migrate → bootstrap → post → apps — все Ready.
 
-**Вердикт SB шаг 1:** **PASS** (2026-06-08) — все pilot-* Kustomization Ready=True @ `26b64d1f`; k3s `node-ip` выровнен на `10.16.67.241`; NRestarts=0.
+**Вердикт SB шаг 1:** **PASS** (2026-06-08) — все pilot-* Kustomization Ready=True @ `4213530`; k3s `node-ip` выровнен на `10.16.67.241`; NRestarts=0.
 
 ## SB Шаг 2 — тест 2026-06-08 (Edge TLS + hostname)
 

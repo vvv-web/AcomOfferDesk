@@ -64,6 +64,6 @@ flux reconcile kustomization pilot-jobs-post -n flux-system --with-source --time
 ### 11.4 pilot-* status (after fix)
 
 ```
-pilot-base,pilot-infra,pilot-apps,pilot-jobs-migrate,pilot-jobs-bootstrap,pilot-jobs-post -> Ready @ k8s-pilot-popos@sha1:26b64d1f (post-push)
+pilot-base,pilot-infra,pilot-apps,pilot-jobs-migrate,pilot-jobs-bootstrap,pilot-jobs-post -> Ready @ k8s-pilot-popos@sha1:4213530
 ```
 
