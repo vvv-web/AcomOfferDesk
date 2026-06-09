@@ -21,7 +21,8 @@ spec:
               export PGPASSWORD="$POSTGRES_PASSWORD"
               export PGSSLMODE=verify-full
               export PGSSLROOTCERT=/etc/ssl/postgres/ca.crt
-              psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/01-schema.sql
+              psql -v ON_ERROR_STOP=1 -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/01-schema.sql
+              psql -v ON_ERROR_STOP=1 -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/03-bootstrap-admin.sql
           env:
             - name: PGHOST
               valueFrom:
