@@ -6,6 +6,9 @@ metadata:
 spec:
   backoffLimit: 1
   template:
+    metadata:
+      labels:
+        acom.security/tier: app
     spec:
       restartPolicy: Never
       containers:
@@ -16,7 +19,9 @@ spec:
             - -ec
             - |
               export PGPASSWORD="$POSTGRES_PASSWORD"
-              psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" "sslmode=require" -f /schema/01-schema.sql
+              export PGSSLMODE=verify-full
+              export PGSSLROOTCERT=/etc/ssl/postgres/ca.crt
+              psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/01-schema.sql
           env:
             - name: PGHOST
               valueFrom:
@@ -42,7 +47,13 @@ spec:
             - name: schema
               mountPath: /schema
               readOnly: true
+            - name: pg-ca
+              mountPath: /etc/ssl/postgres
+              readOnly: true
       volumes:
         - name: schema
           configMap:
             name: order-database-schema
+        - name: pg-ca
+          secret:
+            secretName: postgres-tls

@@ -22,7 +22,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: backend
-          image: acom-backend:e214e03fdc74
+          image: acom-backend:020a8d471c46
           imagePullPolicy: Never
           ports:
             - containerPort: 8000

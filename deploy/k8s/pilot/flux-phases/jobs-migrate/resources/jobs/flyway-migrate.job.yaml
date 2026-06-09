@@ -12,6 +12,7 @@ spec:
     metadata:
       labels:
         acom.deploy/component: flyway
+        acom.security/tier: app
     spec:
       restartPolicy: Never
       containers:
