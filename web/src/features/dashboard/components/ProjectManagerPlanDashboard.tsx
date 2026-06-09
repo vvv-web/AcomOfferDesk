@@ -18,7 +18,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useLiveValidatedForm } from "@shared/lib/forms";
 import { usePlanDashboard } from "../model/usePlanDashboard";
 import { PlanDialogs } from "./plan/PlanDialogs";
 import { PlanHierarchySection } from "./plan/PlanHierarchySection";
@@ -137,8 +137,26 @@ const isSingleMonthRange = (dateFrom: string, dateTo: string) => {
 };
 
 const collectLeadOptions = (nodes: PlanTreeNode[]): PlanLeadOption[] => {
+  const isProjectManagerRole = (role: string) => {
+    const normalized = role.trim().toLowerCase();
+    return normalized.includes("руководитель проекта") || normalized.includes("project manager");
+  };
+  const isLeadEconomistRole = (role: string) => {
+    const normalized = role.trim().toLowerCase();
+    return normalized.includes("ведущий экономист") || normalized.includes("lead_economist");
+  };
+  const walk = (node: PlanTreeNode, collector: PlanTreeNode[]) => {
+    collector.push(node);
+    node.children.forEach((child) => walk(child, collector));
+  };
+  const allNodes: PlanTreeNode[] = [];
+  nodes.forEach((node) => walk(node, allNodes));
+
   const optionsByUserId = new Map<string, PlanLeadOption>();
-  nodes.forEach((node) => {
+  allNodes.forEach((node) => {
+    if (isProjectManagerRole(node.user_role) || !isLeadEconomistRole(node.user_role)) {
+      return;
+    }
     if (!optionsByUserId.has(node.user_id)) {
       optionsByUserId.set(node.user_id, {
         userId: node.user_id,
@@ -178,8 +196,6 @@ export const ProjectManagerPlanDashboard = () => {
     canCreateRootPlan,
     rootPlanExists,
     errorMessage,
-    successMessage,
-    setSuccessMessage,
     createRoot,
     createSubplanNodeWithStart,
     delegate,
@@ -210,8 +226,9 @@ export const ProjectManagerPlanDashboard = () => {
     Record<number, boolean>
   >({});
   const [selectedPlanRequestStats, setSelectedPlanRequestStats] = useState<PlanRequestStats | null>(null);
+  const [scopedRequestStats, setScopedRequestStats] = useState<PlanRequestStats | null>(null);
 
-  const rootPlanForm = useForm<RootPlanFormValues>({
+  const rootPlanForm = useLiveValidatedForm<RootPlanFormValues>({
     resolver: zodResolver(rootPlanSchema),
     defaultValues: {
       name: "",
@@ -220,7 +237,7 @@ export const ProjectManagerPlanDashboard = () => {
       planAmount: "",
     },
   });
-  const subplanForm = useForm<SubplanFormValues>({
+  const subplanForm = useLiveValidatedForm<SubplanFormValues>({
     resolver: zodResolver(subplanSchema),
     defaultValues: {
       name: "",
@@ -230,7 +247,7 @@ export const ProjectManagerPlanDashboard = () => {
       amount: "",
     },
   });
-  const delegateForm = useForm<DelegateFormValues>({
+  const delegateForm = useLiveValidatedForm<DelegateFormValues>({
     resolver: zodResolver(delegateSchema),
     defaultValues: {
       childUserId: "",
@@ -238,7 +255,7 @@ export const ProjectManagerPlanDashboard = () => {
       childPlanAmount: "",
     },
   });
-  const editForm = useForm<EditFormValues>({
+  const editForm = useLiveValidatedForm<EditFormValues>({
     resolver: zodResolver(editSchema),
     defaultValues: { name: "", periodEnd: "", planAmount: "" },
   });
@@ -403,6 +420,35 @@ export const ProjectManagerPlanDashboard = () => {
   }, [dateFrom, dateTo, selectedPlanTree]);
 
   useEffect(() => {
+    if (selectedPlanTree) {
+      setScopedRequestStats(null);
+      return;
+    }
+    let isMounted = true;
+    getPlanRequestStats({
+      dateFrom,
+      dateTo,
+      rootUserId:
+        selectedLeadUserId === ALL_LEAD_MANAGERS_SCOPE
+          ? null
+          : selectedLeadUserId,
+    })
+      .then((stats) => {
+        if (isMounted) {
+          setScopedRequestStats(stats);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setScopedRequestStats(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [dateFrom, dateTo, selectedLeadUserId, selectedPlanTree]);
+
+  useEffect(() => {
     setExpandedNodeIds((prev) => {
       const next = { ...prev };
       expandableNodeIds.forEach((planId) => {
@@ -506,7 +552,7 @@ export const ProjectManagerPlanDashboard = () => {
       }
       return buildRequestFactMetrics(
         scopedSummary,
-        dashboardRequestStats,
+        scopedRequestStats ?? dashboardRequestStats,
         dashboardSummary?.total_period_fact_amount ?? null,
         dashboardSummary?.total_period_progress_percent ?? null,
       );
@@ -515,6 +561,7 @@ export const ProjectManagerPlanDashboard = () => {
       dashboardSummary?.total_period_fact_amount,
       dashboardSummary?.total_period_progress_percent,
       dashboardRequestStats,
+      scopedRequestStats,
       scopedSummary,
       selectedPlanRequestStats,
       selectedPlanTree,
@@ -628,11 +675,6 @@ export const ProjectManagerPlanDashboard = () => {
         onAddPlan={() => setIsRootDialogOpen(true)}
       />
       {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-      {successMessage ? (
-        <Alert severity="success" onClose={() => setSuccessMessage(null)}>
-          {successMessage}
-        </Alert>
-      ) : null}
       <PlanKpiRow
         totalPlanAmount={scopedSummary.total_plan_amount}
         totalFactAmount={scopedSummary.total_fact_amount}

@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import Select, bindparam, delete, func, select, text
+from sqlalchemy import Select, and_, bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.datetime_utils import to_db_timestamp, utc_now_naive
 from app.models.orm_models import (
     Chat,
+    ChatParticipant,
     CompanyContact,
     File,
     Message,
@@ -24,6 +25,7 @@ from app.models.orm_models import (
     RequestOfferStats,
     User,
 )
+from app.models.auth_models import UserAuthAccount
 
 @dataclass(frozen=True)
 class PlanRequestStatsRow:
@@ -44,24 +46,33 @@ class RequestRepository:
     async def create(
         self,
         *,
+        request_id: str | None = None,
         id_user: str,
         deadline_at: datetime,
         description: str | None,
         initial_amount: float | None = None,
         id_plan: int | None = None,
     ) -> Request:
-        request = Request(
-            id_user=id_user,
-            deadline_at=to_db_timestamp(deadline_at),
-            description=description,
-            initial_amount=initial_amount,
-            id_plan=id_plan,
-        )
+        request_kwargs: dict[str, object] = {
+            "id_user": id_user,
+            "deadline_at": to_db_timestamp(deadline_at),
+            "description": description,
+            "initial_amount": initial_amount,
+            "id_plan": id_plan,
+        }
+        if request_id is not None:
+            request_kwargs["id"] = request_id
+        request = Request(**request_kwargs)
         self._session.add(request)
         await self._session.flush()
         return request
 
-    async def get_by_id(self, *, request_id: int) -> Request | None:
+    async def exists_by_id(self, *, request_id: str) -> bool:
+        stmt = select(Request.id).where(Request.id == request_id).limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def get_by_id(self, *, request_id: str) -> Request | None:
         stmt = select(Request).where(Request.id == request_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -76,7 +87,7 @@ class RequestRepository:
         result = await self._session.execute(stmt, {"plan_id": plan_id})
         return result.scalar_one_or_none()
     
-    async def list_files_by_request_id(self, *, request_id: int) -> list[File]:
+    async def list_files_by_request_id(self, *, request_id: str) -> list[File]:
         stmt = (
             select(File)
             .options(joinedload(File.storage_object))
@@ -87,7 +98,7 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
     
-    async def get_latest_accepted_offer_id(self, *, request_id: int) -> int | None:
+    async def get_latest_accepted_offer_id(self, *, request_id: str) -> int | None:
         stmt = (
             select(Offer.id)
             .where(Offer.id_request == request_id, Offer.status == "accepted")
@@ -124,10 +135,10 @@ class RequestRepository:
     async def update_plan(self, *, request: Request, plan_id: int | None) -> None:
         request.id_plan = plan_id
 
-    async def attach_file(self, *, request_id: int, file_id: int) -> None:
+    async def attach_file(self, *, request_id: str, file_id: int) -> None:
         self._session.add(RequestFile(id=file_id, id_request=request_id))
 
-    async def hide_from_contractors(self, *, request_id: int, contractor_user_ids: list[str]) -> None:
+    async def hide_from_contractors(self, *, request_id: str, contractor_user_ids: list[str]) -> None:
         if not contractor_user_ids:
             return
         self._session.add_all(
@@ -140,17 +151,17 @@ class RequestRepository:
             ]
         )
 
-    async def detach_file(self, *, request_id: int, file_id: int) -> bool:
+    async def detach_file(self, *, request_id: str, file_id: int) -> bool:
         stmt = delete(RequestFile).where(RequestFile.id_request == request_id, RequestFile.id == file_id)
         result = await self._session.execute(stmt)
         return bool(result.rowcount)
     
-    async def get_open_by_id(self, *, request_id: int) -> Request | None:
+    async def get_open_by_id(self, *, request_id: str) -> Request | None:
         stmt = select(Request).where(Request.id == request_id, Request.status == "open")
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_visible_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str) -> Request | None:
+    async def get_visible_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str) -> Request | None:
         stmt = (
             select(Request)
             .outerjoin(
@@ -163,7 +174,7 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_visible_open_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str) -> Request | None:
+    async def get_visible_open_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str) -> Request | None:
         stmt = (
             select(Request)
             .outerjoin(
@@ -180,7 +191,7 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_hidden_contractor_ids(self, *, request_id: int) -> list[str]:
+    async def get_hidden_contractor_ids(self, *, request_id: str) -> list[str]:
         stmt = (
             select(RequestHiddenContractor.contractor_user_id)
             .where(RequestHiddenContractor.request_id == request_id)
@@ -189,7 +200,7 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
         stmt = (
             select(RequestHiddenContractor.request_id)
             .where(
@@ -235,6 +246,16 @@ class RequestRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def get_request_owner_id_by_request_file_id(self, *, file_id: int) -> str | None:
+        stmt = (
+            select(Request.id_user)
+            .join(RequestFile, RequestFile.id_request == Request.id)
+            .where(RequestFile.id == file_id)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_open(self) -> list[Request]:
         stmt = select(Request).where(Request.status == "open").order_by(Request.created_at.desc(), Request.id.desc())
         result = await self._session.execute(stmt)
@@ -253,6 +274,37 @@ class RequestRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_active_keycloak_visible_contractor_user_ids(
+        self,
+        *,
+        request_id: str,
+        contractor_role_id: int,
+    ) -> list[str]:
+        stmt = (
+            select(User.id)
+            .join(
+                UserAuthAccount,
+                and_(
+                    UserAuthAccount.id_user == User.id,
+                    UserAuthAccount.provider == "keycloak",
+                    UserAuthAccount.is_active.is_(True),
+                ),
+            )
+            .outerjoin(
+                RequestHiddenContractor,
+                and_(
+                    RequestHiddenContractor.request_id == request_id,
+                    RequestHiddenContractor.contractor_user_id == User.id,
+                ),
+            )
+            .where(User.id_role == contractor_role_id)
+            .where(User.status == "active")
+            .where(RequestHiddenContractor.request_id.is_(None))
+            .order_by(User.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
     
     async def list_with_stats_and_files(
         self,
@@ -265,6 +317,12 @@ class RequestRepository:
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
             .join(Offer, Offer.id == Chat.id)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == current_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)
@@ -318,6 +376,12 @@ class RequestRepository:
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == contractor_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)
@@ -582,7 +646,11 @@ class RequestRepository:
         self,
         *,
         owner_ids: list[str],
-        plan_ids: list[int],
+        total_plan_ids: list[int],
+        distributed_plan_ids: list[int] | None,
+        total_scope_to_plan_ids: bool = False,
+        total_owner_ids: list[str] | None = None,
+        distributed_owner_ids: list[str] | None = None,
         period_start: date,
         period_end: date,
     ) -> PlanRequestStatsRow:
@@ -597,50 +665,47 @@ class RequestRepository:
 
         start_dt = datetime.combine(period_start, time.min)
         end_dt = datetime.combine(period_end + timedelta(days=1), time.min)
-        if not plan_ids:
-            plan_ids = [-1]
+        if not total_plan_ids:
+            total_plan_ids = [-1]
+        if not distributed_plan_ids:
+            distributed_plan_ids = [-1]
 
-        stmt = (
-            text(
-                """
-                SELECT
-                  COUNT(*) AS total_requests,
-                  COUNT(*) FILTER (WHERE r.id_plan IN :plan_ids) AS distributed_requests,
-                  COUNT(*) FILTER (WHERE r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids) AS unallocated_requests,
-                  COALESCE(SUM(
-                    CASE WHEN r.id_plan IN :plan_ids
-                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
-                      ELSE 0
-                    END
-                  ), 0) AS request_fact_amount,
-                  COALESCE(SUM(
-                    CASE WHEN r.id_plan IS NULL OR r.id_plan NOT IN :plan_ids
-                      THEN COALESCE(r.initial_amount, 0) - COALESCE(r.final_amount, 0)
-                      ELSE 0
-                    END
-                  ), 0) AS unallocated_amount
-                FROM requests r
-                WHERE r.status = 'closed'
-                  AND r.id_user IN :owner_ids
-                  AND r.closed_at IS NOT NULL
-                  AND r.closed_at >= :start_dt
-                  AND r.closed_at < :end_dt
-                """
-            )
-            .bindparams(
-                bindparam("owner_ids", expanding=True),
-                bindparam("plan_ids", expanding=True),
-            )
+        if total_owner_ids:
+            total_scope_condition = Request.id_user.in_(total_owner_ids)
+        elif total_scope_to_plan_ids:
+            total_scope_condition = Request.id_plan.in_(total_plan_ids)
+        else:
+            total_scope_condition = text("TRUE")
+
+        distributed_source_condition = (
+            Request.id_user.in_(distributed_owner_ids)
+            if distributed_owner_ids
+            else Request.id_plan.in_(distributed_plan_ids)
         )
-        result = await self._session.execute(
-            stmt,
-            {
-                "owner_ids": owner_ids,
-                "plan_ids": plan_ids,
-                "start_dt": start_dt,
-                "end_dt": end_dt,
-            },
+        distributed_condition = and_(total_scope_condition, distributed_source_condition)
+        unallocated_condition = and_(total_scope_condition, ~distributed_source_condition)
+        savings_expr = func.coalesce(Request.initial_amount, 0) - func.coalesce(Request.final_amount, 0)
+
+        stmt = select(
+            func.count().filter(total_scope_condition).label("total_requests"),
+            func.count().filter(distributed_condition).label("distributed_requests"),
+            func.count().filter(unallocated_condition).label("unallocated_requests"),
+            func.coalesce(
+                func.sum(savings_expr).filter(distributed_condition),
+                0,
+            ).label("request_fact_amount"),
+            func.coalesce(
+                func.sum(savings_expr).filter(unallocated_condition),
+                0,
+            ).label("unallocated_amount"),
+        ).where(
+            Request.status == "closed",
+            Request.id_user.in_(owner_ids),
+            Request.closed_at.is_not(None),
+            Request.closed_at >= start_dt,
+            Request.closed_at < end_dt,
         )
+        result = await self._session.execute(stmt)
         row = result.one()
         return PlanRequestStatsRow(
             total_requests=int(row.total_requests or 0),
@@ -654,7 +719,7 @@ class RequestRepository:
         escaped = value.replace('"', '""')
         return f'"{escaped}"'
 
-    async def decrement_deleted_alert(self, *, request_id: int) -> RequestOfferStats | None:
+    async def decrement_deleted_alert(self, *, request_id: str) -> RequestOfferStats | None:
         stmt = select(RequestOfferStats).where(RequestOfferStats.request_id == request_id)
         result = await self._session.execute(stmt)
         stats = result.scalar_one_or_none()
@@ -667,7 +732,7 @@ class RequestRepository:
         await self._session.flush()
         return stats
 
-    async def get_with_stats(self, *, request_id: int) -> tuple[Request, RequestOfferStats | None, Profile | None] | None:
+    async def get_with_stats(self, *, request_id: str) -> tuple[Request, RequestOfferStats | None, Profile | None] | None:
         stmt = (
             select(Request, RequestOfferStats, Profile)
             .outerjoin(RequestOfferStats, RequestOfferStats.request_id == Request.id)
@@ -680,7 +745,7 @@ class RequestRepository:
             return None
         return row
 
-    async def list_files(self, *, request_id: int) -> list[File]:
+    async def list_files(self, *, request_id: str) -> list[File]:
         stmt: Select[tuple[File]] = (
             select(File)
             .options(joinedload(File.storage_object))
@@ -694,13 +759,19 @@ class RequestRepository:
     async def list_offers_with_files_and_contacts(
         self,
         *,
-        request_id: int,
+        request_id: str,
     current_user_id: str,
     ) -> list[tuple[Offer, File | None, Profile | None, CompanyContact | None, int]]:
         unread_messages_count = (
             select(func.count())
             .select_from(Message)
             .join(Chat, Chat.id == Message.id_chat)
+            .join(
+                ChatParticipant,
+                (ChatParticipant.id_chat == Chat.id)
+                & (ChatParticipant.id_user == current_user_id)
+                & (ChatParticipant.left_at.is_(None)),
+            )
             .outerjoin(
                 MessageReceipt,
                 (MessageReceipt.id_message == Message.id)

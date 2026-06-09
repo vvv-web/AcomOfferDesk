@@ -1,11 +1,16 @@
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import { useRequestsPage } from '@features/requests/model/useRequestsPage';
 import { RequestsTable } from '@features/requests/ui/RequestsTable';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 export const RequestsPageView = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
+  const lastErrorRef = useRef<string | null>(null);
+  const lastSuccessToastIdRef = useRef<number | null>(null);
   const {
     canCreateRequest,
     canEditOwner,
@@ -16,16 +21,35 @@ export const RequestsPageView = () => {
     isLoading,
     ownerOptions,
     requests,
+    successToastEvent,
     shouldLoadOpenRequests
   } = useRequestsPage();
 
+  useEffect(() => {
+    if (!errorMessage) {
+      lastErrorRef.current = null;
+      return;
+    }
+    if (lastErrorRef.current === errorMessage) {
+      return;
+    }
+    showErrorToast(errorMessage);
+    lastErrorRef.current = errorMessage;
+  }, [errorMessage, showErrorToast]);
+
+  useEffect(() => {
+    if (!successToastEvent) {
+      return;
+    }
+    if (lastSuccessToastIdRef.current === successToastEvent.id) {
+      return;
+    }
+    showSuccessToast(successToastEvent.message);
+    lastSuccessToastIdRef.current = successToastEvent.id;
+  }, [showSuccessToast, successToastEvent]);
+
   return (
     <Box>
-      {errorMessage ? (
-        <Typography color="error" sx={{ mb: 2 }}>
-          {errorMessage}
-        </Typography>
-      ) : null}
       <RequestsTable
         requests={requests}
         isLoading={isLoading}

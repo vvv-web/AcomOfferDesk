@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import type { ContractorRequestViewFile } from '../requests/getContractorRequestView';
 import { normalizeChatActions, normalizeOfferActions, normalizeRequestActions, type ChatActions, type OfferActions, type RequestActions } from '../mappers';
 
@@ -16,7 +16,7 @@ export type WorkspaceOfferItem = {
 
 export type OfferWorkspace = {
   request: {
-    request_id: number;
+    request_id: string;
     description: string | null;
     status: string;
     status_label: string;
@@ -24,6 +24,8 @@ export type OfferWorkspace = {
     id_offer?: number | null;
     owner_user_id?: string;
     owner_full_name?: string | null;
+    owner_phone?: string | null;
+    owner_mail?: string | null;
     initial_amount?: number | null;
     final_amount?: number | null;
     deadline_at: string;
@@ -68,11 +70,14 @@ type ApiOfferItem = Omit<WorkspaceOfferItem, 'actions' | 'files'> & {
 type ApiResponse = {
   data: {
     request: Omit<OfferWorkspace['request'], 'actions'> & {
+      owner_phone?: string | null;
+      owner_mail?: string | null;
       actions?: {
         can_view_details?: boolean;
         can_view_amounts?: boolean;
         can_open_contractor_view?: boolean;
         can_edit?: boolean;
+        can_update_status?: boolean;
         can_change_owner?: boolean;
         can_upload_files?: boolean;
         can_delete_files?: boolean;

@@ -7,17 +7,18 @@ import {
   Dialog,
   DialogContent,
   Stack,
-  TextField,
   Tooltip,
   Typography
 } from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { ValidatedTextField } from '@shared/components/forms/ValidatedTextField';
+import { useLiveValidatedForm } from '@shared/lib/forms';
 import { z } from 'zod';
 import { createFeedback } from '@shared/api/feedback/createFeedback';
 import { ActionButton } from '@shared/components/ActionButton';
 import { blurActiveElement } from '@shared/lib/dom/blurActiveElement';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 const schema = z.object({
   text: z.string().trim().min(1, 'Введите текст обратной связи').max(3000, 'Максимум 3000 символов')
@@ -52,9 +53,9 @@ const dialogContentSx = {
 
 export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackButtonProps) => {
   const theme = useTheme();
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -62,7 +63,7 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
     reset,
     watch,
     formState: { errors, isSubmitting }
-  } = useForm<FormValues>({
+  } = useLiveValidatedForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       text: ''
@@ -79,19 +80,19 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
   const handleClose = () => {
     setOpen(false);
     setError(null);
-    setSuccessMessage(null);
     reset({ text: '' });
   };
 
   const onSubmit = async (values: FormValues) => {
     setError(null);
-    setSuccessMessage(null);
     try {
       await createFeedback({ text: values.text.trim() });
-      setSuccessMessage('Спасибо! Обратная связь отправлена.');
+      showSuccessToast('Спасибо! Обратная связь отправлена.');
       reset({ text: '' });
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Не удалось отправить обратную связь');
+      const message = submitError instanceof Error ? submitError.message : 'Не удалось отправить обратную связь';
+      setError(message);
+      showErrorToast(message);
     }
   };
 
@@ -176,16 +177,16 @@ export const FeedbackButton = ({ iconOnly = false, sidebar = false }: FeedbackBu
               </Typography>
 
               {error ? <Alert severity="error">{error}</Alert> : null}
-              {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
 
-              <TextField
+              <ValidatedTextField
                 label="Ваш отзыв"
+                fieldName="text"
                 multiline
                 minRows={4}
                 inputProps={{ maxLength: 3000 }}
                 error={Boolean(errors.text)}
                 helperText={errors.text ? `${errors.text.message} · ${currentTextLength}/3000` : `${currentTextLength}/3000`}
-                {...register('text')}
+                registration={register('text')}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1,

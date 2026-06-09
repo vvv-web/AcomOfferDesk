@@ -20,7 +20,7 @@ type RequestsTableProps = {
     isLoading?: boolean;
     onRowClick?: (request: RequestWithOfferStats) => void;
     onAddClick?: () => void;
-    chatAlertsMap?: Record<number, number>;
+    chatAlertsMap?: Record<string, number>;
     ownerOptions?: OwnerOption[];
     canEditOwner?: boolean;
     onOwnerChange?: (request: RequestWithOfferStats, ownerUserId: string) => void;
@@ -180,6 +180,12 @@ const RequestMobileCard = ({
     const theme = useTheme();
     const descriptionText = row.description?.trim() ? row.description : '-';
     const ownerValue = row.owner_full_name ?? row.id_user;
+    const contractorUnreadMessagesCount = isContractor
+        ? (row.offers ?? []).reduce((acc, offer) => acc + (offer.unread_messages_count ?? 0), 0)
+        : 0;
+    const hasNotificationBadge = isContractor
+        ? contractorUnreadMessagesCount > 0
+        : row.__notificationLabel === 'Есть уведомление';
     const detailRows = [
         { key: 'deadline', label: 'Прием КП до', value: formatDate(row.deadline_at) },
         { key: 'created', label: 'Открыта', value: formatDate(row.created_at) },
@@ -306,7 +312,7 @@ const RequestMobileCard = ({
                                         >
                                             {detail.label}
                                         </Typography>
-                                        {isOwnerDetail && canEditOwner ? (
+                                        {isOwnerDetail && canEditOwner && row.actions.change_owner ? (
                                             <Stack
                                                 onClick={(event: ReactMouseEvent<HTMLDivElement>) => event.stopPropagation()}
                                                 onMouseDown={(event: ReactMouseEvent<HTMLDivElement>) => event.stopPropagation()}
@@ -356,7 +362,7 @@ const RequestMobileCard = ({
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.25}>
                     <Box sx={{ minHeight: 28, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        {row.__notificationLabel === 'Есть уведомление' ? (
+                        {hasNotificationBadge ? (
                             <StatusPill
                                 label=""
                                 tone="info"
@@ -397,7 +403,7 @@ export const RequestsTable = ({
     showContractorOffersColumn = true,
     showContractorNotificationColumn = true
 }: RequestsTableProps) => {
-    const [expandedCardsById, setExpandedCardsById] = useState<Record<number, boolean>>({});
+    const [expandedCardsById, setExpandedCardsById] = useState<Record<string, boolean>>({});
     const rows = requests.map((request) => ({
         ...request,
         __notificationLabel: request.unread_messages_count && request.unread_messages_count > 0 ? 'Есть уведомление' : 'Нет уведомления',
@@ -405,7 +411,7 @@ export const RequestsTable = ({
     }));
     const areAllCardsExpanded = rows.length > 0 && rows.every((row) => Boolean(expandedCardsById[row.id]));
 
-    const handleToggleCardExpand = (rowId: number) => {
+    const handleToggleCardExpand = (rowId: string) => {
         setExpandedCardsById((currentState) => ({
             ...currentState,
             [rowId]: !currentState[rowId]
@@ -414,7 +420,7 @@ export const RequestsTable = ({
 
     const handleToggleAllCards = (checked: boolean) => {
         setExpandedCardsById(
-            Object.fromEntries(rows.map((row) => [row.id, checked])) as Record<number, boolean>
+            Object.fromEntries(rows.map((row) => [row.id, checked])) as Record<string, boolean>
         );
     };
     const statusFilterOptions = Array.from(
@@ -512,7 +518,7 @@ export const RequestsTable = ({
             getFilterValue: (row) => row.owner_full_name ?? row.id_user,
             getSearchValue: (row) => row.owner_full_name ?? row.id_user,
             renderCell: (row) =>
-                canEditOwner ? (
+                canEditOwner && row.actions.change_owner ? (
                     <Select
                         size="small"
                         value={row.id_user}

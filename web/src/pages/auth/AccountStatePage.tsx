@@ -1,4 +1,4 @@
-import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+﻿import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
@@ -9,8 +9,10 @@ import {
   type CurrentUserProfile
 } from '@shared/api/users/getCurrentUserProfile';
 import { ROLE } from '@shared/constants/roles';
+import { textFieldAutocompleteProps } from '@shared/lib/forms';
 import { formatRuPhone, isValidRuPhone } from '@shared/lib/phone';
-import { getDefaultPathByRole } from '@shared/lib/routing/getDefaultPathByRole';
+import { resolveAuthenticatedPath } from '@shared/lib/routing/resolveAuthenticatedPath';
+import { useSystemToasts } from '@shared/ui/toasts';
 
 type ProfileDraft = {
   fullName: string;
@@ -80,15 +82,15 @@ const getStatusContent = (status: string): StatusContent => {
   }
   if (status === 'inactive') {
     return {
-      title: 'Доступ временно отключён',
-      description: 'Обратитесь к администратору проекта.',
+      title: 'Доступ к сайту закрыт',
+      description: '',
       severity: 'warning'
     };
   }
   if (status === 'blacklist') {
     return {
-      title: 'Доступ закрыт',
-      description: 'Для уточнения деталей свяжитесь с администратором проекта.',
+      title: 'Доступ к сайту закрыт',
+      description: '',
       severity: 'error'
     };
   }
@@ -142,9 +144,9 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
   }
 
   if (!inn) {
-    errors.inn = 'Укажите ИНН';
+    errors.inn = '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0418\u041d\u041d';
   } else if (!innRegex.test(inn)) {
-    errors.inn = 'ИНН должен содержать 10 или 12 цифр';
+    errors.inn = '\u0418\u041d\u041d \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c 10 \u0438\u043b\u0438 12 \u0446\u0438\u0444\u0440';
   }
 
   if (!companyPhone) {
@@ -174,11 +176,11 @@ const validateDraft = (draft: ProfileDraft, { requireCompany }: { requireCompany
 export const AccountStatePage = () => {
   const navigate = useNavigate();
   const { session, logout } = useAuth();
+  const { showErrorToast, showSuccessToast } = useSystemToasts();
   const [draft, setDraft] = useState<ProfileDraft>(emptyDraft);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showValidation, setShowValidation] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Partial<Record<keyof ProfileDraft, boolean>>>({});
 
@@ -192,7 +194,7 @@ export const AccountStatePage = () => {
       return;
     }
     if (session.businessAccess) {
-      navigate(getDefaultPathByRole(session.roleId), { replace: true });
+      navigate(resolveAuthenticatedPath('/', session), { replace: true });
       return;
     }
 
@@ -250,7 +252,6 @@ export const AccountStatePage = () => {
 
   const saveProfile = async () => {
     setErrorMessage(null);
-    setSuccessMessage(null);
     setShowValidation(true);
     if (Object.keys(validationErrors).length > 0) {
       setErrorMessage('Проверьте корректность заполнения полей.');
@@ -277,9 +278,11 @@ export const AccountStatePage = () => {
       } else {
         setDraft(buildDraft(nextProfile));
       }
-      setSuccessMessage('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
+      showSuccessToast('Данные переданы на проверку. Мы уведомим вас о выдаче доступа по электронной почте.');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить данные.');
+      const message = error instanceof Error ? error.message : 'Не удалось сохранить данные';
+      setErrorMessage(message);
+      showErrorToast(message);
     } finally {
       setIsSaving(false);
     }
@@ -296,7 +299,7 @@ export const AccountStatePage = () => {
           <Stack alignItems="center" spacing={2}>
             <CircularProgress size={28} />
             <Typography variant="body2" color="text.secondary">
-              Загружаем данные.
+              {'\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c \u0434\u0430\u043d\u043d\u044b\u0435.'}
             </Typography>
           </Stack>
         ) : (
@@ -305,22 +308,26 @@ export const AccountStatePage = () => {
               <Typography variant="h5" fontWeight={700}>
                 {statusContent.title}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {statusContent.description}
-              </Typography>
+              {statusContent.description ? (
+                <Typography variant="body2" color="text.secondary">
+                  {statusContent.description}
+                </Typography>
+              ) : null}
             </Stack>
 
-            <Alert severity={statusContent.severity}>Статус: {statusContent.title.toLowerCase()}.</Alert>
-            {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
-            {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
+            {!isBlocked ? (
+              <Alert severity={statusContent.severity}>{'\u0421\u0442\u0430\u0442\u0443\u0441'}: {statusContent.title.toLowerCase()}.</Alert>
+            ) : null}
+            {!isBlocked && errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
 
             {!isBlocked ? (
               <>
                 <Stack spacing={1.5}>
-                  <Typography variant="subtitle1" fontWeight={600}>Личные данные</Typography>
+                  <Typography variant="subtitle1" fontWeight={600}>{'\u041b\u0438\u0447\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435'}</Typography>
                   <TextField
-                    label="ФИО"
+                    label="\u0424\u0418\u041e"
                     value={draft.fullName}
+                    {...textFieldAutocompleteProps('fullName')}
                     onBlur={() => markFieldTouched('fullName')}
                     onChange={(event) => {
                       setDraft((prev) => ({ ...prev, fullName: event.target.value }));
@@ -332,6 +339,7 @@ export const AccountStatePage = () => {
                   <TextField
                     label="Телефон"
                     value={draft.phone}
+                    {...textFieldAutocompleteProps('phone')}
                     onBlur={() => markFieldTouched('phone')}
                     onChange={(event) => {
                       setDraft((prev) => ({ ...prev, phone: formatRuPhone(event.target.value) }));
@@ -343,6 +351,7 @@ export const AccountStatePage = () => {
                   <TextField
                     label="E-mail"
                     value={draft.mail}
+                    {...textFieldAutocompleteProps('mail')}
                     onBlur={() => markFieldTouched('mail')}
                     onChange={(event) => {
                       setDraft((prev) => ({ ...prev, mail: event.target.value }));
@@ -355,10 +364,11 @@ export const AccountStatePage = () => {
 
                 {canEditCompany ? (
                   <Stack spacing={1.5}>
-                    <Typography variant="subtitle1" fontWeight={600}>Данные компании</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>{'\u0414\u0430\u043d\u043d\u044b\u0435 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438'}</Typography>
                     <TextField
                       label="Компания"
                       value={draft.companyName}
+                      {...textFieldAutocompleteProps('companyName')}
                       onBlur={() => markFieldTouched('companyName')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, companyName: event.target.value }));
@@ -368,8 +378,9 @@ export const AccountStatePage = () => {
                       helperText={getFieldHelperText('companyName')}
                     />
                     <TextField
-                      label="ИНН"
+                      label="\u0418\u041d\u041d"
                       value={draft.inn}
+                      {...textFieldAutocompleteProps('inn')}
                       onBlur={() => markFieldTouched('inn')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, inn: event.target.value.replace(/\D/g, '') }));
@@ -381,6 +392,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="Телефон компании"
                       value={draft.companyPhone}
+                      {...textFieldAutocompleteProps('companyPhone')}
                       onBlur={() => markFieldTouched('companyPhone')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, companyPhone: formatRuPhone(event.target.value) }));
@@ -392,6 +404,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="E-mail компании"
                       value={draft.companyMail}
+                      {...textFieldAutocompleteProps('companyMail')}
                       onBlur={() => markFieldTouched('companyMail')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, companyMail: event.target.value }));
@@ -403,6 +416,7 @@ export const AccountStatePage = () => {
                     <TextField
                       label="Адрес"
                       value={draft.address}
+                      {...textFieldAutocompleteProps('address')}
                       onBlur={() => markFieldTouched('address')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, address: event.target.value }));
@@ -416,6 +430,7 @@ export const AccountStatePage = () => {
                       value={draft.note}
                       multiline
                       minRows={3}
+                      {...textFieldAutocompleteProps('note')}
                       onBlur={() => markFieldTouched('note')}
                       onChange={(event) => {
                         setDraft((prev) => ({ ...prev, note: event.target.value }));
@@ -440,7 +455,7 @@ export const AccountStatePage = () => {
 
             <Stack direction="row" spacing={1.5}>
               <Button variant="outlined" onClick={logout} sx={{ textTransform: 'none' }}>
-                Выйти
+                {'\u0412\u044b\u0439\u0442\u0438'}
               </Button>
             </Stack>
           </Stack>
@@ -449,4 +464,3 @@ export const AccountStatePage = () => {
     </Box>
   );
 };
-

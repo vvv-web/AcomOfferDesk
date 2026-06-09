@@ -24,6 +24,7 @@ import { useMediaQuery } from '@mui/material';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { downloadFile } from '@shared/api/fileDownload';
+import { useSystemToasts } from '@shared/ui/toasts';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { OFFER_WORKSPACE_CHAT_WIDTH_PX, OfferWorkspaceChatDock } from './OfferWorkspaceChatDock';
 import { useOfferWorkspace } from '../model/useOfferWorkspace';
@@ -95,7 +96,10 @@ export const OfferWorkspaceView = () => {
   const theme = useTheme();
   const isDesktopWithSidebar = useMediaQuery(theme.breakpoints.up('lg'));
   const isMobileViewport = useIsMobileViewport();
+  const { showErrorToast, showSystemToast } = useSystemToasts();
   const descriptionTextRef = useRef<HTMLParagraphElement | null>(null);
+  const lastShownErrorRef = useRef<string | null>(null);
+  const lastShownSaveSuccessRef = useRef<number | null>(null);
   const [isOfferEditMode, setIsOfferEditMode] = useState(false);
   const {
     session,
@@ -106,18 +110,21 @@ export const OfferWorkspaceView = () => {
     setSelectedOfferId,
     fileInputRef,
     isLoading,
+    isUploading,
     errorMessage,
     isChatOpen,
     setIsChatOpen,
     offerDecisionStatus,
     isUpdatingOfferStatus,
     isUpdatingOfferAmount,
+    lastOfferSaveSuccessAt,
     messages,
     typingUserIds,
     isSending,
     canUpload,
     canDeleteFile,
     canSendMessage,
+    canViewMessages,
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,
@@ -129,6 +136,11 @@ export const OfferWorkspaceView = () => {
     offerAmountInput,
     setOfferAmountInput,
     baselineOfferAmount,
+    existingOfferFiles = [],
+    deletedOfferFileIds = [],
+    newOfferFile = null,
+    setNewOfferFile,
+    handleCancelOfferEditing,
     handleUpload,
     handleDeleteFile,
     handleStatusChange,
@@ -142,6 +154,20 @@ export const OfferWorkspaceView = () => {
 
   const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
   const canViewContractorInfo = Boolean(selectedOffer?.actions.view_contractor_info);
+  const hasOfferUpdatePermission = Boolean(session?.permissions.includes('offers.update'));
+  const hasDepartmentOfferUpdateDelegation = Boolean(session?.permissions.includes('department.offers.update'));
+  const canEnterOfferEditMode = (
+    hasDepartmentOfferUpdateDelegation
+    || hasOfferUpdatePermission
+  ) && (
+    canEditOfferAmount
+    || canUpload
+    || canDeleteFile
+    || canDeleteOwnOffer
+  );
+  const normalizedErrorMessage = (errorMessage ?? '').toLowerCase();
+  const isChatAccessError = normalizedErrorMessage.includes('просмотра чата') || normalizedErrorMessage.includes('доступ') && normalizedErrorMessage.includes('чат');
+  const visibleErrorMessage = !canViewMessages && isChatAccessError ? null : errorMessage;
 
   const canCreateNewOffer = Boolean(workspace?.request.actions.create_offer);
 
@@ -169,6 +195,47 @@ export const OfferWorkspaceView = () => {
   useEffect(() => {
     setIsOfferEditMode(false);
   }, [selectedOffer?.offer_id]);
+
+  useEffect(() => {
+    if (!canViewMessages && isChatOpen) {
+      setIsChatOpen(false);
+    }
+  }, [canViewMessages, isChatOpen, setIsChatOpen]);
+
+  useEffect(() => {
+    if (isOfferEditMode && !canEnterOfferEditMode) {
+      setIsOfferEditMode(false);
+    }
+  }, [canEnterOfferEditMode, isOfferEditMode]);
+
+  useEffect(() => {
+    if (!visibleErrorMessage) {
+      lastShownErrorRef.current = null;
+      return;
+    }
+
+    if (lastShownErrorRef.current === visibleErrorMessage) {
+      return;
+    }
+
+    showErrorToast(visibleErrorMessage);
+    lastShownErrorRef.current = visibleErrorMessage;
+  }, [showErrorToast, visibleErrorMessage]);
+
+  useEffect(() => {
+    if (!lastOfferSaveSuccessAt) {
+      return;
+    }
+    if (lastShownSaveSuccessRef.current === lastOfferSaveSuccessAt) {
+      return;
+    }
+
+    showSystemToast({
+      severity: 'success',
+      message: 'Изменения КП успешно сохранены.',
+    });
+    lastShownSaveSuccessRef.current = lastOfferSaveSuccessAt;
+  }, [lastOfferSaveSuccessAt, showSystemToast]);
 
   if (isLoading) {
     return <Typography>Загрузка...</Typography>;
@@ -226,6 +293,11 @@ export const OfferWorkspaceView = () => {
               InputProps={{ readOnly: true }}
             />
           }
+          responsibleContact={{
+            fullName: workspace.request.owner_full_name ?? workspace.request.owner_user_id ?? null,
+            phone: workspace.request.owner_phone ?? null,
+            mail: workspace.request.owner_mail ?? null
+          }}
           existingFiles={workspace.request.files}
           canDeleteRequestFiles={false}
           onDownloadFile={(downloadUrl, fileName) => {
@@ -376,10 +448,13 @@ export const OfferWorkspaceView = () => {
 
         {sortedOffers.map((offerItem) => {
           const isCurrent = offerItem.offer_id === selectedOffer.offer_id;
-          const isCurrentInEditMode = isCurrent && isOfferEditMode;
+          const isCurrentInEditMode = isCurrent && isOfferEditMode && canEnterOfferEditMode;
           const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
+          const hasOfferFileChanges = deletedOfferFileIds.length > 0 || Boolean(newOfferFile);
+          const canSaveOfferChanges = hasOfferAmountChanges || hasOfferFileChanges;
           const itemBadgeStyle = getOfferStatusBadgeStyle(offerItem.status ?? null);
           const offerStatusLabel = getOfferStatusLabel(offerItem.status ?? null);
+          const filesToRender = isCurrent ? existingOfferFiles : offerItem.files;
           return (
             <Paper
               key={offerItem.offer_id}
@@ -551,10 +626,10 @@ export const OfferWorkspaceView = () => {
                 Файлы КП
               </Typography>
               <Stack direction="row" flexWrap="wrap" useFlexGap gap={1}>
-                {offerItem.files.length === 0 ? (
+                {filesToRender.length === 0 ? (
                   <Typography color="text.secondary">Файлы КП не прикреплены.</Typography>
                 ) : (
-                  offerItem.files.map((file) => (
+                  filesToRender.map((file) => (
                     <Chip
                       key={file.id}
                       label={file.name}
@@ -565,6 +640,14 @@ export const OfferWorkspaceView = () => {
                     />
                   ))
                 )}
+                {isCurrentInEditMode && newOfferFile ? (
+                  <Chip
+                    label={newOfferFile.name}
+                    color="primary"
+                    variant="outlined"
+                    onDelete={() => setNewOfferFile(null)}
+                  />
+                ) : null}
                 {canUpload && isCurrentInEditMode ? (
                   <IconButton
                     size="small"
@@ -603,28 +686,33 @@ export const OfferWorkspaceView = () => {
                   {isCurrentInEditMode ? (
                     <Button
                       variant="outlined"
-                      onClick={() => setIsOfferEditMode(false)}
+                      onClick={() => {
+                        handleCancelOfferEditing();
+                        setIsOfferEditMode(false);
+                      }}
                       disabled={isUpdatingOfferAmount}
                     >
                       Отмена
                     </Button>
                   ) : (
                     isCurrent ? (
-                      <Button
-                        variant="outlined"
-                        startIcon={isMobileViewport ? undefined : <EditOutlinedIcon fontSize="small" />}
-                        onClick={() => setIsOfferEditMode(true)}
-                        disabled={isUpdatingOfferAmount}
-                        aria-label="Изменить"
-                        sx={{
-                          minWidth: isMobileViewport ? 40 : undefined,
-                          width: isMobileViewport ? 40 : 'auto',
-                          height: 36,
-                          px: isMobileViewport ? 0 : undefined
-                        }}
-                      >
-                        {isMobileViewport ? <EditOutlinedIcon fontSize="small" /> : 'Изменить'}
-                      </Button>
+                      canEnterOfferEditMode ? (
+                        <Button
+                          variant="outlined"
+                          startIcon={isMobileViewport ? undefined : <EditOutlinedIcon fontSize="small" />}
+                          onClick={() => setIsOfferEditMode(true)}
+                          disabled={isUpdatingOfferAmount}
+                          aria-label="Изменить"
+                          sx={{
+                            minWidth: isMobileViewport ? 40 : undefined,
+                            width: isMobileViewport ? 40 : 'auto',
+                            height: 36,
+                            px: isMobileViewport ? 0 : undefined
+                          }}
+                        >
+                          {isMobileViewport ? <EditOutlinedIcon fontSize="small" /> : 'Изменить'}
+                        </Button>
+                      ) : null
                     ) : (
                       <Button
                         variant="outlined"
@@ -637,11 +725,11 @@ export const OfferWorkspaceView = () => {
                       </Button>
                     )
                   )}
-                  {isCurrentInEditMode && canEditOfferAmount ? (
+                  {isCurrentInEditMode && (canEditOfferAmount || canUpload || canDeleteFile) ? (
                     <Button
-                      variant={hasOfferAmountChanges ? 'contained' : 'outlined'}
+                      variant={canSaveOfferChanges ? 'contained' : 'outlined'}
                       onClick={() => void handleOfferAmountSave()}
-                      disabled={isUpdatingOfferAmount || !hasOfferAmountChanges}
+                      disabled={isUpdatingOfferAmount || isUploading || !canSaveOfferChanges}
                     >
                       {isUpdatingOfferAmount ? 'Сохранение...' : 'Сохранить'}
                     </Button>
@@ -651,38 +739,34 @@ export const OfferWorkspaceView = () => {
 
               {isCurrent ? <input ref={fileInputRef} type="file" hidden onChange={(event) => void handleUpload(event)} /> : null}
 
-              {isCurrent && errorMessage ? (
-                <Typography role="alert" color="error" sx={{ mt: 1 }}>
-                  {errorMessage}
-                </Typography>
-              ) : null}
-              
             </Paper>
           );
         })}
       </Box>
 
-      <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>
-        <OfferWorkspaceChatPanel
-          offerId={selectedOffer.offer_id}
-          readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? 'Для вас чат доступен только для просмотра.' : null}
-          isOpen
-          onToggleOpen={setIsChatOpen}
-          messages={messages}
-          typingUserIds={typingUserIds}
-          sessionLogin={session?.login}
-          canSendMessage={canSendMessage}
-          canSendMessageWithAttachments={canSendMessageWithAttachments}
-          isSending={isSending}
-          onSendMessage={onSendMessage}
-          onMessageInputClick={onMessageInputClick}
-          onMessageDraftChange={onMessageDraftChange}
-          onDownloadAttachment={(downloadUrl, name) => {
-            void downloadFile(downloadUrl, name);
-          }}
-          contractorUserId={selectedOffer.contractor_user_id}
-        />
-      </OfferWorkspaceChatDock>
+      {canViewMessages ? (
+        <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>
+          <OfferWorkspaceChatPanel
+            offerId={selectedOffer.offer_id}
+            readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? '\u0414\u043b\u044f \u0432\u0430\u0441 \u0447\u0430\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.' : null}
+            isOpen
+            onToggleOpen={setIsChatOpen}
+            messages={messages}
+            typingUserIds={typingUserIds}
+            sessionLogin={session?.login}
+            canSendMessage={canSendMessage}
+            canSendMessageWithAttachments={canSendMessageWithAttachments}
+            isSending={isSending}
+            onSendMessage={onSendMessage}
+            onMessageInputClick={onMessageInputClick}
+            onMessageDraftChange={onMessageDraftChange}
+            onDownloadAttachment={(downloadUrl, name) => {
+              void downloadFile(downloadUrl, name);
+            }}
+            contractorUserId={selectedOffer.contractor_user_id}
+          />
+        </OfferWorkspaceChatDock>
+      ) : null}
     </Stack>
   );
 };

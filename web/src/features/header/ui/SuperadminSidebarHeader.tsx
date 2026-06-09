@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ActionButton } from '@shared/components/ActionButton';
 import { FeedbackButton } from '@shared/components/FeedbackButton';
-import { NormativeFileButton } from '@shared/components/NormativeFileButton';
+import { NotificationBell } from '@features/notifications';
 import { ProfileButton } from '@shared/components/ProfileButton';
 import { RoleGuideButton } from '@shared/components/RoleGuideButton';
 import { SidebarMenuButton } from '@shared/components/SidebarMenuButton';
@@ -40,6 +40,9 @@ export const SuperadminSidebarHeader = ({
   const [isToggleVisible, setIsToggleVisible] = useState(false);
   const [isDashboardMenuHovered, setIsDashboardMenuHovered] = useState(false);
   const [dashboardMenuAnchorEl, setDashboardMenuAnchorEl] = useState<HTMLElement | null>(null);
+  const [pendingCollapsedDashboardTab, setPendingCollapsedDashboardTab] = useState<
+    'dashboard' | 'savings' | 'plan' | null
+  >(null);
 
   useEffect(() => {
     const handleResize = () => setIsCompactHeight(window.innerHeight <= 760);
@@ -68,6 +71,11 @@ export const SuperadminSidebarHeader = ({
   const hasPlanTab = config.tabs.some((tabItem) => tabItem.key === 'plan');
   const hasDashboardProcessTab = hasSavingsTab;
   const isDashboardPopupOpen = collapsed && (hasSavingsTab || hasPlanTab) && Boolean(dashboardMenuAnchorEl);
+
+  const scheduleCollapsedDashboardNavigation = (tab: 'dashboard' | 'savings' | 'plan') => {
+    setPendingCollapsedDashboardTab(tab);
+    setDashboardMenuAnchorEl(null);
+  };
 
   return (
     <Stack
@@ -245,14 +253,34 @@ export const SuperadminSidebarHeader = ({
             />
           ))}
 
-          <NormativeFileButton iconOnly={collapsed} sidebar />
+          {config.showNormativeFiles ? (
+            <SidebarMenuButton
+              label={'Нормативные\nдокументы'}
+              compactLabel
+              icon={getHeaderNavigationIcon('normative')}
+              collapsed={collapsed}
+              active={Boolean(config.normativeFilesActive)}
+              onClick={() => config.onNavigateToNormativeFiles?.()}
+            />
+          ) : null}
         </Stack>
 
         <Menu
           open={isDashboardPopupOpen}
           anchorEl={dashboardMenuAnchorEl}
-          onClose={() => {
+          onClose={(_event, reason) => {
+            if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+              setPendingCollapsedDashboardTab(null);
+            }
             setDashboardMenuAnchorEl(null);
+          }}
+          TransitionProps={{
+            onExited: () => {
+              if (pendingCollapsedDashboardTab !== null) {
+                config.onTabChange?.(pendingCollapsedDashboardTab);
+                setPendingCollapsedDashboardTab(null);
+              }
+            },
           }}
           anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
           transformOrigin={{ vertical: 'center', horizontal: 'left' }}
@@ -260,8 +288,7 @@ export const SuperadminSidebarHeader = ({
           {hasDashboardProcessTab ? (
             <MenuItem
               onClick={() => {
-                config.onTabChange?.('dashboard');
-                setDashboardMenuAnchorEl(null);
+                scheduleCollapsedDashboardNavigation('dashboard');
               }}
             >
               Процесс работы
@@ -270,8 +297,7 @@ export const SuperadminSidebarHeader = ({
           {hasSavingsTab ? (
             <MenuItem
               onClick={() => {
-                config.onTabChange?.('savings');
-                setDashboardMenuAnchorEl(null);
+                scheduleCollapsedDashboardNavigation('savings');
               }}
             >
               Экономия
@@ -280,8 +306,7 @@ export const SuperadminSidebarHeader = ({
           {hasPlanTab ? (
             <MenuItem
               onClick={() => {
-                config.onTabChange?.('plan');
-                setDashboardMenuAnchorEl(null);
+                scheduleCollapsedDashboardNavigation('plan');
               }}
             >
               План
@@ -298,6 +323,7 @@ export const SuperadminSidebarHeader = ({
             borderColor: 'divider'
           }}
         >
+          <NotificationBell collapsed={collapsed} />
           {config.showRoleGuide ? <RoleGuideButton iconOnly={collapsed} sidebar /> : null}
           {config.showFeedback ? <FeedbackButton iconOnly={collapsed} sidebar /> : null}
 

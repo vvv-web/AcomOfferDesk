@@ -12,7 +12,7 @@ export type ContractorRequestOffer = {
 };
 
 export type RequestWithOfferStats = {
-  id: number;
+  id: string;
   id_user: string;
   owner_full_name?: string | null;
   status: string;
@@ -46,6 +46,7 @@ type ApiResponse = {
         can_view_amounts?: boolean;
         can_open_contractor_view?: boolean;
         can_edit?: boolean;
+        can_update_status?: boolean;
         can_change_owner?: boolean;
         can_upload_files?: boolean;
         can_delete_files?: boolean;

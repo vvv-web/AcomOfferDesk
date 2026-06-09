@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     Text,
@@ -160,7 +161,7 @@ class Request(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
     deadline_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False)
@@ -205,9 +206,9 @@ class Request(Base):
 class RequestHiddenContractor(Base):
     __tablename__ = "request_hidden_contractors"
 
-    request_id: Mapped[int] = mapped_column(
+    request_id: Mapped[str] = mapped_column(
         "id_request",
-        BigInteger,
+        Text,
         ForeignKey("requests.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -231,8 +232,8 @@ class Offer(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    id_request: Mapped[int] = mapped_column(
-        BigInteger,
+    id_request: Mapped[str] = mapped_column(
+        Text,
         ForeignKey("requests.id", ondelete="CASCADE"),
     )
     id_user: Mapped[str] = mapped_column(Text, ForeignKey("users.id"))
@@ -252,8 +253,8 @@ class Offer(Base):
 class RequestOfferStats(Base):
     __tablename__ = "request_offer_stats"
 
-    request_id: Mapped[int] = mapped_column(
-        BigInteger,
+    request_id: Mapped[str] = mapped_column(
+        Text,
         ForeignKey("requests.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -367,11 +368,55 @@ class MessageReceipt(Base):
     read_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
 
 
+class UserNotification(Base):
+    __tablename__ = "user_notifications"
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ("
+            "'offer.created',"
+            "'offer.updated',"
+            "'offer.status_changed',"
+            "'message.created',"
+            "'email.sent',"
+            "'email.failed',"
+            "'request.created',"
+            "'request.files_changed',"
+            "'request.responsible_changed',"
+            "'request.deadline_changed',"
+            "'request.status_changed',"
+            "'user.status_changed',"
+            "'user.review_required',"
+            "'plan.assigned',"
+            "'plan.updated',"
+            "'system.warning'"
+            ")",
+            name="user_notifications_type_chk",
+        ),
+        CheckConstraint(
+            "severity IN ('info','success','warning','error')",
+            name="user_notifications_severity_chk",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    entity_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    link_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    read_at: Mapped[Optional[str]] = mapped_column(TIMESTAMP, nullable=True)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+
 class RequestFile(Base):
     __tablename__ = "request_files"
 
     id: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), primary_key=True)
-    id_request: Mapped[int] = mapped_column(BigInteger, ForeignKey("requests.id", ondelete="CASCADE"))
+    id_request: Mapped[str] = mapped_column(Text, ForeignKey("requests.id", ondelete="CASCADE"))
 
 
 class OfferFile(Base):
@@ -390,9 +435,16 @@ class MessageFile(Base):
 
 class NormativeFile(Base):
     __tablename__ = "normative_files"
+    __table_args__ = (
+        CheckConstraint(
+            "document_status IN ('actual', 'outdated')",
+            name="normative_files_document_status_chk",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     id_file: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="RESTRICT"), nullable=False)
+    status: Mapped[str] = mapped_column("document_status", Text, nullable=False, server_default="actual")
 
 
 class FeedBack(Base):

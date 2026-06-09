@@ -16,8 +16,8 @@ BOOTSTRAP_PASSWORD="${KEYCLOAK_BOOTSTRAP_APP_PASSWORD:-}"
 BOOTSTRAP_EMAIL="${KEYCLOAK_BOOTSTRAP_APP_EMAIL:-${BOOTSTRAP_USERNAME}@local.invalid}"
 BOOTSTRAP_FIRST_NAME="${KEYCLOAK_BOOTSTRAP_APP_FIRST_NAME:-Bootstrap}"
 BOOTSTRAP_LAST_NAME="${KEYCLOAK_BOOTSTRAP_APP_LAST_NAME:-Superadmin}"
-SMTP_HOST="${SMTP_HOST:-}"
-SMTP_PORT="${SMTP_PORT:-}"
+SMTP_HOST="${KEYCLOAK_SMTP_HOST:-${SMTP_HOST:-}}"
+SMTP_PORT="${KEYCLOAK_SMTP_PORT:-${SMTP_PORT:-}}"
 SMTP_USERNAME="${KEYCLOAK_SMTP_USERNAME:-${EMAIL_ADDRESS:-}}"
 SMTP_PASSWORD="${KEYCLOAK_SMTP_PASSWORD:-${EMAIL_APP_PASSWORD:-}}"
 SMTP_FROM="${KEYCLOAK_SMTP_FROM:-${EMAIL_ADDRESS:-}}"
@@ -58,6 +58,202 @@ is_weak_secret() {
       ;;
   esac
   return 1
+}
+
+refresh_kcadm_credentials() {
+  until /opt/keycloak/bin/kcadm.sh config credentials \
+    --server "$SERVER_URL" \
+    --realm "$MASTER_REALM" \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+    --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null 2>&1
+  do
+    sleep 3
+  done
+}
+
+apply_realm_mail_and_session_settings() {
+  REALM_UPDATE_FILE="$(mktemp)"
+
+  if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ] && [ -n "$SMTP_FROM" ]; then
+    if [ -z "$SMTP_SSL" ] && [ -z "$SMTP_STARTTLS" ]; then
+      if [ "$SMTP_PORT" = "465" ]; then
+        SMTP_SSL="true"
+        SMTP_STARTTLS="false"
+      else
+        SMTP_SSL="false"
+        SMTP_STARTTLS="true"
+      fi
+    fi
+
+    cat >"$REALM_UPDATE_FILE" <<EOF
+{
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
+  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
+  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
+  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
+  "revokeRefreshToken": true,
+  "loginTheme": "acom-offerdesk",
+  "internationalizationEnabled": true,
+  "defaultLocale": "ru",
+  "supportedLocales": ["ru"],
+  "smtpServer": {
+    "auth": "$SMTP_AUTH",
+    "host": "$SMTP_HOST",
+    "port": "$SMTP_PORT",
+    "user": "$SMTP_USERNAME",
+    "password": "$SMTP_PASSWORD",
+    "from": "$SMTP_FROM",
+    "replyTo": "$SMTP_REPLY_TO",
+    "fromDisplayName": "$SMTP_FROM_DISPLAY_NAME",
+    "ssl": "$SMTP_SSL",
+    "starttls": "$SMTP_STARTTLS"
+  }
+}
+EOF
+  else
+    cat >"$REALM_UPDATE_FILE" <<EOF
+{
+  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
+  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
+  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
+  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
+  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
+  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
+  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
+  "revokeRefreshToken": true,
+  "loginTheme": "acom-offerdesk",
+  "internationalizationEnabled": true,
+  "defaultLocale": "ru",
+  "supportedLocales": ["ru"]
+}
+EOF
+    echo "Keycloak SMTP configuration is incomplete; updating only realm verifyEmail=$KEYCLOAK_VERIFY_EMAIL"
+  fi
+
+  /opt/keycloak/bin/kcadm.sh update "realms/$APP_REALM" -f "$REALM_UPDATE_FILE"
+  rm -f "$REALM_UPDATE_FILE"
+  echo "[realm] Applied mail/session settings (smtp host=${SMTP_HOST:-<none>} port=${SMTP_PORT:-<none>})"
+}
+
+apply_user_profile_configuration() {
+  USER_PROFILE_FILE="$(mktemp)"
+  cat >"$USER_PROFILE_FILE" <<'EOF'
+{
+  "attributes": [
+    {
+      "name": "username",
+      "displayName": "${username}",
+      "validations": {
+        "length": {
+          "min": 3,
+          "max": 255
+        },
+        "username-prohibited-characters": {},
+        "up-username-not-idn-homograph": {}
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "email",
+      "displayName": "${email}",
+      "validations": {
+        "email": {},
+        "length": {
+          "max": 255
+        }
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "lastName",
+      "displayName": "${lastName}",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "firstName",
+      "displayName": "${firstName}",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    },
+    {
+      "name": "middleName",
+      "displayName": "Отчество",
+      "validations": {
+        "length": {
+          "max": 255
+        },
+        "person-name-prohibited-characters": {}
+      },
+      "required": {
+        "roles": ["user"]
+      },
+      "permissions": {
+        "view": ["admin", "user"],
+        "edit": ["admin", "user"]
+      },
+      "multivalued": false
+    }
+  ],
+  "groups": [
+    {
+      "name": "user-metadata",
+      "displayHeader": "User metadata",
+      "displayDescription": "Attributes, which refer to user metadata"
+    }
+  ]
+}
+EOF
+
+  /opt/keycloak/bin/kcadm.sh update users/profile -r "$APP_REALM" -f "$USER_PROFILE_FILE"
+  rm -f "$USER_PROFILE_FILE"
+  echo "[realm] Applied user profile schema with middleName"
 }
 
 if [ -z "$ADMIN_SERVICE_CLIENT_SECRET" ] || is_weak_secret "$ADMIN_SERVICE_CLIENT_SECRET"; then
@@ -126,12 +322,30 @@ dashboard.plans.read
 normative_files.read
 normative_files.create
 normative_files.manage
+normative_files.status.update
 files.download
 unavailability.manage_all
 unavailability.manage_own
 unavailability.manage_subordinate
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
 contractors.manual.create
 contractors.manual.manage
+department.requests.read
+department.requests.update
+department.requests.status_update
+department.requests.assign
+department.offers.update
+department.offers.accept
+department.offers.reject
+department.chats.read
+department.files.read
+department.files.upload
+department.files.delete
+department.dashboard.read
+department.plans.read
+department.plans.manage
 EOF
 )
 
@@ -146,9 +360,34 @@ app.contractor
 EOF
 )
 
+CONTRACTOR_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
+delegation.contractors.profile.status.update
+EOF
+)
+
+DEPARTMENT_DELEGATION_ROLE_NAMES=$(cat <<'EOF'
+delegation.department.requests.read
+delegation.department.requests.update
+delegation.department.requests.status_update
+delegation.department.requests.assign
+delegation.department.offers.update
+delegation.department.offers.accept
+delegation.department.offers.reject
+delegation.department.chats.read
+delegation.department.files.read
+delegation.department.files.upload
+delegation.department.files.delete
+delegation.department.dashboard.read
+delegation.department.plans.read
+delegation.department.plans.manage
+EOF
+)
+
 ALL_ROLE_NAMES=$(cat <<EOF
 $PERMISSION_ROLE_NAMES
 $APP_ROLE_NAMES
+$CONTRACTOR_DELEGATION_ROLE_NAMES
+$DEPARTMENT_DELEGATION_ROLE_NAMES
 EOF
 )
 
@@ -210,6 +449,8 @@ offers.contractor_info.read
 chat.read
 files.download
 users.read
+contractors.read
+contractors.profile.read
 users.status.update
 users.role.update_economy
 users.manager.update
@@ -252,6 +493,8 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 users.read
+contractors.read
+contractors.profile.read
 users.create
 users.status.update
 users.role.update_economy
@@ -264,6 +507,7 @@ dashboard.plans.read
 unavailability.manage_subordinate
 normative_files.manage
 normative_files.create
+normative_files.status.update
 profile.manage_any
 company_contacts.manage_any
 unavailability.manage_own
@@ -299,9 +543,14 @@ chat.message.attach
 chat.receipts.mark_received
 chat.receipts.mark_read
 users.read
+contractors.read
+contractors.profile.read
 users.status.update
 users.manager.update
 normative_files.read
+dashboard.process.read
+dashboard.savings.read
+dashboard.plans.read
 unavailability.manage_own
 unavailability.manage_subordinate
 offers.manual.create
@@ -319,7 +568,70 @@ requests.pricing.update
 requests.deadline.update
 requests.status.update
 requests.amounts.read
+offers.contractor_info.read
 normative_files.read
+EOF
+)
+ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE=$(cat <<'EOF'
+contractors.read
+contractors.profile.read
+contractors.profile.status.update
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ=$(cat <<'EOF'
+department.requests.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE=$(cat <<'EOF'
+department.requests.update
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE=$(cat <<'EOF'
+department.requests.status_update
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN=$(cat <<'EOF'
+department.requests.assign
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE=$(cat <<'EOF'
+department.offers.update
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT=$(cat <<'EOF'
+department.offers.accept
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT=$(cat <<'EOF'
+department.offers.reject
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_CHATS_READ=$(cat <<'EOF'
+department.chats.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_FILES_READ=$(cat <<'EOF'
+department.files.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_FILES_UPLOAD=$(cat <<'EOF'
+department.files.upload
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_FILES_DELETE=$(cat <<'EOF'
+department.files.delete
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_DASHBOARD_READ=$(cat <<'EOF'
+department.dashboard.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_PLANS_READ=$(cat <<'EOF'
+department.plans.read
+EOF
+)
+ROLE_DELEGATION_DEPARTMENT_PLANS_MANAGE=$(cat <<'EOF'
+department.plans.manage
 EOF
 )
 if [ -z "$KEYCLOAK_VERIFY_EMAIL" ]; then
@@ -347,19 +659,15 @@ if [ -z "${KC_BOOTSTRAP_ADMIN_USERNAME:-}" ] || [ -z "${KC_BOOTSTRAP_ADMIN_PASSW
   exit 1
 fi
 
-until /opt/keycloak/bin/kcadm.sh config credentials \
-  --server "$SERVER_URL" \
-  --realm "$MASTER_REALM" \
-  --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
-  --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null 2>&1
-do
-  sleep 3
-done
+refresh_kcadm_credentials
 
 if ! /opt/keycloak/bin/kcadm.sh get "realms/$APP_REALM" >/dev/null 2>&1; then
   echo "Realm $APP_REALM is not available"
   exit 1
 fi
+
+apply_realm_mail_and_session_settings
+apply_user_profile_configuration
 
 _CACHED_API_CLIENT_UUID=""
 
@@ -494,6 +802,17 @@ ensure_composite_role_has_member() {
   rm -f "$payload_file"
 }
 
+ensure_composite_role_has_member_force() {
+  client_uuid="$1"
+  composite_role_name="$2"
+  member_role_name="$3"
+
+  payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
+  # Force-add: ignore possible duplicates / already-present errors.
+  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null 2>&1 || true
+  rm -f "$payload_file"
+}
+
 remove_composite_role_member() {
   client_uuid="$1"
   composite_role_name="$2"
@@ -602,10 +921,10 @@ ensure_client_role() {
   composite_flag="$3"
 
   if /opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$role_name" -r "$APP_REALM" >/dev/null 2>&1; then
-    /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid/roles/$role_name" -r "$APP_REALM" \
-      -s "name=$role_name" \
-      -s "composite=$composite_flag" \
-      -s clientRole=true >/dev/null
+    # Role exists. Final role shape is enforced later by:
+    # - enforce_atomic_permission_roles (atomic permissions),
+    # - sync_composite_role (app.* and delegation.department.*).
+    return 0
   else
     /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles" -r "$APP_REALM" \
       -s "name=$role_name" \
@@ -629,11 +948,14 @@ sync_composite_role() {
     -s composite=true \
     -s clientRole=true >/dev/null
 
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
+  current_member_names="$(list_role_names_from_payload "$current_composites")"
+
   desired_members_file="$(mktemp)"
   printf '%s\n' "$desired_members" >"$desired_members_file"
   # kcadm may read stdin; use fd 3 so the member list is not consumed after the first role.
   while IFS= read -r member_role; do
-    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
+    if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ] && ! role_name_in_list "$member_role" "$current_member_names"; then
       ensure_composite_role_has_member "$api_client_uuid" "$role_name" "$member_role"
     fi
   done 3<"$desired_members_file"
@@ -692,7 +1014,7 @@ verify_keycloak_permission_model() {
     exit 1
   fi
 
-  if _verify_atomic_permission_roles "$api_client_uuid"; then
+  if ! _verify_atomic_permission_roles "$api_client_uuid"; then
     exit 1
   fi
 
@@ -706,20 +1028,39 @@ ensure_api_roles_model() {
     exit 1
   fi
 
+  echo "[1/6] Ensuring atomic permission roles exist in $API_CLIENT_ID"
   printf '%s\n' "$PERMISSION_ROLE_NAMES" | while IFS= read -r role_name; do
     if [ -n "$role_name" ]; then
       ensure_client_role "$api_client_uuid" "$role_name" "false"
     fi
   done
 
+  echo "[2/6] Ensuring app.* composite roles exist"
   printf '%s\n' "$APP_ROLE_NAMES" | while IFS= read -r role_name; do
     if [ -n "$role_name" ]; then
       ensure_client_role "$api_client_uuid" "$role_name" "true"
     fi
   done
 
+  echo "[3/7] Ensuring delegation.contractors.* composite roles exist"
+  printf '%s\n' "$CONTRACTOR_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "true"
+    fi
+  done
+
+  echo "[4/7] Ensuring delegation.department.* composite roles exist"
+  printf '%s\n' "$DEPARTMENT_DELEGATION_ROLE_NAMES" | while IFS= read -r role_name; do
+    if [ -n "$role_name" ]; then
+      ensure_client_role "$api_client_uuid" "$role_name" "true"
+    fi
+  done
+
+  echo "[5/7] Enforcing atomic permission roles (no nested composites)"
   enforce_atomic_permission_roles
 
+  echo "[6/7] Syncing composite membership for app.* and delegation.*"
+  refresh_kcadm_credentials
   sync_composite_role "app.superadmin" "$ROLE_APP_SUPERADMIN"
   sync_composite_role "app.admin" "$ROLE_APP_ADMIN"
   sync_composite_role "app.contractor" "$ROLE_APP_CONTRACTOR"
@@ -727,6 +1068,28 @@ ensure_api_roles_model() {
   sync_composite_role "app.lead_economist" "$ROLE_APP_LEAD_ECONOMIST"
   sync_composite_role "app.economist" "$ROLE_APP_ECONOMIST"
   sync_composite_role "app.operator" "$ROLE_APP_OPERATOR"
+  sync_composite_role "delegation.contractors.profile.status.update" "$ROLE_DELEGATION_CONTRACTORS_PROFILE_STATUS_UPDATE"
+  sync_composite_role "delegation.department.requests.read" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_READ"
+  sync_composite_role "delegation.department.requests.update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_UPDATE"
+  sync_composite_role "delegation.department.requests.status_update" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_STATUS_UPDATE"
+  sync_composite_role "delegation.department.requests.assign" "$ROLE_DELEGATION_DEPARTMENT_REQUESTS_ASSIGN"
+  sync_composite_role "delegation.department.offers.update" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_UPDATE"
+  sync_composite_role "delegation.department.offers.accept" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_ACCEPT"
+  sync_composite_role "delegation.department.offers.reject" "$ROLE_DELEGATION_DEPARTMENT_OFFERS_REJECT"
+  sync_composite_role "delegation.department.chats.read" "$ROLE_DELEGATION_DEPARTMENT_CHATS_READ"
+  sync_composite_role "delegation.department.files.read" "$ROLE_DELEGATION_DEPARTMENT_FILES_READ"
+  sync_composite_role "delegation.department.files.upload" "$ROLE_DELEGATION_DEPARTMENT_FILES_UPLOAD"
+  sync_composite_role "delegation.department.files.delete" "$ROLE_DELEGATION_DEPARTMENT_FILES_DELETE"
+  sync_composite_role "delegation.department.dashboard.read" "$ROLE_DELEGATION_DEPARTMENT_DASHBOARD_READ"
+  sync_composite_role "delegation.department.plans.read" "$ROLE_DELEGATION_DEPARTMENT_PLANS_READ"
+  sync_composite_role "delegation.department.plans.manage" "$ROLE_DELEGATION_DEPARTMENT_PLANS_MANAGE"
+
+  # Force ensure direct membership for newly introduced contractor profile status permissions.
+  api_client_uuid="$(resolve_api_client_uuid)"
+  ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.status.update"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.status.update"
 
   # app.* sync can briefly leave leaf roles composite=true until enforce_atomic settles.
   atomic_attempt=1
@@ -742,6 +1105,12 @@ ensure_api_roles_model() {
     atomic_attempt=$((atomic_attempt + 1))
   done
 
+  # Always re-apply after composite sync:
+  # this keeps department.* and all other atomic permission roles strictly leaf.
+  echo "KEYCLOAK_BOOTSTRAP: re-applying enforce_atomic after composite sync"
+  enforce_atomic_permission_roles
+
+  echo "[7/7] Verifying final Keycloak permission model"
   verify_keycloak_permission_model
 }
 
@@ -813,77 +1182,8 @@ EOF
   fi
 }
 
-REALM_UPDATE_FILE="$(mktemp)"
-
-if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ] && [ -n "$SMTP_FROM" ]; then
-  if [ -z "$SMTP_SSL" ] && [ -z "$SMTP_STARTTLS" ]; then
-    if [ "$SMTP_PORT" = "465" ]; then
-      SMTP_SSL="true"
-      SMTP_STARTTLS="false"
-    else
-      SMTP_SSL="false"
-      SMTP_STARTTLS="true"
-    fi
-  fi
-
-  cat >"$REALM_UPDATE_FILE" <<EOF
-{
-  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
-  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
-  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
-  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
-  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
-  "revokeRefreshToken": true,
-  "loginTheme": "acom-offerdesk",
-  "internationalizationEnabled": true,
-  "defaultLocale": "ru",
-  "supportedLocales": ["ru"],
-  "smtpServer": {
-    "auth": "$SMTP_AUTH",
-    "host": "$SMTP_HOST",
-    "port": "$SMTP_PORT",
-    "user": "$SMTP_USERNAME",
-    "password": "$SMTP_PASSWORD",
-    "from": "$SMTP_FROM",
-    "replyTo": "$SMTP_REPLY_TO",
-    "fromDisplayName": "$SMTP_FROM_DISPLAY_NAME",
-    "ssl": "$SMTP_SSL",
-    "starttls": "$SMTP_STARTTLS"
-  }
-}
-EOF
-else
-  cat >"$REALM_UPDATE_FILE" <<EOF
-{
-  "verifyEmail": $KEYCLOAK_VERIFY_EMAIL,
-  "ssoSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionIdleTimeoutRememberMe": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "ssoSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "ssoSessionMaxLifespanRememberMe": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "clientSessionIdleTimeout": $KEYCLOAK_SSO_IDLE_TIMEOUT_SECONDS,
-  "clientSessionMaxLifespan": $KEYCLOAK_SSO_MAX_LIFESPAN_SECONDS,
-  "accessCodeLifespan": $KEYCLOAK_ACCESS_CODE_LIFESPAN_SECONDS,
-  "accessCodeLifespanUserAction": $KEYCLOAK_ACCESS_CODE_USER_ACTION_LIFESPAN_SECONDS,
-  "accessCodeLifespanLogin": $KEYCLOAK_ACCESS_CODE_LOGIN_LIFESPAN_SECONDS,
-  "actionTokenGeneratedByUserLifespan": $KEYCLOAK_ACTION_TOKEN_USER_LIFESPAN_SECONDS,
-  "revokeRefreshToken": true,
-  "loginTheme": "acom-offerdesk",
-  "internationalizationEnabled": true,
-  "defaultLocale": "ru",
-  "supportedLocales": ["ru"]
-}
-EOF
-  echo "Keycloak SMTP configuration is incomplete; updating only realm verifyEmail=$KEYCLOAK_VERIFY_EMAIL"
-fi
-
-/opt/keycloak/bin/kcadm.sh update "realms/$APP_REALM" -f "$REALM_UPDATE_FILE"
-rm -f "$REALM_UPDATE_FILE"
+refresh_kcadm_credentials
+apply_realm_mail_and_session_settings
 
 ensure_web_client
 ensure_api_client

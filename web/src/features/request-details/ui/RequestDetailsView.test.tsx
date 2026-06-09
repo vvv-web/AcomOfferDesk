@@ -51,15 +51,25 @@ vi.mock("@shared/api/fileDownload", () => ({
 vi.mock("@features/request-details/ui/RequestDetailsMainCard", () => ({
   RequestDetailsMainCard: (props: {
     canEditRequest: boolean;
+    canUpdateRequestStatus?: boolean;
     canDeleteRequestFiles: boolean;
     canUploadRequestFiles: boolean;
     canEnterEditMode: boolean;
+    responsibleContact?: {
+      fullName?: string | null;
+      phone?: string | null;
+      mail?: string | null;
+    } | null;
   }) => (
     <div data-testid="request-details-main-card">
       <div data-testid="main-can-edit-request">{String(props.canEditRequest)}</div>
+      <div data-testid="main-can-update-request-status">{String(Boolean(props.canUpdateRequestStatus))}</div>
       <div data-testid="main-can-delete-request-files">{String(props.canDeleteRequestFiles)}</div>
       <div data-testid="main-can-upload-request-files">{String(props.canUploadRequestFiles)}</div>
       <div data-testid="main-can-enter-edit-mode">{String(props.canEnterEditMode)}</div>
+      <div data-testid="main-contact-name">{props.responsibleContact?.fullName ?? ""}</div>
+      <div data-testid="main-contact-phone">{props.responsibleContact?.phone ?? ""}</div>
+      <div data-testid="main-contact-mail">{props.responsibleContact?.mail ?? ""}</div>
     </div>
   ),
 }));
@@ -89,6 +99,7 @@ const buildRequestDetails = (overrides?:
   Partial<{
     requestActions: {
       edit: boolean;
+      update_status: boolean;
       change_owner: boolean;
       upload_file: boolean;
       delete_file: boolean;
@@ -102,6 +113,8 @@ const buildRequestDetails = (overrides?:
   id: 17,
   id_user: "owner-1",
   owner_full_name: "Owner One",
+  owner_phone: "+7 900 111-22-33",
+  owner_mail: "owner@example.com",
   status: "open",
   status_label: "Open",
   initial_amount: 100,
@@ -143,6 +156,7 @@ const buildRequestDetails = (overrides?:
     view_amounts: overrides?.requestActions?.view_amounts ?? true,
     open_contractor_view: false,
     edit: overrides?.requestActions?.edit ?? true,
+    update_status: overrides?.requestActions?.update_status ?? true,
     change_owner: overrides?.requestActions?.change_owner ?? true,
     upload_file: overrides?.requestActions?.upload_file ?? true,
     delete_file: overrides?.requestActions?.delete_file ?? true,
@@ -174,9 +188,13 @@ describe("RequestDetailsView action-driven CTAs", () => {
     });
 
     expect(screen.getByTestId("main-can-edit-request")).toHaveTextContent("true");
+    expect(screen.getByTestId("main-can-update-request-status")).toHaveTextContent("true");
     expect(screen.getByTestId("main-can-delete-request-files")).toHaveTextContent("true");
     expect(screen.getByTestId("main-can-upload-request-files")).toHaveTextContent("true");
     expect(screen.getByTestId("main-can-enter-edit-mode")).toHaveTextContent("true");
+    expect(screen.getByTestId("main-contact-name")).toHaveTextContent("Owner One");
+    expect(screen.getByTestId("main-contact-phone")).toHaveTextContent("+7 900 111-22-33");
+    expect(screen.getByTestId("main-contact-mail")).toHaveTextContent("owner@example.com");
     expect(screen.getByTestId("offers-can-change-status")).toHaveTextContent("true");
     expect(screen.getByTestId("offers-has-add-click")).toHaveTextContent("true");
 
@@ -189,6 +207,7 @@ describe("RequestDetailsView action-driven CTAs", () => {
       buildRequestDetails({
         requestActions: {
           edit: false,
+          update_status: false,
           change_owner: false,
           upload_file: false,
           delete_file: false,
@@ -211,6 +230,7 @@ describe("RequestDetailsView action-driven CTAs", () => {
     });
 
     expect(screen.getByTestId("main-can-edit-request")).toHaveTextContent("false");
+    expect(screen.getByTestId("main-can-update-request-status")).toHaveTextContent("false");
     expect(screen.getByTestId("main-can-delete-request-files")).toHaveTextContent("false");
     expect(screen.getByTestId("main-can-upload-request-files")).toHaveTextContent("false");
     expect(screen.getByTestId("main-can-enter-edit-mode")).toHaveTextContent("false");
@@ -226,6 +246,7 @@ describe("RequestDetailsView action-driven CTAs", () => {
       buildRequestDetails({
         requestActions: {
           edit: false,
+          update_status: false,
           change_owner: true,
           upload_file: false,
           delete_file: false,

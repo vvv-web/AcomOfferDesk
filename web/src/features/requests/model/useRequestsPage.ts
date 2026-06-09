@@ -54,9 +54,11 @@ export const useRequestsPage = () => {
   const [ownerOptions, setOwnerOptions] = useState<Array<{ id: string; label: string; unavailablePeriod: UnavailabilityPeriodInfo | null }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [chatAlertsMap, setChatAlertsMap] = useState<Record<number, number>>({});
+  const [successToastEvent, setSuccessToastEvent] = useState<{ id: number; message: string } | null>(null);
+  const [chatAlertsMap, setChatAlertsMap] = useState<Record<string, number>>({});
   const requestsSignatureRef = useRef('');
   const ownerOptionsSignatureRef = useRef('');
+  const successToastIdRef = useRef(0);
 
   const contractorTabParam = searchParams.get('tab');
   const contractorTab: 'my' | 'open' = contractorTabParam === 'open' ? 'open' : 'my';
@@ -76,9 +78,13 @@ export const useRequestsPage = () => {
   const shouldLoadOnlyOpenRequests = isContractor && !canUseContractorTabs && canLoadOpenRequests;
   const shouldLoadOpenRequests = shouldLoadOnlyOpenRequests || (canUseContractorTabs && contractorTab === 'open');
 
-  const canEditOwner = useMemo(
+  const canEditOwnerByPermission = useMemo(
     () => hasPermission(session, 'requests.owner.change'),
     [session]
+  );
+  const canEditOwner = useMemo(
+    () => canEditOwnerByPermission || requests.some((request) => Boolean(request.actions.change_owner)),
+    [canEditOwnerByPermission, requests]
   );
   const canCreateRequest = useMemo(
     () => hasPermission(session, 'requests.create'),
@@ -168,7 +174,7 @@ export const useRequestsPage = () => {
     }
 
     setChatAlertsMap(
-      requests.reduce<Record<number, number>>((acc, request) => {
+      requests.reduce<Record<string, number>>((acc, request) => {
         const alertCount = request.count_chat_alert ?? 0;
         if (alertCount > 0) {
           acc[request.id] = alertCount;
@@ -184,6 +190,7 @@ export const useRequestsPage = () => {
         return;
       }
 
+      setErrorMessage(null);
       const targetOwner = ownerOptions.find((item) => item.id === ownerUserId);
       if (targetOwner?.unavailablePeriod) {
         const start = formatUnavailabilityDate(targetOwner.unavailablePeriod.startedAt);
@@ -208,6 +215,11 @@ export const useRequestsPage = () => {
         await updateRequestDetails({
           requestId: request.id,
           owner_user_id: ownerUserId
+        });
+        successToastIdRef.current += 1;
+        setSuccessToastEvent({
+          id: successToastIdRef.current,
+          message: 'Ответственный по заявке изменен'
         });
       } catch (error) {
         setRequests((prev) =>
@@ -236,6 +248,7 @@ export const useRequestsPage = () => {
     isLoading,
     ownerOptions,
     requests,
+    successToastEvent,
     shouldLoadOpenRequests
   };
 };

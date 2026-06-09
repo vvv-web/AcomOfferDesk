@@ -1,3 +1,11 @@
+﻿import {
+  GENERIC_ERROR_MESSAGE,
+  NETWORK_ERROR_MESSAGE,
+  fallbackByActionHint,
+  fallbackByHttpStatus,
+  normalizeUserFacingText,
+} from '@shared/lib/errors/userFacing';
+
 type RefreshReason = 'bootstrap' | 'http_401' | 'ws_4401';
 type AuthRuntime = {
   refresh: (reason: RefreshReason) => Promise<boolean>;
@@ -9,6 +17,10 @@ let authToken: string | null = null;
 let authRuntime: AuthRuntime | null = null;
 
 const ERROR_TRANSLATIONS: Record<string, string> = {
+  'Не удалось авторизоваться в Keycloak Admin API': 'Не удалось авторизоваться в Keycloak Admin API',
+  'Unable to authenticate in Keycloak admin API': 'Не удалось авторизоваться в Keycloak Admin API',
+  'Unable to create Keycloak account': 'Не удалось создать учетную запись в Keycloak',
+  'Unable to query Keycloak users': 'Не удалось получить пользователей из Keycloak',
   'User is not active': 'Пользователь неактивен',
   'User not found': 'Пользователь не найден',
   'Invalid credentials': 'Неверный логин или пароль',
@@ -19,13 +31,15 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Link expired': 'Срок действия ссылки истек',
   'Access denied': 'Доступ запрещен',
   'Request not found': 'Заявка не найдена',
+  'Request id cannot be empty': 'Укажите номер заявки',
+  'Request with this id already exists': 'Заявка с таким номером уже существует',
   'Offer not found': 'КП не найдено',
   'Chat not found': 'Чат не найден',
   'File not found': 'Файл не найден',
   'Message text cannot be empty': 'Текст сообщения не может быть пустым',
   'Too many attachments': 'Слишком много вложений',
   'Attachments total size exceeded': 'Превышен общий размер вложений',
-  'File too large': 'Файл слишком большой',
+  'File too large': 'Файл слишком большой. Размер одного файла не должен превышать 5 МБ.',
   'Unsafe file name': 'Недопустимое имя файла',
   'Forbidden file type': 'Тип файла запрещен',
   'Unsupported file extension': 'Неподдерживаемое расширение файла',
@@ -35,8 +49,32 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Normative file can be uploaded only once': 'Нормативный документ можно загрузить только один раз',
   'Partner card file is not configured': 'Не загружен нормативный документ для карты партнера',
   'Insufficient permissions to create manual offers': 'Недостаточно прав для ручного создания КП',
+  'Insufficient permissions to edit request':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ Р·Р°СЏРІРєРё: РґРѕСЃС‚СѓРї РѕРіСЂР°РЅРёС‡РµРЅ РёРµСЂР°СЂС…РёРµР№/РїРѕРґСЂР°Р·РґРµР»РµРЅРёРµРј',
+  'Insufficient permissions to update request status':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃС‚Р°С‚СѓСЃР° Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ РёР·РјРµРЅРµРЅРёСЏ СЃС‚Р°С‚СѓСЃР° РІ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ РґРѕСЃС‚СѓРїР°',
+  'Offer status cannot be changed for closed request': 'КП нельзя изменить, если заявка уже закрыта или отклонена',
+  'КП нельзя изменить, если заявка уже закрыта или отклонена': 'КП нельзя изменить, если заявка уже закрыта или отклонена',
+  'Insufficient permissions to update request amounts':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ СЃСѓРјРј Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ РЅР° СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ С†РµРЅ РІ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ РґРѕСЃС‚СѓРїР°',
+  'Insufficient permissions to update request deadline':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РґРµРґР»Р°Р№РЅР° Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ РґРµРґР»Р°Р№РЅР° РІ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ РґРѕСЃС‚СѓРїР°',
+  'Insufficient permissions to upload request files':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ РІ Р·Р°СЏРІРєСѓ: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ',
+  'Insufficient permissions to delete request files':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Р·Р°СЏРІРєРё: С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂР°РІРѕ СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ Рё РґРѕСЃС‚СѓРї Рє Р·Р°СЏРІРєРµ',
+  'Insufficient permissions to send request email notifications':
+    'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РґР»СЏ РѕС‚РїСЂР°РІРєРё РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ РїРѕ Р·Р°СЏРІРєРµ',
+  'Insufficient permissions to view chat': 'Недостаточно прав для просмотра чата',
+  'Insufficient permissions to send chat message': 'Недостаточно прав для отправки сообщения в чат',
+  'Insufficient permissions to view workspace': 'Недостаточно прав для просмотра рабочего пространства',
+  'Operator can update status only for own requests':
+    'РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР° РѕРїРµСЂР°С‚РѕСЂРѕРј РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РґР»СЏ СЃРѕР±СЃС‚РІРµРЅРЅС‹С… Р·Р°СЏРІРѕРє',
+  'Request is outside your management scope':
+    'Р”РµР№СЃС‚РІРёРµ РЅРµРґРѕСЃС‚СѓРїРЅРѕ: Р·Р°СЏРІРєР° РІРЅРµ РІР°С€РµРіРѕ РєРѕРЅС‚СѓСЂР° СѓРїСЂР°РІР»РµРЅРёСЏ',
   'Economist can create manual offers only for own requests': 'Экономист может создавать КП вручную только для своих заявок',
   'Manual offer can be created only for open request': 'Ручное КП можно создать только для открытой заявки',
+  'Accepted offer amount is required when request is closed with accepted offer': 'У принятого КП должна быть указана сумма',
   'Unsupported contractor mode': 'Некорректный режим выбора контрагента',
   'Existing contractor is required': 'Выберите контрагента из списка',
   'Contractor is required': 'Укажите контрагента',
@@ -48,22 +86,7 @@ const ERROR_TRANSLATIONS: Record<string, string> = {
   'Subordinate profile is available only for permitted subordinate roles': 'Профиль подчинённого доступен только для разрешённых ролей подчинённых',
   'Subordinate data can be managed only for permitted subordinate roles': 'Данные подчинённого можно изменять только для разрешённых ролей подчинённых',
   'You can manage subordinate data only for your subordinates': 'Вы можете управлять данными только своих подчинённых',
-  Forbidden: 'Доступ запрещен'
-};
-
-const STATUS_FALLBACK_TRANSLATIONS: Record<number, string> = {
-  400: 'Некорректный запрос',
-  401: 'Требуется авторизация',
-  403: 'Доступ запрещен',
-  404: 'Ресурс не найден',
-  409: 'Конфликт данных',
-  413: 'Файл слишком большой. Уменьшите размер и повторите попытку',
-  422: 'Ошибка валидации данных',
-  429: 'Слишком много запросов. Попробуйте позже',
-  500: 'Внутренняя ошибка сервера',
-  502: 'Сервер временно недоступен. Попробуйте позже',
-  503: 'Сервис временно недоступен. Попробуйте позже',
-  504: 'Сервер не ответил вовремя. Попробуйте позже'
+  Forbidden: 'Недостаточно прав для выполнения действия'
 };
 
 const VALIDATION_TRANSLATIONS: Record<string, string> = {
@@ -80,12 +103,19 @@ const VALIDATION_TRANSLATIONS: Record<string, string> = {
   'String should have at most 255 characters': 'Максимум 255 символов'
 };
 
+const isLikelyMojibake = (value: string): boolean => {
+  // Common UTF-8 -> cp1251/latin1 mojibake markers (e.g. "РџРѕР»Рµ")
+  return /(?:Р.|С.){2,}/.test(value);
+};
+
 const translateText = (message: string | null | undefined): string | null => {
   const normalized = (message ?? '').trim();
   if (!normalized) {
     return null;
   }
-  return ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? normalized;
+  const translated = ERROR_TRANSLATIONS[normalized] ?? VALIDATION_TRANSLATIONS[normalized] ?? null;
+  const safeTranslated = translated && !isLikelyMojibake(translated) ? translated : null;
+  return normalizeUserFacingText(safeTranslated ?? normalized, GENERIC_ERROR_MESSAGE);
 };
 
 const humanizeLoc = (loc: unknown): string => {
@@ -149,12 +179,12 @@ const getErrorMessage = async (response: Response, fallback: string) => {
     }
   }
 
-  const statusFallback = STATUS_FALLBACK_TRANSLATIONS[response.status];
+  const statusFallback = fallbackByHttpStatus(response.status);
   if (statusFallback) {
     return statusFallback;
   }
 
-  return fallback;
+  return normalizeUserFacingText(fallback, fallbackByActionHint(fallback));
 };
 
 const skipAutoRefresh = (url: string) => (
@@ -191,7 +221,7 @@ export const apiFetch = async (
   try {
     response = await performFetch(url, init, headers);
   } catch {
-    throw new Error('Сервер временно недоступен. Попробуйте позже');
+    throw new Error(NETWORK_ERROR_MESSAGE);
   }
 
   if (
@@ -231,15 +261,15 @@ export const fetchJson = async <T>(
     const raw = await response.text().catch(() => '');
     const trimmed = raw.trim().toLowerCase();
     if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
-      throw new Error('Сервер вернул HTML вместо JSON. Проверьте доступность API (/api/*).');
+      throw new Error(GENERIC_ERROR_MESSAGE);
     }
-    throw new Error(fallbackError);
+    throw new Error(normalizeUserFacingText(fallbackError, fallbackByActionHint(fallbackError)));
   }
 
   try {
     return await response.json() as T;
   } catch {
-    throw new Error(fallbackError);
+    throw new Error(normalizeUserFacingText(fallbackError, fallbackByActionHint(fallbackError)));
   }
 };
 
@@ -254,3 +284,6 @@ export const fetchEmpty = async (
     throw new Error(await getErrorMessage(response, fallbackError));
   }
 };
+
+
+

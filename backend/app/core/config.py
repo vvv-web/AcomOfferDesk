@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -60,6 +62,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     jwt_exp_minutes: int = Field(default=60, validation_alias="JWT_EXP_MINUTES")
     access_token_ttl_seconds: int = Field(default=300, validation_alias="ACCESS_TOKEN_TTL_SECONDS")
+    ws_ticket_ttl_seconds: int = Field(default=30, validation_alias="WS_TICKET_TTL_SECONDS")
+    ws_legacy_query_token_enabled: bool = Field(default=False, validation_alias="WS_LEGACY_QUERY_TOKEN_ENABLED")
     refresh_token_idle_ttl_seconds: int = Field(default=1800, validation_alias="REFRESH_TOKEN_IDLE_TTL_SECONDS")
     refresh_token_max_ttl_seconds: int = Field(default=43200, validation_alias="REFRESH_TOKEN_MAX_TTL_SECONDS")
     refresh_cookie_name: str = Field(default="acom_refresh_token", validation_alias="REFRESH_COOKIE_NAME")
@@ -171,6 +175,30 @@ class Settings(BaseSettings):
         default=604800,
         validation_alias=AliasChoices("REPLY_EMAIL_TTL_SECONDS", "EMAIL_REPLY_TTL_SECONDS"),
     )
+    contractor_invite_max_emails_per_request: int = Field(
+        default=50,
+        validation_alias="CONTRACTOR_INVITE_MAX_EMAILS_PER_REQUEST",
+    )
+    invitation_portal_url: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_PORTAL_URL",
+    )
+    invitation_contact_name: str | None = Field(
+        default="Владислав Хлистун",
+        validation_alias="INVITATION_CONTACT_NAME",
+    )
+    invitation_contact_email: str | None = Field(
+        default="VKhlistun@alabuga.ru",
+        validation_alias="INVITATION_CONTACT_EMAIL",
+    )
+    invitation_contact_phone: str | None = Field(
+        default="+7 927 455-80-89",
+        validation_alias="INVITATION_CONTACT_PHONE",
+    )
+    invitation_contact_text: str | None = Field(
+        default=None,
+        validation_alias="INVITATION_CONTACT_TEXT",
+    )
     imap_host: str | None = Field(default=None, validation_alias="IMAP_HOST")
     imap_port: int = Field(default=993, validation_alias="IMAP_PORT")
     imap_username: str | None = Field(
@@ -195,7 +223,7 @@ class Settings(BaseSettings):
     s3_secure: bool = Field(default=False, validation_alias="S3_SECURE")
     s3_ca_cert_path: str | None = Field(default=None, validation_alias="S3_CA_CERT_PATH")
     s3_presigned_get_ttl_seconds: int = Field(default=300, validation_alias="S3_PRESIGNED_GET_TTL_SECONDS")
-    max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
+    max_upload_size_bytes: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES")
     tg_register_ttl_seconds: int = Field(default=86400, validation_alias="TG_REGISTER_TTL_SECONDS")
     tg_auth_ttl_seconds: int = Field(default=600, validation_alias="TG_AUTH_TTL_SECONDS")
     tg_request_ttl_seconds: int = Field(default=604800, validation_alias="TG_REQUEST_TTL_SECONDS")
@@ -203,6 +231,26 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = Field(
         default_factory=list,
         validation_alias="CORS_ALLOW_ORIGINS",
+    )
+    registration_notify_enabled: bool = Field(
+        default=False,
+        validation_alias="REGISTRATION_NOTIFY_ENABLED",
+    )
+    registration_notify_url: str | None = Field(
+        default=None,
+        validation_alias="REGISTRATION_NOTIFY_URL",
+    )
+    registration_notify_token: str | None = Field(
+        default=None,
+        validation_alias="REGISTRATION_NOTIFY_TOKEN",
+    )
+    registration_notify_service: str = Field(
+        default="acom-registration",
+        validation_alias="REGISTRATION_NOTIFY_SERVICE",
+    )
+    registration_notify_timeout_seconds: float = Field(
+        default=20.0,
+        validation_alias="REGISTRATION_NOTIFY_TIMEOUT_SECONDS",
     )
 
     @field_validator("allowed_creation_role_ids", mode="before")
@@ -248,7 +296,23 @@ class Settings(BaseSettings):
         if self.s3_presigned_get_ttl_seconds <= 0:
             self.s3_presigned_get_ttl_seconds = 300
         if self.max_upload_size_bytes <= 0:
-            self.max_upload_size_bytes = 10 * 1024 * 1024
+            self.max_upload_size_bytes = 5 * 1024 * 1024
+        if self.contractor_invite_max_emails_per_request <= 0:
+            self.contractor_invite_max_emails_per_request = 50
+        if self.invitation_portal_url is not None:
+            self.invitation_portal_url = self.invitation_portal_url.strip() or None
+        if self.invitation_contact_name is not None:
+            self.invitation_contact_name = self.invitation_contact_name.strip() or None
+        if self.invitation_contact_email is not None:
+            self.invitation_contact_email = self.invitation_contact_email.strip() or None
+        if self.invitation_contact_phone is not None:
+            self.invitation_contact_phone = self.invitation_contact_phone.strip() or None
+        if self.invitation_contact_text is not None:
+            self.invitation_contact_text = self.invitation_contact_text.strip() or None
+        if self.ws_ticket_ttl_seconds < 30:
+            self.ws_ticket_ttl_seconds = 30
+        if self.ws_ticket_ttl_seconds > 60:
+            self.ws_ticket_ttl_seconds = 60
 
         self.keycloak_internal_base_url = self.keycloak_internal_base_url.rstrip("/")
         self.keycloak_client_id = self.keycloak_client_id.strip() or "acom-web"
@@ -265,6 +329,15 @@ class Settings(BaseSettings):
             self.keycloak_admin_username = self.keycloak_admin_username.strip() or None
         if self.keycloak_admin_password is not None:
             self.keycloak_admin_password = self.keycloak_admin_password.strip() or None
+        # Compose may set KEYCLOAK_ADMIN_*="" (overrides env_file). Fall back like bootstrap scripts.
+        if not self.keycloak_admin_username:
+            bootstrap_username = os.getenv("KC_BOOTSTRAP_ADMIN_USERNAME", "").strip()
+            if bootstrap_username:
+                self.keycloak_admin_username = bootstrap_username
+        if not self.keycloak_admin_password:
+            bootstrap_password = os.getenv("KC_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
+            if bootstrap_password:
+                self.keycloak_admin_password = bootstrap_password
         self.keycloak_bootstrap_app_username = self.keycloak_bootstrap_app_username.strip() or "superadmin"
         if self.keycloak_jwks_cache_ttl_seconds <= 0:
             self.keycloak_jwks_cache_ttl_seconds = 300

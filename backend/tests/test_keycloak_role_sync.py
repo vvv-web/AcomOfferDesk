@@ -2,9 +2,12 @@ import asyncio
 import base64
 import json
 
+import httpx
+
 from app.core.config import settings
 from app.services.keycloak_app_roles import role_mapping_by_local_role_id
 from app.services.keycloak_admin import KeycloakAdminService
+from app.domain.exceptions import Forbidden
 
 
 def _run(coroutine):
@@ -39,6 +42,7 @@ def test_replace_user_app_role_removes_only_conflicting_app_roles(monkeypatch):
         return [
             {"id": "1", "name": "app.admin"},
             {"id": "2", "name": "delegation.user-manager"},
+            {"id": "22", "name": "delegation.department.requests.read"},
             {"id": "3", "name": "users.read"},
         ]
 
@@ -155,6 +159,9 @@ def test_get_admin_token_falls_back_to_password_grant_when_service_token_has_no_
     service = KeycloakAdminService()
     service._realm = "acom-offerdesk"
     service._admin_realm = "master"
+    service._admin_client_secret = "test-secret"
+    service._admin_username = "admin"
+    service._admin_password = "admin"
 
     service_token = _jwt_with_claims(
         {

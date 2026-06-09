@@ -4,10 +4,12 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.domain.contractor_validation import validate_inn, validate_optional_email, validate_ru_phone
 from app.domain.authorization import has_permission
+from app.domain.department_delegations import get_department_permission_codes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
 from app.domain.permissions import PermissionCodes
 from app.models.auth_models import UserAuthAccount, UserContactChannel
@@ -22,14 +24,22 @@ from app.repositories.telegram_compat import telegram_subject_value
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
 from app.services.contractor_email_notifications import (
-    notify_contractor_access_opened_email,
+    notify_contractor_status_changed_email,
 )
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.keycloak_admin import KeycloakAdminService
 from app.services.keycloak_app_roles import sync_keycloak_app_role_for_user
+from app.services.registration_admin_notify import (
+    RegistrationNotifyContext,
+    notify_new_user_registration,
+)
+from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.tg_notifications import (
     notify_access_closed as notify_tg_access_closed,
     notify_access_opened as notify_tg_access_opened,
 )
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 ROLE_NAME_SUPERADMIN = "Суперадмин"
 ROLE_NAME_ADMIN = "Администратор"
@@ -37,6 +47,7 @@ ROLE_NAME_PROJECT_MANAGER = "Руководитель проекта"
 ROLE_NAME_LEAD_ECONOMIST = "Ведущий экономист"
 ROLE_NAME_ECONOMIST = "Экономист"
 ROLE_NAME_OPERATOR = "Оператор"
+ROLE_NAME_CONTRACTOR = "Контрагент"
 PLACEHOLDER_TEXT = "Не указано"
 SUBORDINATE_PROFILE_ROLE_IDS = {
     settings.lead_economist_role_id,
@@ -135,6 +146,7 @@ def _can_manage_subordinate_role(*, current_role_id: int, target_role_id: int) -
         return True
     if current_role_id == settings.project_manager_role_id:
         return target_role_id in {
+            settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
             settings.operator_role_id,
@@ -165,6 +177,77 @@ def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if current_user.role_id == settings.lead_economist_role_id:
         return {settings.economist_role_id, settings.operator_role_id}
     return set()
+
+
+@dataclass(frozen=True)
+class HierarchyRoleRule:
+    parent_required: bool
+    parent_allowed: bool
+    allowed_parent_role_ids: frozenset[int]
+
+
+def _hierarchy_rule_for_role(*, role_id: int) -> HierarchyRoleRule:
+    if role_id == settings.project_manager_role_id:
+        return HierarchyRoleRule(
+            parent_required=False,
+            parent_allowed=True,
+            allowed_parent_role_ids=frozenset({settings.project_manager_role_id}),
+        )
+    if role_id == settings.lead_economist_role_id:
+        return HierarchyRoleRule(
+            parent_required=True,
+            parent_allowed=True,
+            allowed_parent_role_ids=frozenset(
+                {
+                    settings.project_manager_role_id,
+                    settings.lead_economist_role_id,
+                }
+            ),
+        )
+    if role_id == settings.economist_role_id:
+        return HierarchyRoleRule(
+            parent_required=True,
+            parent_allowed=True,
+            allowed_parent_role_ids=frozenset(
+                {
+                    settings.lead_economist_role_id,
+                    settings.economist_role_id,
+                }
+            ),
+        )
+    return HierarchyRoleRule(
+        parent_required=False,
+        parent_allowed=False,
+        allowed_parent_role_ids=frozenset(),
+    )
+
+
+def _role_name_by_id(*, role_id: int) -> str:
+    if role_id == settings.project_manager_role_id:
+        return ROLE_NAME_PROJECT_MANAGER
+    if role_id == settings.lead_economist_role_id:
+        return ROLE_NAME_LEAD_ECONOMIST
+    if role_id == settings.economist_role_id:
+        return ROLE_NAME_ECONOMIST
+    if role_id == settings.operator_role_id:
+        return ROLE_NAME_OPERATOR
+    if role_id == settings.contractor_role_id:
+        return ROLE_NAME_CONTRACTOR
+    if role_id == settings.admin_role_id:
+        return ROLE_NAME_ADMIN
+    if role_id == settings.superadmin_role_id:
+        return ROLE_NAME_SUPERADMIN
+    return "Неизвестная роль"
+
+
+def _manager_required_error(*, role_id: int) -> str:
+    role_name = _role_name_by_id(role_id=role_id)
+    return f"Для роли «{role_name}» необходимо указать руководителя"
+
+
+def _manager_disallowed_error(*, role_id: int) -> str:
+    role_name = _role_name_by_id(role_id=role_id)
+    return f"Для роли «{role_name}» руководитель не используется"
 
 
 def _normalize_keycloak_email_value(value: str | None) -> str | None:
@@ -292,18 +375,24 @@ class UserRegistrationService:
 
         if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
             raise Forbidden("Ведущий экономист может создавать только экономистов")
-        if target_role.role == ROLE_NAME_ECONOMIST:
-            if id_parent is None:
-                raise Conflict("У экономиста должен быть руководитель с ролью экономиста или ведущего экономиста")
+        role_rule = _hierarchy_rule_for_role(role_id=role_id)
+        if not role_rule.parent_allowed:
+            id_parent = None
+        elif role_rule.parent_required and id_parent is None:
+            raise Conflict(_manager_required_error(role_id=role_id))
+
+        if id_parent is not None:
+            if id_parent == user_id:
+                raise Conflict("Пользователь не может быть руководителем самому себе")
             parent_user = await self._users.get_by_id(id_parent)
             if parent_user is None:
                 raise NotFound("Руководитель не найден")
-            parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_role.role not in {ROLE_NAME_ECONOMIST, ROLE_NAME_LEAD_ECONOMIST}:
-                raise Conflict("У экономиста руководителем может быть только экономист или ведущий экономист")
+            if parent_user.id_role not in role_rule.allowed_parent_role_ids:
+                raise Conflict("Выбранный пользователь не может быть руководителем для этой роли")
+
             if current_user.role_id == settings.lead_economist_role_id:
                 rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                    role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+                    role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
                 )
                 descendant_ids = _collect_descendant_user_ids(
                     manager_user_id=current_user.user_id,
@@ -312,21 +401,10 @@ class UserRegistrationService:
                 allowed_parent_ids = {current_user.user_id} | {
                     user.id
                     for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
+                    if user.id in descendant_ids and user.id_role in {settings.lead_economist_role_id, settings.economist_role_id}
                 }
                 if id_parent not in allowed_parent_ids:
-                    raise Forbidden("Руководитель-экономист должен входить в зону ответственности текущего пользователя")
-        elif target_role.role == ROLE_NAME_LEAD_ECONOMIST:
-            if id_parent is None:
-                raise Conflict("У ведущего экономиста должен быть руководитель проекта")
-            parent_user = await self._users.get_by_id(id_parent)
-            if parent_user is None:
-                raise NotFound("Руководитель не найден")
-            parent_role = await self._users.get_role_by_id(parent_user.id_role)
-            if parent_role is None or parent_user.id_role != settings.project_manager_role_id:
-                raise Conflict("У ведущего экономиста руководителем может быть только руководитель проекта")
-        else:
-            id_parent = None
+                    raise Forbidden("Выбранный руководитель вне разрешенной зоны управления")
         if await self._users.exists(user_id):
             raise Conflict("Пользователь уже существует")
 
@@ -373,6 +451,19 @@ class UserRegistrationService:
             keycloak_subject_id=keycloak_user.id,
             local_role_id=role_id,
         )
+        await notify_new_user_registration(
+            RegistrationNotifyContext(
+                source="admin_register",
+                user_id=user.id,
+                role_id=role_id,
+                role_name=target_role.role,
+                status=user.status,
+                full_name=normalized_full_name,
+                email=normalized_mail,
+                registered_by=current_user.user_id,
+                keycloak_subject=keycloak_user.id,
+            )
+        )
         return user
     
 
@@ -384,12 +475,24 @@ class ContractorRegistrationService:
         company_contacts: CompanyContactRepository,
         user_auth_accounts: UserAuthAccountRepository,
         user_contact_channels: UserContactChannelRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ) -> None:
         self._users = users
         self._profiles = profiles
         self._company_contacts = company_contacts
         self._user_auth_accounts = user_auth_accounts
         self._user_contact_channels = user_contact_channels
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def register_contractor(
         self,
@@ -456,6 +559,33 @@ class ContractorRegistrationService:
                 verified_at=None,
                 is_primary=True,
                 is_active=True,
+            )
+        )
+        contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
+        await notify_new_user_registration(
+            RegistrationNotifyContext(
+                source="contractor_tg",
+                user_id=user.id,
+                role_id=settings.contractor_role_id,
+                role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
+                status=user.status,
+                full_name=full_name,
+                email=company_mail if company_mail != "Не указано" else None,
+                company_name=company_name,
+            )
+        )
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="user.review_required",
+                actor_user_id=user.id,
+                entity_type="user",
+                entity_id=user.id,
+                dedupe_key=f"user.review_required:{user.id}:contractor_tg",
+                payload={
+                    "target_user_id": user.id,
+                    "target_role": settings.contractor_role_id,
+                    "source": "contractor_tg_registration",
+                },
             )
         )
         return user
@@ -564,6 +694,36 @@ class UserQueryService:
             target_user_id=subordinate_user_id,
         )
 
+    async def _resolve_internal_staff_scope_user_ids(
+        self,
+        *,
+        current_user: CurrentUser,
+    ) -> set[str]:
+        if current_user.role_id == settings.project_manager_role_id:
+            return set(
+                await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                    current_user=current_user,
+                )
+            )
+
+        if current_user.role_id in {
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            if current_user.permissions & get_department_permission_codes():
+                return set(
+                    await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            return set(
+                await StaffAccessScopeService(self._users).resolve_module_owner_ids(
+                    current_user=current_user,
+                )
+            )
+
+        return set()
+
     async def _ensure_accessible_subordinate(
         self,
         *,
@@ -603,18 +763,19 @@ class UserQueryService:
             settings.project_manager_role_id,
             settings.economist_role_id,
         }:
-            if role_id is not None and role_id != settings.economist_role_id:
-                raise Forbidden("Руководитель проекта, ведущий экономист и экономист могут просматривать только экономистов")
-            role_id = settings.economist_role_id
+            scoped_internal_role_ids = {
+                settings.lead_economist_role_id,
+                settings.economist_role_id,
+                settings.operator_role_id,
+            }
+            allowed_role_ids = scoped_internal_role_ids if role_id is None else {role_id}
+            if not allowed_role_ids.issubset(scoped_internal_role_ids):
+                raise Forbidden("Руководитель проекта, ведущий экономист и экономист могут просматривать только сотрудников своего контура")
 
-        if current_user.role_id == settings.economist_role_id:
             rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.economist_role_id],
+                role_ids=sorted(scoped_internal_role_ids),
             )
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
+            visible_scope_ids = await self._resolve_internal_staff_scope_user_ids(current_user=current_user)
             return [
                 UserListItem(
                     user_id=user.id,
@@ -626,51 +787,7 @@ class UserQueryService:
                     mail=profile.mail if profile else None,
                 )
                 for user, profile, _ in rows
-                if user.id in descendant_ids and user.id_role == settings.economist_role_id
-            ]
-
-        if current_user.role_id == settings.lead_economist_role_id:
-            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
-            )
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile, _ in rows
-                if user.id in descendant_ids and user.id_role == settings.economist_role_id
-            ]
-
-        if current_user.role_id == settings.project_manager_role_id:
-            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
-            )
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile, _ in rows
-                if user.id in descendant_ids
+                if user.id in visible_scope_ids and user.id_role in allowed_role_ids
             ]
 
         if role_id == settings.contractor_role_id:
@@ -715,6 +832,7 @@ class UserQueryService:
         current_user: CurrentUser,
         *,
         target_role_id: int,
+        target_user_id: str | None = None,
     ) -> list[UserListItem]:
         if not (
             UserPolicy.can_register_user(current_user)
@@ -727,45 +845,36 @@ class UserQueryService:
         if current_user.role_id == settings.economist_role_id and target_role_id != settings.economist_role_id:
             raise Forbidden("Экономист может управлять только экономистами")
         if current_user.role_id == settings.project_manager_role_id and target_role_id not in {
+            settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
         }:
-            raise Forbidden("Руководитель проекта может управлять только ведущими экономистами и экономистами")
+            raise Forbidden("Руководитель проекта может управлять только руководителями проекта, ведущими экономистами и экономистами")
 
-        if target_role_id == settings.economist_role_id:
-            rows = await self._users.list_by_role_ids_with_profiles_and_roles(
-                role_ids=[settings.lead_economist_role_id, settings.economist_role_id],
+        role_rule = _hierarchy_rule_for_role(role_id=target_role_id)
+        if not role_rule.parent_allowed:
+            return []
+
+        rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+            role_ids=list(role_rule.allowed_parent_role_ids),
+        )
+        rows = [row for row in rows if row[0].status == "active"]
+
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            hierarchy_rows = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
             )
-            if current_user.role_id == settings.lead_economist_role_id:
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                allowed_ids = {current_user.user_id} | {
-                    user.id
-                    for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
-                }
-                rows = [row for row in rows if row[0].id in allowed_ids]
-            elif current_user.role_id == settings.project_manager_role_id:
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                rows = [
-                    row for row in rows
-                    if row[0].id in descendant_ids
-                ]
-            elif current_user.role_id == settings.economist_role_id:
-                descendant_ids = _collect_descendant_user_ids(
-                    manager_user_id=current_user.user_id,
-                    rows=rows,
-                )
-                allowed_ids = {current_user.user_id} | {
-                    user.id
-                    for user, _, _ in rows
-                    if user.id in descendant_ids and user.id_role == settings.economist_role_id
-                }
+            hierarchy_rows = [row for row in hierarchy_rows if row[0].status == "active"]
+            descendant_ids = _collect_descendant_user_ids(
+                manager_user_id=current_user.user_id,
+                rows=hierarchy_rows,
+            )
+            allowed_scope_ids = {current_user.user_id} | descendant_ids
+            if current_user.role_id == settings.economist_role_id:
                 cursor_id = current_user.user_id
                 visited: set[str] = set()
                 while cursor_id is not None and cursor_id not in visited:
@@ -773,46 +882,50 @@ class UserQueryService:
                     cursor_user = await self._users.get_by_id(cursor_id)
                     if cursor_user is None:
                         break
-                    if cursor_user.id_role in {settings.economist_role_id, settings.lead_economist_role_id}:
-                        allowed_ids.add(cursor_user.id)
+                    if cursor_user.status == "active":
+                        allowed_scope_ids.add(cursor_user.id)
                     cursor_id = cursor_user.id_parent
-                rows = [row for row in rows if row[0].id in allowed_ids]
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile, _ in rows
+            rows = [row for row in rows if row[0].id in allowed_scope_ids]
+
+        if target_user_id is not None:
+            rows_for_cycle = await self._users.list_by_role_ids_with_profiles_and_roles(
+                role_ids=[settings.project_manager_role_id, settings.lead_economist_role_id, settings.economist_role_id],
+            )
+            rows_for_cycle = [row for row in rows_for_cycle if row[0].status == "active"]
+            target_descendants = _collect_descendant_user_ids(
+                manager_user_id=target_user_id,
+                rows=rows_for_cycle,
+            )
+            rows = [
+                row
+                for row in rows
+                if row[0].id != target_user_id and row[0].id not in target_descendants
             ]
 
-        if target_role_id == settings.lead_economist_role_id:
-            if current_user.role_id not in {settings.superadmin_role_id, settings.project_manager_role_id}:
-                raise Forbidden("Только суперадминистратор и руководитель проекта могут управлять руководителем ведущего экономиста")
-            rows = await self._users.list_users_with_profiles(role_id=settings.project_manager_role_id)
-            return [
-                UserListItem(
-                    user_id=user.id,
-                    role_id=user.id_role,
-                    id_parent=user.id_parent,
-                    status=user.status,
-                    full_name=profile.full_name if profile else None,
-                    phone=profile.phone if profile else None,
-                    mail=profile.mail if profile else None,
-                )
-                for user, profile in rows
-            ]
-
-        return []
+        return [
+            UserListItem(
+                user_id=user.id,
+                role_id=user.id_role,
+                id_parent=user.id_parent,
+                status=user.status,
+                full_name=profile.full_name if profile else None,
+                phone=profile.phone if profile else None,
+                mail=profile.mail if profile else None,
+            )
+            for user, profile, _ in rows
+        ]
     
     async def list_economists(self, current_user: CurrentUser) -> list[EconomistListItem]:
         UserPolicy.ensure_can_list_users(current_user)
 
         rows = await self._users.list_users_with_profiles(role_id=settings.economist_role_id)
+        visible_scope_ids: set[str] | None = None
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            visible_scope_ids = await self._resolve_internal_staff_scope_user_ids(current_user=current_user)
         return [
             EconomistListItem(
                 user_id=user.id,
@@ -822,6 +935,7 @@ class UserQueryService:
                 mail=profile.mail if profile else None,
             )
             for user, profile in rows
+            if visible_scope_ids is None or user.id in visible_scope_ids
         ]
     
     async def list_request_economists(self, current_user: CurrentUser) -> list[RequestEconomistListItem]:
@@ -839,13 +953,20 @@ class UserQueryService:
             settings.lead_economist_role_id,
             settings.project_manager_role_id,
         }:
-            descendant_ids = _collect_descendant_user_ids(
-                manager_user_id=current_user.user_id,
-                rows=rows,
-            )
+            if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN):
+                scoped_owner_ids = set(
+                    await DepartmentScopeService(self._users).resolve_department_owner_ids_for_current_user(
+                        current_user=current_user,
+                    )
+                )
+            else:
+                scoped_owner_ids = _collect_descendant_user_ids(
+                    manager_user_id=current_user.user_id,
+                    rows=rows,
+                )
             rows = [
                 row for row in rows
-                if row[0].id in descendant_ids
+                if row[0].id in scoped_owner_ids
             ]
 
         user_ids = [user.id for user, _, _ in rows]
@@ -964,7 +1085,7 @@ class UserRoleUpdateResult:
 @dataclass(frozen=True)
 class UserManagerUpdateResult:
     user_id: str
-    manager_user_id: str
+    manager_user_id: str | None
 
 
 @dataclass(frozen=True)
@@ -1167,7 +1288,21 @@ class ManualContractorService:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
-        return await self._create_manual_contractor(data=normalized_data)
+        login = await self._create_manual_contractor(data=normalized_data)
+        contractor_role = await self._users.get_role_by_id(settings.contractor_role_id)
+        await notify_new_user_registration(
+            RegistrationNotifyContext(
+                source="manual_contractor",
+                user_id=login,
+                role_id=settings.contractor_role_id,
+                role_name=contractor_role.role if contractor_role else ROLE_NAME_CONTRACTOR,
+                status="active",
+                email=normalized_data.company_mail,
+                registered_by=current_user.user_id,
+                company_name=normalized_data.company_name,
+            )
+        )
+        return login
 
     def _normalize_value(self, value: str | None) -> str | None:
         if value is None:
@@ -1327,6 +1462,18 @@ class UserRoleService:
             if not is_subordinate:
                 raise Forbidden("Вы можете обновлять роль только своих подчиненных")
 
+        role_rule = _hierarchy_rule_for_role(role_id=role_id)
+        if not role_rule.parent_allowed:
+            await self._users.update_parent(user, None)
+        elif user.id_parent is None and role_rule.parent_required:
+            raise Conflict(_manager_required_error(role_id=role_id))
+        elif user.id_parent is not None:
+            manager_user = await self._users.get_by_id(user.id_parent)
+            if manager_user is None:
+                raise Conflict("Текущий руководитель пользователя не найден")
+            if manager_user.id_role not in role_rule.allowed_parent_role_ids:
+                raise Conflict("Текущий руководитель несовместим с выбранной ролью")
+
         await self._users.update_role(user, role_id)
 
         account = await self._user_auth_accounts.get_by_user_provider(
@@ -1353,7 +1500,7 @@ class UserManagerService:
         *,
         current_user: CurrentUser,
         user_id: str,
-        manager_user_id: str,
+        manager_user_id: str | None,
     ) -> UserManagerUpdateResult:
         UserPolicy.ensure_can_update_user_manager(current_user)
 
@@ -1378,23 +1525,22 @@ class UserManagerService:
         if not is_subordinate:
             raise Forbidden("Вы можете обновлять руководителя только своих подчиненных")
 
+        role_rule = _hierarchy_rule_for_role(role_id=user.id_role)
+        if not role_rule.parent_allowed:
+            raise Conflict(_manager_disallowed_error(role_id=user.id_role))
+
+        if manager_user_id is None:
+            if role_rule.parent_required:
+                raise Conflict(_manager_required_error(role_id=user.id_role))
+            await self._users.update_parent(user, None)
+            return UserManagerUpdateResult(user_id=user.id, manager_user_id=None)
+
         manager_user = await self._users.get_by_id(manager_user_id)
         if manager_user is None:
             raise NotFound("Руководитель не найден")
         if manager_user.id == user.id:
             raise Conflict("Пользователь не может быть руководителем самого себя")
-
-        if user.id_role == settings.economist_role_id:
-            allowed_manager_role_ids = {
-                settings.economist_role_id,
-                settings.lead_economist_role_id,
-            }
-        elif user.id_role == settings.lead_economist_role_id:
-            allowed_manager_role_ids = {settings.project_manager_role_id}
-        else:
-            raise Conflict("Руководителя можно менять только у ведущего экономиста и экономиста")
-
-        if manager_user.id_role not in allowed_manager_role_ids:
+        if manager_user.id_role not in role_rule.allowed_parent_role_ids:
             raise Conflict("Выбранная роль руководителя недопустима для этого пользователя")
 
         candidate_query = UserQueryService(
@@ -1406,6 +1552,7 @@ class UserManagerService:
             for item in await candidate_query.list_manager_candidates(
                 current_user=current_user,
                 target_role_id=user.id_role,
+                target_user_id=user.id,
             )
         }
         if manager_user.id not in allowed_manager_ids:
@@ -1417,7 +1564,7 @@ class UserManagerService:
             target_user_id=manager_user.id,
         )
         if would_create_cycle:
-            raise Conflict("Выбранный руководитель создаст цикл в иерархии")
+            raise Conflict("Нельзя назначить руководителя: это создаст цикл в иерархии")
 
         await self._users.update_parent(user, manager_user.id)
         return UserManagerUpdateResult(user_id=user.id, manager_user_id=user.id_parent or manager_user.id)
@@ -1432,10 +1579,22 @@ class UserStatusService:
         users: UserRepository,
         tg_users: TgUserRepository,
         profiles: ProfileRepository,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._users = users
         self._tg_users = tg_users
         self._profiles = profiles
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
 
     async def update_statuses(
         self,
@@ -1444,8 +1603,12 @@ class UserStatusService:
         user_id: str,
         user_status: str,
         tg_status: str | None,
+        contractor_only: bool = False,
     ) -> UserStatusUpdateResult:
-        UserPolicy.ensure_can_update_user_status(current_user)
+        if contractor_only:
+            UserPolicy.ensure_can_update_contractor_profile_status(current_user)
+        else:
+            UserPolicy.ensure_can_update_user_status(current_user)
 
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Неподдерживаемое значение users.status")
@@ -1458,7 +1621,10 @@ class UserStatusService:
         if user is None:
             raise NotFound("Пользователь не найден")
 
-        if current_user.role_id in {
+        if contractor_only:
+            if user.id_role != settings.contractor_role_id:
+                raise Forbidden("Изменение статуса доступно только для контрагентов")
+        elif current_user.role_id in {
             settings.project_manager_role_id,
             settings.lead_economist_role_id,
             settings.economist_role_id,
@@ -1493,6 +1659,8 @@ class UserStatusService:
             elif user_status == "active":
                 await self._tg_users.update_status(tg_user, "approved")
 
+        old_status = user.status
+        status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
 
         notify_tg_id = tg_user.id if tg_user is not None else None
@@ -1505,6 +1673,8 @@ class UserStatusService:
         )
 
         notify_email: str | None = None
+        contractor_email_notification_queued = False
+        contractor_email_notification_reason: str | None = None
         if user.id_role == settings.contractor_role_id:
             profile = await self._profiles.get_by_id(user.id)
             notify_email = _normalize_notification_email(profile.mail if profile is not None else None)
@@ -1515,9 +1685,54 @@ class UserStatusService:
             else:
                 await notify_tg_access_closed(notify_tg_id)
 
-        if notify_email is not None and (notify_tg_id is None or not settings.telegram_legacy_enabled):
-            if user.status == "active":
-                await notify_contractor_access_opened_email(to_email=notify_email)
+        if status_changed and user.id_role == settings.contractor_role_id:
+            if notify_email is None:
+                contractor_email_notification_reason = "missing_email"
+            else:
+                contractor_email_notification_queued = await notify_contractor_status_changed_email(
+                    to_email=notify_email,
+                    user_status=user.status,
+                    recipient_user_id=user.id,
+                    initiator_user_id=current_user.user_id,
+                )
+                if not contractor_email_notification_queued:
+                    contractor_email_notification_reason = "status_not_supported_for_email"
+
+        if status_changed:
+            event = build_process_notification_event(
+                event_type="user.status_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                dedupe_key=f"user.status_changed:{user.id}:{old_status}:{user.status}",
+                payload={
+                    "target_user_id": user.id,
+                    "old_status": old_status,
+                    "new_status": user.status,
+                    "target_role": user.id_role,
+                    "target_is_contractor": user.id_role == settings.contractor_role_id,
+                    "target_user_email": notify_email,
+                    "actor_user_id": current_user.user_id,
+                    "email_notification_queued": contractor_email_notification_queued,
+                    "email_notification_reason": contractor_email_notification_reason,
+                },
+            )
+            self._schedule_process_notification_event(event)
+            if user.status == "review":
+                self._schedule_process_notification_event(
+                    build_process_notification_event(
+                        event_type="user.review_required",
+                        actor_user_id=current_user.user_id,
+                        entity_type="user",
+                        entity_id=user.id,
+                        dedupe_key=f"user.review_required:{user.id}:{old_status}->review",
+                        payload={
+                            "target_user_id": user.id,
+                            "target_role": user.id_role,
+                            "source": "user_status_service",
+                        },
+                    )
+                )
 
         return result
     

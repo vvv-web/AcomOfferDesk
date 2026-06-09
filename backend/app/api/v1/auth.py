@@ -54,6 +54,10 @@ from app.services.tg_registration_links import (
     TgRegistrationLinkInvalidError,
     resolve_tg_registration_token,
 )
+from app.services.registration_admin_notify import (
+    RegistrationNotifyContext,
+    notify_new_user_registration,
+)
 from app.services.users import UserRegistrationService
 
 router = APIRouter()
@@ -260,14 +264,14 @@ async def request_email_verification(
 
     if result == "same_email":
         return EmailVerificationActionResponse(
-            detail="РЈРєР°Р·Р°РЅ С‚РµРєСѓС‰РёР№ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Р№ email"
+            detail="Указан текущий подтверждённый email"
         )
     if result == "already_sent":
         return EmailVerificationActionResponse(
-            detail="РџРёСЃСЊРјРѕ СѓР¶Рµ РѕС‚РїСЂР°РІР»РµРЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ РІР°С€Сѓ РїРѕС‡С‚Сѓ"
+            detail="Письмо уже отправлено. Проверьте вашу почту"
         )
     return EmailVerificationActionResponse(
-        detail="РџРёСЃСЊРјРѕ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email РѕС‚РїСЂР°РІР»РµРЅРѕ"
+        detail="Письмо для подтверждения email отправлено"
     )
 
 
@@ -281,8 +285,8 @@ async def verify_email(
         updated = await service.confirm_profile_verification(token=token)
 
     if updated:
-        return EmailVerificationActionResponse(detail="Email РїРѕРґС‚РІРµСЂР¶РґС‘РЅ")
-    return EmailVerificationActionResponse(detail="Email СѓР¶Рµ РїРѕРґС‚РІРµСЂР¶РґС‘РЅ")
+        return EmailVerificationActionResponse(detail="Email подтверждён")
+    return EmailVerificationActionResponse(detail="Email уже подтверждён")
 
 
 @router.get("/auth/oidc/login", response_class=RedirectResponse)
@@ -476,6 +480,25 @@ async def keycloak_callback(
                 token_claims,
                 allow_user_creation=claims.flow == "register",
             )
+            if claims.flow == "register" and getattr(synced, "created_local_user", False):
+                role = await uow.users.get_role_by_id(synced.user.id_role)
+                full_name: str | None = token_claims.full_name
+                if uow.profiles is not None:
+                    profile = await uow.profiles.get_by_id(synced.user.id)
+                    if profile is not None and (profile.full_name or "").strip():
+                        full_name = profile.full_name
+                await notify_new_user_registration(
+                    RegistrationNotifyContext(
+                        source="oidc_invite",
+                        user_id=synced.user.id,
+                        role_id=synced.user.id_role,
+                        role_name=role.role if role else None,
+                        status=synced.user.status,
+                        full_name=full_name,
+                        email=token_claims.email,
+                        keycloak_subject=token_claims.subject,
+                    )
+                )
             if claims.tg_registration_id is not None:
                 if not settings.telegram_legacy_enabled:
                     raise Forbidden("Telegram legacy authentication is disabled")

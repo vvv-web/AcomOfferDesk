@@ -62,7 +62,7 @@ def test_role_map_contains_only_atomic_permissions() -> None:
     assert all(not permission.startswith("delegation.") for permission in flattened)
 
 
-def test_app_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
+def test_matching_app_role_grants_role_ceiling_when_jwt_has_no_leaf_permissions() -> None:
     current_user = build_current_user_from_keycloak(
         user_id="user-app-only",
         role_id=settings.superadmin_role_id,
@@ -70,7 +70,7 @@ def test_app_roles_do_not_grant_atomic_permissions_by_themselves() -> None:
         api_roles=frozenset({"app.superadmin", "app.admin"}),
     )
 
-    assert current_user.permissions == frozenset()
+    assert current_user.permissions == get_known_permissions()
     assert current_user.app_roles == frozenset({"app.superadmin", "app.admin"})
 
 
@@ -112,3 +112,54 @@ def test_inactive_and_blacklist_never_pass_protected_checks(make_current_user, s
 
     assert has_permission(blocked_user, PermissionCodes.REQUESTS_READ) is False
     assert has_permission(blocked_user, PermissionCodes.OFFERS_STATUS_UPDATE) is False
+
+
+def test_economist_role_includes_plan_dashboard_permission() -> None:
+    role_map = get_role_permissions_map()
+
+    assert PermissionCodes.DASHBOARD_PLANS_READ in role_map[settings.economist_role_id]
+
+
+def test_economist_role_includes_module_dashboard_permissions() -> None:
+    role_map = get_role_permissions_map()
+    economist_permissions = role_map[settings.economist_role_id]
+
+    assert PermissionCodes.DASHBOARD_PROCESS_READ in economist_permissions
+    assert PermissionCodes.DASHBOARD_SAVINGS_READ in economist_permissions
+
+
+def test_operator_role_can_read_offers_on_request_without_workspace() -> None:
+    role_map = get_role_permissions_map()
+    operator_permissions = role_map[settings.operator_role_id]
+
+    assert PermissionCodes.REQUESTS_READ in operator_permissions
+    assert PermissionCodes.OFFERS_CONTRACTOR_INFO_READ in operator_permissions
+    assert PermissionCodes.OFFERS_WORKSPACE_READ not in operator_permissions
+    assert PermissionCodes.CHAT_READ not in operator_permissions
+
+
+def test_project_manager_role_is_read_only_for_requests_offers_and_chats() -> None:
+    role_map = get_role_permissions_map()
+    pm_permissions = role_map[settings.project_manager_role_id]
+
+    assert PermissionCodes.REQUESTS_READ in pm_permissions
+    assert PermissionCodes.OFFERS_WORKSPACE_READ in pm_permissions
+    assert PermissionCodes.CHAT_READ in pm_permissions
+    assert PermissionCodes.REQUESTS_OWNER_CHANGE in pm_permissions
+    assert PermissionCodes.REQUESTS_UPDATE not in pm_permissions
+    assert PermissionCodes.OFFERS_STATUS_UPDATE not in pm_permissions
+    assert PermissionCodes.CHAT_MESSAGE_SEND not in pm_permissions
+
+
+def test_staff_roles_can_read_contractors_without_status_update_rights() -> None:
+    role_map = get_role_permissions_map()
+
+    for role_id in (
+        settings.project_manager_role_id,
+        settings.lead_economist_role_id,
+        settings.economist_role_id,
+    ):
+        permissions = role_map[role_id]
+        assert PermissionCodes.CONTRACTORS_READ in permissions
+        assert PermissionCodes.CONTRACTORS_PROFILE_READ in permissions
+        assert PermissionCodes.CONTRACTORS_PROFILE_STATUS_UPDATE not in permissions

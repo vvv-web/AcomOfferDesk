@@ -1,4 +1,4 @@
-"""Integration-style tests for offer lifecycle business scenarios."""
+﻿"""Integration-style tests for offer lifecycle business scenarios."""
 
 from __future__ import annotations
 
@@ -34,43 +34,44 @@ class _OfferRequestsRepo:
             closed_at=None,
             id_offer=None,
             id_plan=None,
+            owner_phone=None,
+            owner_mail=None,
         )
         self._visible_open = visible_open
 
-    async def get_visible_open_by_id_for_contractor(self, *, request_id: int, contractor_user_id: str):
+    async def get_visible_open_by_id_for_contractor(self, *, request_id: str, contractor_user_id: str):
         _ = contractor_user_id
         if not self._visible_open:
             return None
-        if request_id != self._request_row.id:
+        if str(request_id) != str(self._request_row.id):
             return None
         if self._request_row.status != "open":
             return None
         return self._request_row
 
-    async def get_by_id(self, *, request_id: int):
-        return self._request_row if request_id == self._request_row.id else None
+    async def get_by_id(self, *, request_id: str):
+        return self._request_row if str(request_id) == str(self._request_row.id) else None
 
-    async def is_hidden_for_contractor(self, *, request_id: int, contractor_user_id: str) -> bool:
+    async def is_hidden_for_contractor(self, *, request_id: str, contractor_user_id: str) -> bool:
         _ = (request_id, contractor_user_id)
         return False
 
 
 class _OfferRepo:
     def __init__(self) -> None:
-        self._offers: dict[int, SimpleNamespace] = {}
+        self._offers: dict[str, SimpleNamespace] = {}
         self._next_id = 100
 
-    async def get_contractor_offer_for_request(self, *, request_id: int, contractor_user_id: str):
+    async def get_contractor_offer_for_request(self, *, request_id: str, contractor_user_id: str):
         for offer in self._offers.values():
             if offer.id_request == request_id and offer.id_user == contractor_user_id:
                 return offer
         return None
 
-    async def create(self, *, request_id: int, contractor_user_id: str, offer_amount: float | None = None):
+    async def create(self, *, request_id: str, contractor_user_id: str, offer_amount: float | None = None):
         offer = SimpleNamespace(
             id=self._next_id,
-            id_request=request_id,
-            id_user=contractor_user_id,
+            id_request=str(request_id), id_user=contractor_user_id,
             status="submitted",
             offer_amount=offer_amount,
             created_at=_dt(),
@@ -97,7 +98,7 @@ class _OfferRepo:
         _ = offer_ids
         return []
 
-    async def list_by_request(self, *, request_id: int):
+    async def list_by_request(self, *, request_id: str):
         return [offer for offer in self._offers.values() if offer.id_request == request_id]
 
     async def get_chat(self, *, offer_id: int):
@@ -105,9 +106,30 @@ class _OfferRepo:
 
 
 class _NoopUsersRepo:
+    def __init__(self) -> None:
+        self._users = {
+            "pm-1": SimpleNamespace(id="pm-1", id_role=settings.project_manager_role_id, id_parent=None, tg_user_id=None),
+            "lead-1": SimpleNamespace(id="lead-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
+            "lead-2": SimpleNamespace(id="lead-2", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
+            "econ-1": SimpleNamespace(id="econ-1", id_role=settings.economist_role_id, id_parent="lead-1", tg_user_id=None),
+            "econ-2": SimpleNamespace(id="econ-2", id_role=settings.economist_role_id, id_parent="lead-2", tg_user_id=None),
+            "owner-1": SimpleNamespace(id="owner-1", id_role=settings.lead_economist_role_id, id_parent="pm-1", tg_user_id=None),
+            "contractor-1": SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-1"),
+            "contractor-2": SimpleNamespace(id="contractor-2", id_role=settings.contractor_role_id, id_parent=None, tg_user_id="tg-2"),
+        }
+
     async def get_by_id(self, user_id: str | None = None):
-        _ = user_id
-        return SimpleNamespace(id="contractor-1", id_role=settings.contractor_role_id, tg_user_id="tg-1")
+        if user_id is None:
+            return None
+        return self._users.get(user_id)
+
+    async def list_active_user_parent_pairs(self):
+        return [
+            ("lead-1", "pm-1"),
+            ("lead-2", "pm-1"),
+            ("econ-1", "lead-1"),
+            ("econ-2", "lead-2"),
+        ]
 
     async def get_active_approved_contractor_tg_id(self, *, user_id: str, contractor_role_id: int):
         _ = (user_id, contractor_role_id)
@@ -172,7 +194,7 @@ def test_contractor_can_create_offer_for_open_request(test_client, set_uow, set_
     response = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0})
 
     assert response.status_code == 200
-    assert response.json()["data"]["request_id"] == 10
+    assert response.json()["data"]["request_id"] == "10"
 
 
 def test_contractor_cannot_create_offer_when_request_is_not_visible(
@@ -205,7 +227,7 @@ def test_contractor_can_edit_only_own_offer_amount(
     # Seed offer owned by another contractor.
     uow.offers._offers[200] = SimpleNamespace(
         id=200,
-        id_request=10,
+        id_request="10",
         id_user="contractor-2",
         status="submitted",
         offer_amount=100.0,
@@ -216,7 +238,7 @@ def test_contractor_can_edit_only_own_offer_amount(
     contractor = make_current_user(
         user_id="contractor-1",
         role_id=settings.contractor_role_id,
-        permissions={PermissionCodes.OFFERS_AMOUNT_UPDATE},
+        permissions={PermissionCodes.OFFERS_UPDATE, PermissionCodes.OFFERS_AMOUNT_UPDATE},
     )
     set_current_user(contractor)
 
@@ -320,7 +342,7 @@ def test_accept_offer_requires_status_update_permission(
     uow = _OfferLifecycleUow()
     uow.offers._offers[210] = SimpleNamespace(
         id=210,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -350,6 +372,245 @@ def test_accept_offer_requires_status_update_permission(
 
     assert allowed_response.status_code == 200
     assert uow.offers._offers[210].status == "accepted"
+
+
+def test_department_request_update_without_department_offer_accept_cannot_accept_offer_in_parallel_branch(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[211] = SimpleNamespace(
+        id=211,
+        id_request="10",
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_STATUS_UPDATE,
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/211/status", json={"status": "accepted"})
+
+    assert response.status_code == 403
+    assert uow.offers._offers[211].status == "submitted"
+
+
+def test_department_offer_accept_allows_accept_inside_department_scope(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[212] = SimpleNamespace(
+        id=212,
+        id_request="10",
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_OFFERS_ACCEPT},
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/212/status", json={"status": "accepted"})
+
+    assert response.status_code == 200
+    assert uow.offers._offers[212].status == "accepted"
+
+
+def test_department_request_update_without_department_offer_update_cannot_update_offer_amount_in_parallel_branch(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[213] = SimpleNamespace(
+        id=213,
+        id_request="10",
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.DEPARTMENT_REQUESTS_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/213", json={"offer_amount": 87.0})
+
+    assert response.status_code == 403
+    assert uow.offers._offers[213].offer_amount == 100.0
+
+
+def test_department_offer_update_allows_updating_offer_amount_inside_department_scope(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="econ-2",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[214] = SimpleNamespace(
+        id=214,
+        id_request="10",
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="lead-1",
+        role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.DEPARTMENT_OFFERS_UPDATE},
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/214", json={"offer_amount": 87.0})
+
+    assert response.status_code == 200
+    assert uow.offers._offers[214].offer_amount == 87.0
+
+
+def test_hierarchy_offer_update_requires_offers_update_without_department_delegation(
+    test_client,
+    set_uow,
+    set_current_user,
+    make_current_user,
+):
+    request_row = SimpleNamespace(
+        id=10,
+        id_user="owner-1",
+        status="open",
+        description="Open request",
+        deadline_at=_dt(),
+        initial_amount=100.0,
+        final_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+        closed_at=None,
+        id_offer=None,
+        id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
+    )
+    uow = _OfferLifecycleUow(request_row=request_row)
+    uow.offers._offers[215] = SimpleNamespace(
+        id=215,
+        id_request="10",
+        id_user="contractor-1",
+        status="submitted",
+        offer_amount=100.0,
+        created_at=_dt(),
+        updated_at=_dt(),
+    )
+    set_uow(uow)
+    user = make_current_user(
+        user_id="pm-1",
+        role_id=settings.project_manager_role_id,
+        permissions={
+            PermissionCodes.REQUESTS_UPDATE,
+            PermissionCodes.OFFERS_AMOUNT_UPDATE,
+        },
+    )
+    set_current_user(user)
+
+    response = test_client.patch("/api/v1/offers/215", json={"offer_amount": 87.0})
+
+    assert response.status_code == 403
+    assert uow.offers._offers[215].offer_amount == 100.0
 
 
 def test_offer_status_update_for_anonymous_user_returns_401(test_client, api_app):
@@ -387,11 +648,13 @@ def test_cannot_accept_offer_for_closed_or_cancelled_request(
         closed_at=_dt(),
         id_offer=None,
         id_plan=None,
+        owner_phone=None,
+        owner_mail=None,
     )
     uow = _OfferLifecycleUow(request_row=closed_request)
     uow.offers._offers[230] = SimpleNamespace(
         id=230,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="submitted",
         offer_amount=100.0,
@@ -420,7 +683,7 @@ def test_contractor_cannot_edit_finalized_offer_amount(
     uow = _OfferLifecycleUow()
     uow.offers._offers[240] = SimpleNamespace(
         id=240,
-        id_request=10,
+        id_request="10",
         id_user="contractor-1",
         status="accepted",
         offer_amount=100.0,
@@ -462,6 +725,8 @@ def test_workspace_access_is_restricted_to_allowed_users(
                     deadline_at=_dt(),
                     owner_user_id="owner-1",
                     owner_full_name="Owner",
+                    owner_phone=None,
+                    owner_mail=None,
                     created_at=_dt(),
                     updated_at=_dt(),
                     closed_at=None,
@@ -501,6 +766,7 @@ def test_workspace_access_is_restricted_to_allowed_users(
                 offer_is_manual=False,
                 can_create_new_offer=False,
                 can_acknowledge_messages=True,
+                can_manage_request_in_scope=False,
                 offer_actions=OfferActionsSchema(can_open_workspace=True),
                 chat_actions=ChatActionsSchema(can_view_messages=True),
             )

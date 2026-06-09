@@ -4,10 +4,11 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Awaitable, Callable
 
 from app.core.config import settings
 from app.core.datetime_utils import normalize_to_utc, utc_now, utc_now_naive
-from app.domain.authorization import require_any_permission, require_permission
+from app.domain.authorization import has_permission, require_any_permission, require_permission
 from app.domain.exceptions import Conflict, Forbidden,  NotFound
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, RequestPolicy, UserPolicy
@@ -16,9 +17,14 @@ from app.repositories.offers import OfferRepository
 from app.repositories.requests import RequestRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.users import UserRepository
+from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.email_notifications import EmailNotificationService
+from app.services.department_scope import DepartmentScopeService
+from app.services.staff_access_scope import StaffAccessScopeService
 from app.services.files import FileService
+from app.services.notifications import NotificationService
 from app.services.tg_notifications import notify_new_request, notify_request_status_changed
+from shared.process_notifications import ProcessNotificationEvent, build_process_notification_event
 
 PARTNER_CARD_NORMATIVE_ID = 1
 EDITABLE_REQUEST_STATUSES = {"open", "review", "closed", "cancelled"}
@@ -90,7 +96,7 @@ class RequestFileItem:
 
 @dataclass(frozen=True)
 class RequestListItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -112,7 +118,7 @@ class RequestListItem:
 
 @dataclass(frozen=True)
 class OpenRequestListItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -165,7 +171,7 @@ class OfferItem:
 
 @dataclass(frozen=True)
 class RequestDetailItem:
-    request_id: int
+    request_id: str
     description: str | None
     status: str
     status_label: str
@@ -177,6 +183,8 @@ class RequestDetailItem:
     closed_at: datetime | None
     owner_user_id: str
     owner_full_name: str | None
+    owner_phone: str | None
+    owner_mail: str | None
     chosen_offer_id: int | None
     id_plan: int | None
     count_submitted: int
@@ -190,14 +198,14 @@ class RequestDetailItem:
 
 @dataclass(frozen=True)
 class DeletedAlertViewedResult:
-    request_id: int
+    request_id: str
     count_deleted_alert: int
     updated_at: datetime
 
 
 @dataclass(frozen=True)
 class RequestEmailNotificationResult:
-    request_id: int
+    request_id: str
     sent_to: list[str]
 
 
@@ -211,6 +219,9 @@ class RequestService:
         user_status_periods: UserStatusPeriodRepository,
         email_notifications: EmailNotificationService | None = None,
         file_service: FileService | None = None,
+        notifications: NotificationService | None = None,
+        after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
     ):
         self._requests = requests
         self._files = files
@@ -219,25 +230,50 @@ class RequestService:
         self._user_status_periods = user_status_periods
         self._email_notifications = email_notifications
         self._file_service = file_service or FileService(files)
+        self._notifications = notifications
+        self._after_commit_hook_registrar = after_commit_hook_registrar
+        self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._department_scope = DepartmentScopeService(users)
+        self._staff_scope = StaffAccessScopeService(users)
+
+    def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
+        if self._after_commit_hook_registrar is None:
+            return False
+        self._after_commit_hook_registrar(
+            lambda: self._process_event_publisher(event)
+        )
+        return True
+
+    async def check_request_id_available(self, *, request_id: str) -> tuple[bool, str | None]:
+        normalized_id = request_id.strip()
+        if not normalized_id:
+            return False, "empty"
+        if await self._requests.exists_by_id(request_id=normalized_id):
+            return False, "already_exists"
+        return True, None
 
     async def create_request(
         self,
         *,
         current_user: CurrentUser,
+        request_id: str | None = None,
         deadline_at: datetime,
         description: str | None,
         initial_amount: float | None,
         id_plan: int | None = None,
+        normative_file_id: int | None = None,
         files: list[RequestFileCreateInput],
         additional_emails: list[str] | None = None,
         hidden_contractor_ids: list[str] | None = None,
-    ) -> tuple[int, list[int]]:
+    ) -> tuple[str, list[int]]:
         UserPolicy.ensure_can_create_request(current_user)
         UserPolicy.ensure_can_view_normative_files(current_user)
+        if normative_file_id is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
+        if not files:
+            raise Conflict("Прикрепите файл заявки")
         if _normalize_to_utc(deadline_at) < _utcnow():
             raise Conflict("Deadline cannot be in the past")
-        if not files:
-            raise Conflict("At least one file is required")
         self._validate_amount(value=initial_amount, field_name="Initial amount")
         await self._ensure_plan_assignment_allowed(
             current_user=current_user,
@@ -246,7 +282,16 @@ class RequestService:
         normalized_additional_emails = self._normalize_additional_emails(additional_emails)
         normalized_hidden_contractor_ids = await self._normalize_hidden_contractor_ids(hidden_contractor_ids)
 
+        normalized_request_id: str | None = None
+        if request_id is not None:
+            normalized_request_id = request_id.strip()
+            if not normalized_request_id:
+                raise Conflict("Request id cannot be empty")
+            if await self._requests.exists_by_id(request_id=normalized_request_id):
+                raise Conflict("Request with this id already exists")
+
         request = await self._requests.create(
+            request_id=normalized_request_id,
             id_user=current_user.user_id,
             deadline_at=deadline_at,
             description=description,
@@ -255,10 +300,11 @@ class RequestService:
         )
 
         file_ids: list[int] = []
-        # TEMP: partner card is not auto-attached to requests.
-        # All request files must be attached by the user manually.
-        # partner_card_file_id = await self._attach_partner_card_file(request_id=request.id)
-        # file_ids.append(partner_card_file_id)
+        normative_file_id_value = await self._attach_normative_file_copy(
+            request_id=request.id,
+            normative_file_id=normative_file_id,
+        )
+        file_ids.append(normative_file_id_value)
         for file_item in files:
             prepared = await self._file_service.prepare_bytes(
                 original_name=file_item.original_name,
@@ -296,13 +342,26 @@ class RequestService:
                 hidden_contractor_ids=normalized_hidden_contractor_ids,
             )
 
+        created_event = build_process_notification_event(
+            event_type="request.created",
+            actor_user_id=current_user.user_id,
+            entity_type="request",
+            entity_id=request.id,
+            request_id=request.id,
+            dedupe_key=f"request.created:{request.id}",
+            payload={
+                "responsible_user_id": request.id_user,
+            },
+        )
+        self._schedule_process_notification_event(created_event)
+
         return request.id, file_ids
 
     async def send_request_email_notification(
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         additional_emails: list[str] | None,
     ) -> RequestEmailNotificationResult:
         require_permission(
@@ -329,11 +388,18 @@ class RequestService:
         if self._email_notifications is None:
             raise Conflict("Email notifications are not configured")
 
-        await self._email_notifications.notify_request_to_additional_emails(
-            request_id=request.id,
-            additional_emails=normalized_additional_emails,
-        )
-
+        try:
+            await self._email_notifications.notify_request_to_additional_emails(
+                request_id=request.id,
+                additional_emails=normalized_additional_emails,
+                initiator_user_id=current_user.user_id,
+            )
+        except TypeError:
+            # Backward compatibility for legacy test doubles/transports that don't yet accept initiator_user_id.
+            await self._email_notifications.notify_request_to_additional_emails(
+                request_id=request.id,
+                additional_emails=normalized_additional_emails,
+            )
         return RequestEmailNotificationResult(
             request_id=request.id,
             sent_to=normalized_additional_emails,
@@ -380,30 +446,34 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         data: RequestEditInput,
     ) -> None:
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
 
-        has_request_edit_changes = any(
+        has_general_edit_changes = any(
             value is not None
             for value in (
                 data.initial_amount,
                 data.final_amount,
-                data.status,
                 data.deadline_at,
             )
         ) or data.id_plan_provided
-        if has_request_edit_changes:
+        has_status_change = data.status is not None
+        if has_general_edit_changes:
             await self._ensure_can_edit_owned_unassigned_request(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+            )
+        if has_status_change:
+            await self._ensure_can_status_update_request(
                 current_user=current_user,
                 request_owner_user_id=request.id_user,
             )
 
         has_pricing_changes = data.initial_amount is not None or data.final_amount is not None
-        has_status_change = data.status is not None
         has_deadline_change = data.deadline_at is not None
 
         if has_pricing_changes:
@@ -416,12 +486,6 @@ class RequestService:
                 current_user,
                 PermissionCodes.REQUESTS_AMOUNTS_READ,
                 message="Insufficient permissions to update request amounts",
-            )
-        if has_status_change:
-            require_permission(
-                current_user,
-                PermissionCodes.REQUESTS_STATUS_UPDATE,
-                message="Insufficient permissions to update request status",
             )
         if has_deadline_change:
             require_permission(
@@ -443,6 +507,7 @@ class RequestService:
         if data.status is not None:
             if data.status not in EDITABLE_REQUEST_STATUSES:
                 raise Conflict("Unsupported request status")
+            previous_status = request.status
             status_changed = data.status != request.status
             closed_at = request.closed_at
             chosen_offer_id = request.id_offer
@@ -468,30 +533,60 @@ class RequestService:
                 )
                 for tg_id in tg_ids:
                     await notify_request_status_changed(tg_id=tg_id)
+            if status_changed:
+                event = build_process_notification_event(
+                    event_type="request.status_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="request",
+                    entity_id=request.id,
+                    request_id=request.id,
+                    dedupe_key=f"request.status_changed:{request.id}:{data.status}",
+                    payload={
+                        "responsible_user_id": request.id_user,
+                        "old_status": previous_status,
+                        "new_status": data.status,
+                    },
+                )
+                is_scheduled = self._schedule_process_notification_event(event)
+                if not is_scheduled and self._notifications is not None:
+                    await self._notifications.notify_request_status_changed(
+                        actor_user_id=current_user.user_id,
+                        recipient_user_id=request.id_user,
+                        request_id=request.id,
+                        previous_status=previous_status,
+                        new_status=data.status,
+                    )
 
         if data.deadline_at is not None:
             if _normalize_to_utc(data.deadline_at) < _utcnow():
                 raise Conflict("Deadline cannot be in the past")
+            previous_deadline_iso = request.deadline_at.isoformat() if request.deadline_at is not None else None
             await self._requests.update_deadline(request=request, deadline_at=data.deadline_at)
+            deadline_event = build_process_notification_event(
+                event_type="request.deadline_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.deadline_changed:{request.id}:{data.deadline_at.isoformat()}",
+                payload={
+                    "responsible_user_id": request.id_user,
+                    "old_deadline": previous_deadline_iso,
+                    "new_deadline": data.deadline_at.isoformat(),
+                },
+            )
+            self._schedule_process_notification_event(deadline_event)
 
         if data.owner_user_id is not None:
-            RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request.id_user)
             owner = await self._users.get_by_id(data.owner_user_id)
             if owner is None:
                 raise NotFound("Owner user not found")
-            
-            if current_user.role_id in {
-                settings.project_manager_role_id,
-                settings.lead_economist_role_id,
-            }:
-                if owner.id == current_user.user_id:
-                    raise Forbidden("Owner must be from current user's subordinates")
-                is_subordinate = await self._is_descendant(
-                    ancestor_user_id=current_user.user_id,
-                    target_user_id=owner.id,
-                )
-                if not is_subordinate:
-                    raise Forbidden("Owner must be from current user's subordinates")
+
+            await self._ensure_can_assign_request_owner(
+                current_user=current_user,
+                request_owner_user_id=request.id_user,
+                new_owner_user_id=owner.id,
+            )
 
             owner_unavailability = await self._user_status_periods.get_active_for_user(user_id=owner.id)
             if owner_unavailability is not None:
@@ -499,7 +594,26 @@ class RequestService:
                     "Owner user is unavailable in selected period "
                     f"{owner_unavailability.started_at.isoformat()} - {owner_unavailability.ended_at.isoformat()}"
                 )
+            previous_owner_user_id = request.id_user
             await self._requests.update_owner(request=request, user_id=data.owner_user_id)
+            if previous_owner_user_id != data.owner_user_id:
+                previous_owner_was_operator = await self._is_request_owned_by_operator(
+                    request_owner_user_id=previous_owner_user_id,
+                )
+                owner_event = build_process_notification_event(
+                    event_type="request.responsible_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="request",
+                    entity_id=request.id,
+                    request_id=request.id,
+                    dedupe_key=f"request.responsible_changed:{request.id}:{previous_owner_user_id}:{data.owner_user_id}",
+                    payload={
+                        "old_responsible_user_id": previous_owner_user_id,
+                        "new_responsible_user_id": data.owner_user_id,
+                        "assigned_from_operator": previous_owner_was_operator,
+                    },
+                )
+                self._schedule_process_notification_event(owner_event)
 
         if data.id_plan_provided:
             await self._ensure_plan_assignment_allowed(
@@ -579,7 +693,7 @@ class RequestService:
         if final_amount != initial_amount and final_amount != offer_amount:
             raise Conflict("Final amount must match initial amount or accepted offer amount")
     
-    async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: int) -> DeletedAlertViewedResult:
+    async def mark_deleted_alert_viewed(self, *, current_user: CurrentUser, request_id: str) -> DeletedAlertViewedResult:
         require_permission(
             current_user,
             PermissionCodes.REQUESTS_DELETED_ALERTS_MARK_VIEWED,
@@ -608,21 +722,17 @@ class RequestService:
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         file_data: RequestFileCreateInput,
     ) -> int:
-        require_permission(
-            current_user,
-            PermissionCodes.REQUESTS_FILES_UPLOAD,
-            message="Insufficient permissions to upload request files",
-        )
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
 
-        await self._ensure_can_edit_request(
+        await self._ensure_can_manage_request_files(
             current_user=current_user,
             request_owner_user_id=request.id_user,
+            upload=True,
         )
 
         prepared = await self._file_service.prepare_bytes(
@@ -635,27 +745,41 @@ class RequestService:
             upload=prepared,
         )
         await self._requests.attach_file(request_id=request.id, file_id=db_file.id)
+        original_name = getattr(db_file, "original_name", None) or file_data.original_name
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="request.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.files_changed:{request.id}:{db_file.id}",
+                payload={
+                    "request_id": request.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [db_file.id],
+                    "changed_file_count": 1,
+                    "original_names": [original_name],
+                },
+            )
+        )
         return db_file.id
 
     async def remove_file(
         self,
         *,
         current_user: CurrentUser,
-        request_id: int,
+        request_id: str,
         file_id: int,
     ) -> None:
-        require_permission(
-            current_user,
-            PermissionCodes.REQUESTS_FILES_DELETE,
-            message="Insufficient permissions to delete request files",
-        )
         request = await self._requests.get_by_id(request_id=request_id)
         if request is None:
             raise NotFound("Request not found")
 
-        await self._ensure_can_edit_request(
+        await self._ensure_can_manage_request_files(
             current_user=current_user,
             request_owner_user_id=request.id_user,
+            upload=False,
         )
 
         detached = await self._requests.detach_file(request_id=request_id, file_id=file_id)
@@ -663,22 +787,54 @@ class RequestService:
             raise NotFound("File is not attached to request")
 
         await self._file_service.delete_file(file_id=file_id)
+        self._schedule_process_notification_event(
+            build_process_notification_event(
+                event_type="request.files_changed",
+                actor_user_id=current_user.user_id,
+                entity_type="request",
+                entity_id=request.id,
+                request_id=request.id,
+                dedupe_key=f"request.files_changed:{request.id}:{file_id}:deleted",
+                payload={
+                    "request_id": request.id,
+                    "actor_user_id": current_user.user_id,
+                    "file_ids": [file_id],
+                    "changed_file_count": 1,
+                },
+            )
+        )
 
-    async def _attach_partner_card_file(self, *, request_id: int) -> int:
-        partner_card = await self._files.get_normative_file(normative_id=PARTNER_CARD_NORMATIVE_ID)
-        if partner_card is None:
-            raise Conflict("Partner card file is not configured")
+    async def _attach_normative_file_copy(self, *, request_id: str, normative_file_id: int) -> int:
+        normative_status = await self._files.get_normative_file_status(normative_id=normative_file_id)
+        if normative_status is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
+        if normative_status != "actual":
+            raise Conflict("Выбранный нормативный документ больше не актуален")
+
+        normative_file = await self._files.get_normative_file(normative_id=normative_file_id)
+        if normative_file is None:
+            raise Conflict("Для создания заявки необходимо выбрать актуальный нормативный документ")
 
         db_file = await self._files.create(
-            storage_object_id=partner_card.id_storage_object,
-            original_name=partner_card.original_name,
+            storage_object_id=normative_file.id_storage_object,
+            original_name=normative_file.original_name,
         )
         await self._requests.attach_file(request_id=request_id, file_id=db_file.id)
         return db_file.id
 
+    async def _attach_partner_card_file(self, *, request_id: str) -> int:
+        return await self._attach_normative_file_copy(
+            request_id=request_id,
+            normative_file_id=PARTNER_CARD_NORMATIVE_ID,
+        )
+
 
     async def list_requests(self, *, current_user: CurrentUser) -> list[RequestListItem]:
-        UserPolicy.ensure_can_view_requests(current_user)
+        if not (
+            UserPolicy.can_view_requests(current_user)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)
+        ):
+            UserPolicy.ensure_can_view_requests(current_user)
         owner_scope_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
 
         rows = await self._requests.list_with_stats_and_files(
@@ -748,8 +904,8 @@ class RequestService:
         UserPolicy.ensure_can_view_offered_requests(current_user)
         rows = await self._requests.list_with_offers_for_contractor(contractor_user_id=current_user.user_id)
 
-        grouped: dict[int, OpenRequestListItem] = {}
-        request_offer_ids: dict[int, set[int]] = {}
+        grouped: dict[str, OpenRequestListItem] = {}
+        request_offer_ids: dict[str, set[int]] = {}
         for request, offer, profile, unread_messages_count in rows:
             existing = grouped.get(request.id)
             
@@ -822,29 +978,38 @@ class RequestService:
         ]
 
 
-    async def get_request_details(self, *, current_user: CurrentUser, request_id: int) -> RequestDetailItem:
-        UserPolicy.ensure_can_view_requests(current_user)
+    async def get_request_details(self, *, current_user: CurrentUser, request_id: str) -> RequestDetailItem:
+        if not (
+            UserPolicy.can_view_requests(current_user)
+            or has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_READ)
+        ):
+            UserPolicy.ensure_can_view_requests(current_user)
 
         request_row = await self._requests.get_with_stats(request_id=request_id)
         if request_row is None:
             raise NotFound("Request not found")
 
         request, stats, owner_profile = request_row
-        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
-        if allowed_owner_ids is not None:
-            if request.id_user not in set(allowed_owner_ids):
-                raise Forbidden("Request is outside your management scope")
+        await self._ensure_can_view_request_in_staff_scope(
+            current_user=current_user,
+            request_owner_user_id=request.id_user,
+        )
         request_files = await self._requests.list_files(request_id=request_id)
         request_file_items = [
             RequestFileItem(id=file.id, path=file.path, name=file.name)
             for file in request_files
         ]
 
-        offer_rows = await self._requests.list_offers_with_files_and_contacts(
-            request_id=request_id,
-            current_user_id=current_user.user_id,
-        )
+        # Within one department requests are visible together with their offers;
+        # edit/chat checks are enforced separately per action.
+        can_view_offers = current_user.role_id != settings.contractor_role_id
 
+        offer_rows = []
+        if can_view_offers:
+            offer_rows = await self._requests.list_offers_with_files_and_contacts(
+                request_id=request_id,
+                current_user_id=current_user.user_id,
+            )
         offers_by_id: dict[int, OfferItem] = {}
         for offer, offer_file, profile, company_contact, unread_messages_count in offer_rows:
             offer_item = offers_by_id.get(offer.id)
@@ -890,6 +1055,8 @@ class RequestService:
             closed_at=request.closed_at,
             owner_user_id=request.id_user,
             owner_full_name=owner_profile.full_name if owner_profile else None,
+            owner_phone=owner_profile.phone if owner_profile else None,
+            owner_mail=owner_profile.mail if owner_profile else None,
             chosen_offer_id=request.id_offer,
             id_plan=request.id_plan,
             count_submitted=stats.count_submitted if stats else 0,
@@ -902,16 +1069,85 @@ class RequestService:
         )
 
     async def _resolve_visible_owner_ids_for_staff_scope(self, *, current_user: CurrentUser) -> list[str] | None:
-        if current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}:
-            return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=current_user.user_id)
-        if current_user.role_id == settings.economist_role_id:
+        if current_user.role_id == settings.superadmin_role_id:
+            return None
+        if current_user.role_id == settings.operator_role_id:
+            # Operator sees only own requests that are still unassigned (owner role is operator).
+            return [current_user.user_id]
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+            settings.economist_role_id,
+        }:
+            department_owner_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
+                current_user=current_user,
+            )
+            if department_owner_ids:
+                return department_owner_ids
+
+            # Fallback for broken or incomplete hierarchy links.
+            if current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}:
+                return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=current_user.user_id)
             lead_root_user_id = await self._resolve_lead_economist_scope_root_user_id(
                 current_user_id=current_user.user_id,
             )
             return await self._resolve_visible_owner_ids_for_hierarchy_root(root_user_id=lead_root_user_id)
-        return None
+        # Non-hierarchy roles must not receive implicit global request visibility.
+        return []
+
+    async def _ensure_can_view_request_in_staff_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        allowed_owner_ids = await self._resolve_visible_owner_ids_for_staff_scope(current_user=current_user)
+        if allowed_owner_ids is None:
+            return
+        if request_owner_user_id not in set(allowed_owner_ids):
+            raise Forbidden("Request is outside your management scope")
+        if current_user.role_id != settings.operator_role_id:
+            return
+        if not await self._is_request_owned_by_operator(request_owner_user_id=request_owner_user_id):
+            raise Forbidden("Request is no longer available for operator")
+
+    async def _ensure_can_manage_request_files(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        upload: bool,
+    ) -> None:
+        if await self._can_edit_department_requests(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        ):
+            return
+
+        if upload:
+            require_permission(
+                current_user,
+                PermissionCodes.REQUESTS_FILES_UPLOAD,
+                message="Insufficient permissions to upload request files",
+            )
+        else:
+            require_permission(
+                current_user,
+                PermissionCodes.REQUESTS_FILES_DELETE,
+                message="Insufficient permissions to delete request files",
+            )
+
+        await self._ensure_can_edit_request_without_department_scope(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
 
     async def _ensure_can_edit_request(self, *, current_user: CurrentUser, request_owner_user_id: str) -> None:
+        if await self._can_edit_department_requests(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        ):
+            return
         if current_user.role_id != settings.economist_role_id or request_owner_user_id == current_user.user_id:
             RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
             return
@@ -938,6 +1174,11 @@ class RequestService:
         current_user: CurrentUser,
         request_owner_user_id: str,
     ) -> None:
+        if await self._can_edit_department_requests(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        ):
+            return
         if current_user.role_id != settings.economist_role_id or request_owner_user_id == current_user.user_id:
             RequestPolicy.ensure_can_edit_owned_unassigned(
                 current_user,
@@ -960,6 +1201,158 @@ class RequestService:
             target_user_id=request_owner_user_id,
         ):
             raise Forbidden("Economist can edit only own and subordinate requests")
+
+    async def _ensure_can_edit_request_without_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        if current_user.role_id in {settings.project_manager_role_id, settings.lead_economist_role_id}:
+            if not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=request_owner_user_id,
+            ):
+                raise Forbidden("Request is outside your management scope")
+
+        if current_user.role_id != settings.economist_role_id or request_owner_user_id == current_user.user_id:
+            RequestPolicy.ensure_can_edit(current_user, request_owner_user_id=request_owner_user_id)
+            return
+
+        require_any_permission(
+            current_user,
+            (
+                PermissionCodes.REQUESTS_UPDATE,
+                PermissionCodes.REQUESTS_PRICING_UPDATE,
+                PermissionCodes.REQUESTS_DEADLINE_UPDATE,
+                PermissionCodes.REQUESTS_STATUS_UPDATE,
+            ),
+            message="Insufficient permissions to edit request",
+        )
+        if not await self._is_descendant(
+            ancestor_user_id=current_user.user_id,
+            target_user_id=request_owner_user_id,
+        ):
+            raise Forbidden("Economist can edit only own and subordinate requests")
+
+    async def _is_inside_hierarchy_management_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if request_owner_user_id == current_user.user_id:
+            return True
+        return await self._staff_scope.is_hierarchy_manager_of(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _is_request_owned_by_operator(self, *, request_owner_user_id: str) -> bool:
+        owner = await self._users.get_by_id(request_owner_user_id)
+        return owner is not None and owner.id_role == settings.operator_role_id
+
+    async def _ensure_can_status_update_request(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_STATUS_UPDATE):
+            if await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            ):
+                return
+        await self._ensure_can_status_update_request_without_department_scope(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _ensure_can_status_update_request_without_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> None:
+        require_permission(
+            current_user,
+            PermissionCodes.REQUESTS_STATUS_UPDATE,
+            message="Insufficient permissions to update request status",
+        )
+        if current_user.role_id == settings.operator_role_id:
+            if current_user.user_id != request_owner_user_id:
+                raise Forbidden("Operator can update status only for own requests")
+            return
+
+        await self._ensure_can_edit_request_without_department_scope(
+            current_user=current_user,
+            request_owner_user_id=request_owner_user_id,
+        )
+
+    async def _ensure_can_assign_request_owner(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+        new_owner_user_id: str,
+    ) -> None:
+        if has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_ASSIGN):
+            owner_inside = await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=request_owner_user_id,
+            )
+            new_owner_inside = await self._is_user_inside_current_department_scope(
+                current_user=current_user,
+                target_user_id=new_owner_user_id,
+            )
+            if owner_inside and new_owner_inside:
+                return
+
+        RequestPolicy.ensure_can_change_owner(current_user, request_owner_user_id=request_owner_user_id)
+        if current_user.role_id in {
+            settings.project_manager_role_id,
+            settings.lead_economist_role_id,
+        }:
+            operator_owned = await self._is_request_owned_by_operator(
+                request_owner_user_id=request_owner_user_id,
+            )
+            if not operator_owned and not await self._is_inside_hierarchy_management_scope(
+                current_user=current_user,
+                request_owner_user_id=request_owner_user_id,
+            ):
+                raise Forbidden("Request is outside your management scope")
+            if new_owner_user_id != current_user.user_id:
+                is_subordinate = await self._is_descendant(
+                    ancestor_user_id=current_user.user_id,
+                    target_user_id=new_owner_user_id,
+                )
+                if not is_subordinate:
+                    raise Forbidden("Owner must be current user or current user's subordinate")
+
+    async def _can_edit_department_requests(
+        self,
+        *,
+        current_user: CurrentUser,
+        request_owner_user_id: str,
+    ) -> bool:
+        if not has_permission(current_user, PermissionCodes.DEPARTMENT_REQUESTS_UPDATE):
+            return False
+        return await self._is_user_inside_current_department_scope(
+            current_user=current_user,
+            target_user_id=request_owner_user_id,
+        )
+
+    async def _is_user_inside_current_department_scope(
+        self,
+        *,
+        current_user: CurrentUser,
+        target_user_id: str,
+    ) -> bool:
+        department_user_ids = await self._department_scope.resolve_department_owner_ids_for_current_user(
+            current_user=current_user,
+        )
+        return target_user_id in set(department_user_ids)
 
     async def _resolve_lead_economist_scope_root_user_id(self, *, current_user_id: str) -> str:
         cursor_id: str | None = current_user_id
@@ -995,3 +1388,4 @@ class RequestService:
                 queue.append(child_id)
 
         return list(visible)
+

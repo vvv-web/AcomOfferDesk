@@ -1,4 +1,4 @@
-import { fetchJson } from '../client';
+﻿import { fetchJson } from '../client';
 import { mapContractorOfferSummary, type GetRequestsResponse } from './getRequests';
 import type { FileEntity } from '@entities/request';
 import { normalizeRequestActions } from '../mappers';
@@ -23,7 +23,7 @@ type ApiContractorRequestOffer = {
 type ApiResponse = {
   data: {
     items: Array<{
-      request_id: number;
+      request_id: string;
       description: string | null;
       status: string;
       status_label: string;
@@ -41,6 +41,7 @@ type ApiResponse = {
         can_view_amounts?: boolean;
         can_open_contractor_view?: boolean;
         can_edit?: boolean;
+        can_update_status?: boolean;
         can_change_owner?: boolean;
         can_upload_files?: boolean;
         can_delete_files?: boolean;
