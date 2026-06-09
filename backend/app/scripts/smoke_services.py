@@ -188,8 +188,12 @@ async def _check_postgres(reporter: Reporter, env_map: dict[str, str]) -> None:
         reporter.warn("PostgreSQL", "asyncpg is not installed, DB checks skipped")
         return
 
+    from app.infrastructure.postgres_asyncpg import prepare_asyncpg_database_url
+
+    cleaned_url, connect_args = prepare_asyncpg_database_url(database_url)
+
     try:
-        conn = await asyncpg.connect(database_url, timeout=7)
+        conn = await asyncpg.connect(cleaned_url, timeout=7, **connect_args)
     except Exception as exc:  # noqa: BLE001
         host = ""
         try:
@@ -295,11 +299,22 @@ def _minio_smoke_probe(
     """Sync MinIO probe: (bucket_exists, list_error_message or None if list OK)."""
     from minio import Minio  # type: ignore
 
+    import os
+    import urllib3
+
+    http_client = None
+    ca_path = os.environ.get("S3_CA_CERT_PATH", "").strip()
+    if secure and ca_path:
+        http_client = urllib3.PoolManager(
+            cert_reqs="CERT_REQUIRED",
+            ca_certs=ca_path,
+        )
     client = Minio(
         endpoint,
         access_key=access_key or None,
         secret_key=secret_key or None,
         secure=secure,
+        http_client=http_client,
     )
     if not client.bucket_exists(bucket):
         return False, None
@@ -377,7 +392,7 @@ async def _check_s3_minio(reporter: Reporter, env_map: dict[str, str]) -> None:
 
 
 async def _check_rabbitmq(reporter: Reporter, env_map: dict[str, str]) -> None:
-from shared.amqp_connect import connect_robust_amqp  # noqa: E402
+    from shared.amqp_connect import connect_robust_amqp  # noqa: E402
     rabbitmq_url = _coalesce(env_map, "SMOKE_RABBITMQ_URL", "RABBITMQ_URL")
     if not rabbitmq_url:
         reporter.warn("RabbitMQ", "RABBITMQ_URL is missing, check skipped")

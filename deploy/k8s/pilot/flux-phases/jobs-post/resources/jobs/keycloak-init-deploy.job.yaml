@@ -10,6 +10,9 @@ spec:
     spec:
       restartPolicy: Never
       volumes:
+        - name: postgres-tls
+          secret:
+            secretName: postgres-tls
         - name: pilot-scripts
           configMap:
             name: pilot-job-scripts
@@ -20,12 +23,17 @@ spec:
           imagePullPolicy: Never
           command: ["/bin/sh", "/pilot-scripts/keycloak-init-deploy-k8s.sh"]
           volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/ssl/postgres
+              readOnly: true
             - name: pilot-scripts
               mountPath: /pilot-scripts
               readOnly: true
           env:
             - name: KEYCLOAK_INTERNAL_BASE_URL
               value: "http://keycloak:8080/iam"
+            - name: PGSSLROOTCERT
+              value: /etc/ssl/postgres/ca.crt
           envFrom:
             - secretRef:
                 name: acom-app-secrets

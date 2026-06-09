@@ -46,11 +46,27 @@ esac
 
 oidc_body="$(mktemp)"
 trap 'rm -f "${oidc_body}"' EXIT INT HUP TERM
-if ! curl -sS -m "${SMOKE_HTTP_TIMEOUT_SECONDS}" ${CURL_TLS_FLAG} -L \
+# Follow auth via in-cluster ingress only (do not curl -L to public FQDN — wrong Keycloak / «Клиент не найден»).
+oidc_location="$(
+  curl -sS -m "${SMOKE_HTTP_TIMEOUT_SECONDS}" ${CURL_TLS_FLAG} -D - -o /dev/null \
+    -H "Host: ${INGRESS_HOST}" \
+    "${INGRESS_BASE}/api/v1/auth/oidc/login?next_path=%2F" \
+    | awk '/^[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:/ { sub(/\r$/, ""); sub(/^[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:[[:space:]]*/, ""); print; exit }'
+)"
+if [ -z "${oidc_location}" ]; then
+  echo "[FAIL] Keycloak OIDC: API login returned no Location" >&2
+  exit 1
+fi
+case "${oidc_location}" in
+  "https://${INGRESS_HOST}"*) oidc_url="${INGRESS_BASE}${oidc_location#https://${INGRESS_HOST}}" ;;
+  "http://${INGRESS_HOST}"*) oidc_url="${INGRESS_BASE}${oidc_location#http://${INGRESS_HOST}}" ;;
+  *) oidc_url="${oidc_location}" ;;
+esac
+if ! curl -sS -m "${SMOKE_HTTP_TIMEOUT_SECONDS}" ${CURL_TLS_FLAG} \
   -H "Host: ${INGRESS_HOST}" \
   -o "${oidc_body}" \
-  "${INGRESS_BASE}/api/v1/auth/oidc/login?next_path=%2F"; then
-  echo "[FAIL] Keycloak OIDC: could not follow login redirect" >&2
+  "${oidc_url}"; then
+  echo "[FAIL] Keycloak OIDC: could not load auth page via ingress" >&2
   exit 1
 fi
 if grep -qiE 'Клиент не найден|Client not found|client_not_found' "${oidc_body}"; then

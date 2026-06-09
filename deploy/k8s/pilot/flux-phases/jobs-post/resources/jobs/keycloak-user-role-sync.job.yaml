@@ -6,15 +6,72 @@ metadata:
 spec:
   backoffLimit: 1
   template:
+    metadata:
+      labels:
+        acom.security/tier: app
     spec:
       restartPolicy: Never
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              export PGSSLMODE=verify-full
+              export PGSSLROOTCERT=/etc/ssl/postgres/ca.crt
+              for i in $(seq 1 90); do
+                if pg_isready -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+                  exit 0
+                fi
+                sleep 2
+              done
+              echo "postgres not ready after 180s" >&2
+              exit 1
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: KC_DB_URL_HOST
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: acom-app-secrets
+                  key: POSTGRES_DB
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: postgres-tls
       containers:
         - name: sync
           image: acom-backend:c96bc2643cfc
           imagePullPolicy: Never
           command: ["python", "-m", "app.scripts.sync_keycloak_user_app_roles"]
+          env:
+            - name: PGSSLROOTCERT
+              value: /etc/ssl/postgres/ca.crt
           envFrom:
             - secretRef:
                 name: acom-app-secrets
             - configMapRef:
                 name: acom-backend-env
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/ssl/postgres
+              readOnly: true

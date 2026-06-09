@@ -1089,6 +1089,7 @@ ensure_api_roles_model() {
   ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.read"
   ensure_composite_role_has_member_force "$api_client_uuid" "app.superadmin" "contractors.profile.status.update"
   ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.read"
+  ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.read"
   ensure_composite_role_has_member_force "$api_client_uuid" "delegation.contractors.profile.status.update" "contractors.profile.status.update"
 
   # app.* sync can briefly leave leaf roles composite=true until enforce_atomic settles.

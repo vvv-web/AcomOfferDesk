@@ -822,6 +822,18 @@ def _repair_strict_permission_model(
                 admin_api.remove_role_composite_member(api_client_uuid, app_role, member_payload)
         report.ok(f"Reconciled composite members for '{app_role}'")
 
+    for delegation_role, expected_permissions in sorted(CONTRACTOR_DELEGATION_ROLE_TO_PERMISSIONS.items()):
+        admin_api.set_client_role_composite_flag(api_client_uuid, delegation_role, composite=True)
+        actual_members = {
+            str(item.get("name") or "").strip(): item
+            for item in admin_api.get_role_composites(api_client_uuid, delegation_role)
+            if isinstance(item, dict) and item.get("name")
+        }
+        for member_name in sorted(expected_permissions):
+            if member_name not in actual_members:
+                admin_api.add_role_composite_member(api_client_uuid, delegation_role, member_name)
+        report.ok(f"Reconciled delegation composite '{delegation_role}'")
+
 
 def _check_bootstrap_superadmin(report: Report, admin_api: KeycloakAdminApi, realm: str, api_client_uuid: str | None, api_client_id: str, env_map: dict[str, str]) -> None:
     bootstrap_username = _coalesce(env_map, "KEYCLOAK_BOOTSTRAP_APP_USERNAME", default="superadmin")

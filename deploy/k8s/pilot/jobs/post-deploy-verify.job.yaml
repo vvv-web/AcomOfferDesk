@@ -9,9 +9,21 @@ spec:
   backoffLimit: 0
   activeDeadlineSeconds: 1200
   template:
+    metadata:
+      labels:
+        acom.security/tier: app
     spec:
       restartPolicy: Never
       volumes:
+        - name: postgres-tls
+          secret:
+            secretName: postgres-tls
+        - name: minio-tls
+          secret:
+            secretName: minio-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
         - name: pilot-scripts
           configMap:
             name: pilot-job-scripts
@@ -22,6 +34,12 @@ spec:
           imagePullPolicy: Never
           command: ["/bin/sh", "/pilot-scripts/post-deploy-verify-k8s.sh"]
           volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/ssl/postgres
+              readOnly: true
+            - name: minio-tls
+              mountPath: /etc/ssl/minio
+              readOnly: true
             - name: pilot-scripts
               mountPath: /pilot-scripts
               readOnly: true
@@ -40,6 +58,10 @@ spec:
               value: "true"
             - name: SMOKE_MINIO_TIMEOUT_SECONDS
               value: "10"
+            - name: PGSSLROOTCERT
+              value: /etc/ssl/postgres/ca.crt
+            - name: S3_CA_CERT_PATH
+              value: /etc/ssl/minio/ca.crt
           envFrom:
             - secretRef:
                 name: acom-app-secrets
