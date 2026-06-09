@@ -90,6 +90,29 @@ curl -sk --connect-timeout 3 https://10.16.69.1:6443/healthz   # 401 Unauthorize
 
 Состояние пилота: `.planning/k8s-pilot-popos/STATE.md`.
 
+## Локальный доступ pilot FQDN
+
+`pilot.acom-offer-desk.ru` в публичном DNS (wildcard FirstVDS) указывает на **VPS** `155.212.160.162`. На **pop-os** с локальным k3s браузер без override откроет **prod/VPS**, а не Ingress пилота в кластере.
+
+**Стабильная запись на учебной машине** — одна строка в `/etc/hosts` (нужен root, переживает перезагрузку):
+
+```text
+127.0.0.1 pilot.acom-offer-desk.ru  # acom-k8s-pilot-local
+```
+
+Скрипт (идемпотентный): `deploy/k8s/pilot/scripts/ensure-pilot-local-hosts.sh`
+
+```bash
+# проверка
+./deploy/k8s/pilot/scripts/ensure-pilot-local-hosts.sh --dry-run
+# добавить, если sudo без пароля (иначе скрипт печатает точную команду tee)
+./deploy/k8s/pilot/scripts/ensure-pilot-local-hosts.sh --apply
+```
+
+Полная персистентность только через root (`/etc/hosts`); user-level systemd **не** заменяет hosts — после смены DHCP/Wi‑Fi сверяйте, что строка на месте.
+
+См. также Graph RAG: `acom_k8s_pilot_local_hosts_dns_jun2026`, `acom_k8s_pilot_fqdn_pilot_subdomain_jun2026`.
+
 ## Оф. ссылки
 
 - Resource metrics pipeline: https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/
