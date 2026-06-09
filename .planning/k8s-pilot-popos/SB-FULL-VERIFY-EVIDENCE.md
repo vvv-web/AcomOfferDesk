@@ -4,7 +4,7 @@
 |-------|-------|
 | **Timestamp (UTC)** | 2026-06-09T12:01:02Z |
 | **Branch** | `k8s-pilot-popos` |
-| **Commit SHA** | `534a58af7a3d49818cb5c1d1a7ee7fa37ef45869` |
+| **Commit SHA** | `d3173158502f84438ea08dbfc336aaa28f328907` |
 | **KUBECONFIG** | `~/.kube/config` |
 | **Namespace** | `acom-offer-desk-pilot` |
 | **VPS** | not touched |
@@ -113,7 +113,7 @@ Source: `.planning/k8s-pilot-popos/SB-STEPS.md` + step verify script headers.
   "timestamp_utc": "2026-06-09T12:01:02Z",
   "repo": "/home/cpz_ai/Desktop/acome-offer-desk/AcomOfferDesk",
   "branch": "k8s-pilot-popos",
-  "commit": "534a58af7a3d49818cb5c1d1a7ee7fa37ef45869",
+  "commit": "d3173158502f84438ea08dbfc336aaa28f328907",
   "namespace": "acom-offer-desk-pilot",
   "overall": "PASS",
   "scripts": {
