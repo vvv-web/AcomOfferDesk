@@ -484,13 +484,13 @@ ensure_composite_role_has_member() {
   composite_role_name="$2"
   member_role_name="$3"
 
-  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM")
+  current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" </dev/null)
   if payload_has_role_name "$current_composites" "$member_role_name"; then
     return 0
   fi
 
   payload_file="$(create_single_role_payload_file "$client_uuid" "$member_role_name")"
-  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null
+  /opt/keycloak/bin/kcadm.sh create "clients/$client_uuid/roles/$composite_role_name/composites" -r "$APP_REALM" -f "$payload_file" >/dev/null </dev/null
   rm -f "$payload_file"
 }
 
@@ -631,11 +631,12 @@ sync_composite_role() {
 
   desired_members_file="$(mktemp)"
   printf '%s\n' "$desired_members" >"$desired_members_file"
+  # kcadm may read stdin; use fd 3 so the member list is not consumed after the first role.
   while IFS= read -r member_role; do
     if [ -n "$member_role" ] && [ "$member_role" != "$role_name" ]; then
       ensure_composite_role_has_member "$api_client_uuid" "$role_name" "$member_role"
     fi
-  done <"$desired_members_file"
+  done 3<"$desired_members_file"
 
   current_composites=$(/opt/keycloak/bin/kcadm.sh get "clients/$api_client_uuid/roles/$role_name/composites" -r "$APP_REALM" 2>/dev/null || printf '[]')
   for member_role in $(list_role_names_from_payload "$current_composites"); do
