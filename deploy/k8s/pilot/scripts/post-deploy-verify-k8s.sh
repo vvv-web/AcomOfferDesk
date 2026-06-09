@@ -44,6 +44,21 @@ case "${ac}" in
   *) echo "[FAIL] API oidc login: HTTP ${ac}" >&2; exit 1 ;;
 esac
 
+oidc_body="$(mktemp)"
+trap 'rm -f "${oidc_body}"' EXIT INT HUP TERM
+if ! curl -sS -m "${SMOKE_HTTP_TIMEOUT_SECONDS}" ${CURL_TLS_FLAG} -L \
+  -H "Host: ${INGRESS_HOST}" \
+  -o "${oidc_body}" \
+  "${INGRESS_BASE}/api/v1/auth/oidc/login?next_path=%2F"; then
+  echo "[FAIL] Keycloak OIDC: could not follow login redirect" >&2
+  exit 1
+fi
+if grep -qiE 'Клиент не найден|Client not found|client_not_found' "${oidc_body}"; then
+  echo "[FAIL] Keycloak OIDC: acom-web missing (re-run keycloak-bootstrap Job)" >&2
+  exit 1
+fi
+echo "[OK] Keycloak OIDC login page (acom-web client present)"
+
 echo "=== post-deploy K8s: postgres + minio ==="
 python - <<'PY'
 import asyncio

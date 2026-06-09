@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: pilot-jobs-migrate
+    - name: pilot-apps
   interval: 10m
   timeout: 20m
   wait: true
