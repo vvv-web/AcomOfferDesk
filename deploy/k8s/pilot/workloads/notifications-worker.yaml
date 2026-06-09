@@ -20,7 +20,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: worker
-          image: acom-notifications-worker:e214e03fdc74
+          image: acom-notifications-worker:c96bc2643cfc
           imagePullPolicy: Never
           command: ["python", "-m", "app.main"]
           env:

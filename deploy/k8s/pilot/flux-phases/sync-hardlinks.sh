@@ -31,7 +31,8 @@ link infra \
   workloads/keycloak.yaml
 
 link jobs-migrate \
-  jobs/flyway-migrate.job.yaml
+  jobs/flyway-migrate.job.yaml \
+  jobs/postgres-init-schema.job.yaml
 
 link jobs-bootstrap \
   jobs/keycloak-db-prepare.job.yaml \

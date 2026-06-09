@@ -16,7 +16,7 @@ spec:
             defaultMode: 0555
       containers:
         - name: init
-          image: acom-backend:8ea43577e06e
+          image: acom-backend:c96bc2643cfc
           imagePullPolicy: Never
           command: ["/bin/sh", "/pilot-scripts/keycloak-init-deploy-k8s.sh"]
           volumeMounts:

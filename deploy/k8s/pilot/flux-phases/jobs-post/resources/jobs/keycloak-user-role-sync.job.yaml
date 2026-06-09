@@ -10,7 +10,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: sync
-          image: acom-backend:8ea43577e06e
+          image: acom-backend:c96bc2643cfc
           imagePullPolicy: Never
           command: ["python", "-m", "app.scripts.sync_keycloak_user_app_roles"]
           envFrom:
