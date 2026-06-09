@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: acom-offer-desk-pilot
 resources:
   - resources/jobs/flyway-migrate.job.yaml
+  - resources/jobs/postgres-init-schema.job.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: acom-offer-desk
