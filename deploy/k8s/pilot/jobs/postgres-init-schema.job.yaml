@@ -64,7 +64,11 @@ spec:
               export PGPASSWORD="$POSTGRES_PASSWORD"
               export PGSSLMODE=verify-full
               export PGSSLROOTCERT=/etc/ssl/postgres/ca.crt
-              psql -v ON_ERROR_STOP=1 -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/01-schema.sql
+              if psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='flyway_schema_history' LIMIT 1" | grep -q 1; then
+                echo "flyway_schema_history present — skip 01-schema.sql (use flyway-migrate)"
+              else
+                psql -v ON_ERROR_STOP=1 -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/01-schema.sql
+              fi
               psql -v ON_ERROR_STOP=1 -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /schema/03-bootstrap-admin.sql
           env:
             - name: PGHOST
