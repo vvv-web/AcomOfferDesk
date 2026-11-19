@@ -449,6 +449,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
         attachments=None,
         reply_token=None,
         recipient_context=None,
+        recipient_user_id=None,
     ):
         _ = (self, html_content, attachments, reply_token)
         outbox.append(
@@ -457,6 +458,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
                 "subject": subject,
                 "text": text_content,
                 "recipient_context": recipient_context,
+                "recipient_user_id": recipient_user_id,
             }
         )
 
@@ -479,6 +481,7 @@ def test_request_email_verification_uses_fake_transport_and_deduplicates_repeat_
     assert second_response.status_code == 200
     assert [item["to_email"] for item in outbox] == ["new@example.com"]
     assert outbox[0]["recipient_context"] == {"user_login": "contractor-1"}
+    assert outbox[0]["recipient_user_id"] == "contractor-1"
     assert "https://acom.example/verify-email?token=" in outbox[0]["text"]
 
 
@@ -575,6 +578,7 @@ def test_verify_email_rejects_invalid_token(test_client, set_uow, monkeypatch):
     )
 
     assert response.status_code == 401
+    assert "уже использована" in response.json()["detail"]
 
 
 def test_verify_email_rejects_expired_token(test_client, set_uow, monkeypatch):

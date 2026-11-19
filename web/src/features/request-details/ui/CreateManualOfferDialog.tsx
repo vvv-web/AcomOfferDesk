@@ -27,6 +27,7 @@ import { dialogContentSx, dialogPaperSx } from '@shared/ui/dialogSurface';
 import { useToastMessageEffect } from '@shared/ui/toasts';
 import { ManualContractorDuplicatePanel } from '@features/contractors/components/ManualContractorDuplicatePanel';
 import type { ManualContractorDuplicate } from '@shared/api/users/getManualContractorDuplicates';
+import { filterManualOfferContractors } from './manualOfferContractorFilter';
 
 type Props = {
   open: boolean;
@@ -354,6 +355,7 @@ export const CreateManualOfferDialog = ({ open, requestId, onClose, onCreated }:
                 onChange={(_, value) => setSelectedContractor(value)}
                 isOptionEqualToValue={(option, value) => option.user_id === value.user_id}
                 getOptionLabel={getContractorOptionLabel}
+                filterOptions={filterManualOfferContractors}
                 getOptionDisabled={(option) => option.can_select !== true}
                 disabledItemsFocusable
                 ListboxProps={{

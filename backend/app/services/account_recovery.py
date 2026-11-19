@@ -7,7 +7,11 @@ from app.core.request_id import get_request_id
 from app.core.email_mode import ensure_email_enabled
 from app.core.uow import UnitOfWork
 from app.domain.contractor_validation import validate_optional_email
+from app.domain.iam_identity import stable_iam_account_id
+from app.domain.iam_roles import technical_role_name
+from app.domain.iam_status import iam_auth_status_for_user_status
 from app.infrastructure.iam_client import IamClient
+from app.models.auth_models import UserAuthAccount
 from app.services.email_verification import FIRST_ACCESS_PURPOSE, EmailVerificationService
 from app.services.iam_password_actions import send_iam_password_action_email_safely
 
@@ -31,36 +35,48 @@ class AccountRecoveryService:
         user = await self._resolve_user(identifier)
         if user is None:
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
-        binding = await self._uow.user_auth_accounts.get_by_user_provider(
-            user_id=user.id,
-            provider="iam",
-        )
-        if binding is None:
-            return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
         channel = await self._uow.user_contact_channels.get_primary_by_type(
             user_id=user.id,
             channel_type="email",
         )
         delivery_email = (channel.channel_value if channel is not None else "").strip().lower()
         if not delivery_email:
+            logger.warning("password_recovery_missing_email user_id=%s", user.id)
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
         try:
             validate_optional_email(delivery_email, allow_placeholder=False)
         except ValueError:
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
 
+        binding = await self._uow.user_auth_accounts.get_by_user_provider(
+            user_id=user.id,
+            provider="iam",
+        )
+        newly_bound = False
+        if binding is None:
+            binding = await self._ensure_iam_binding(user=user, delivery_email=delivery_email)
+            if binding is None:
+                logger.warning("password_recovery_missing_iam_binding user_id=%s", user.id)
+                return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
+            newly_bound = True
+
         credential_state = await self._iam_client.get_credential_state(account_id=binding.external_subject_id)
         if not credential_state.password_set:
-            await EmailVerificationService(
-                self._uow.profiles,
-                self._uow.user_contact_channels,
-                user_auth_accounts=self._uow.user_auth_accounts,
-                iam_client=self._iam_client,
-            ).request_profile_verification(
-                user_id=user.id,
-                email=delivery_email,
-                purpose=FIRST_ACCESS_PURPOSE,
-            )
+            if newly_bound:
+                # A legacy user has no IAM password yet; the recovery email itself
+                # proves access to the registered mailbox, so send the setup link.
+                await self.issue_setup_after_verified_access(user_id=user.id, email=delivery_email)
+            else:
+                await EmailVerificationService(
+                    self._uow.profiles,
+                    self._uow.user_contact_channels,
+                    user_auth_accounts=self._uow.user_auth_accounts,
+                    iam_client=self._iam_client,
+                ).request_profile_verification(
+                    user_id=user.id,
+                    email=delivery_email,
+                    purpose=FIRST_ACCESS_PURPOSE,
+                )
             return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
 
         action = await self._iam_client.create_action_token(
@@ -75,6 +91,38 @@ class AccountRecoveryService:
             )
         )
         return PasswordRecoveryResult(detail=GENERIC_RECOVERY_DETAIL)
+
+    async def _ensure_iam_binding(self, *, user, delivery_email: str) -> UserAuthAccount | None:
+        if getattr(user, "status", None) not in {"active", "review"}:
+            return None
+        role_name = technical_role_name(user.id_role)
+        if role_name is None:
+            return None
+        try:
+            account = await self._iam_client.put_account(
+                account_id=stable_iam_account_id(user.id),
+                login=user.id,
+                role=role_name,
+                auth_status=iam_auth_status_for_user_status(user.status),
+            )
+        except Exception as exc:  # pragma: no cover - exercised by IAM outage tests
+            logger.warning(
+                "password_recovery_iam_binding_failed user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
+            return None
+        binding = UserAuthAccount(
+            id_user=user.id,
+            provider="iam",
+            external_subject_id=account.id,
+            external_username=user.id,
+            external_email=delivery_email,
+            is_active=True,
+        )
+        await self._uow.user_auth_accounts.add(binding)
+        logger.info("password_recovery_iam_binding_created user_id=%s", user.id)
+        return binding
 
     async def issue_setup_after_verified_access(self, *, user_id: str, email: str) -> str | None:
         binding = await self._uow.user_auth_accounts.get_by_user_provider(

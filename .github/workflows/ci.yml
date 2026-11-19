@@ -62,6 +62,44 @@ jobs:
       - name: Run unit tests
         run: python -m pytest backend/tests/unit -q
 
+  backend-guard:
+    name: Backend Guard/Compat Tests
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
+      JWT_SECRET: ci-test-jwt-secret
+      EMAIL_ADDRESS: ci@example.com
+      EMAIL_APP_PASSWORD: ci-email-app-password
+      SMTP_HOST: smtp.example.com
+      EMAIL_VERIFICATION_SECRET: ci-email-verification-secret
+      S3_ENDPOINT: localhost:9000
+      S3_ACCESS_KEY: ci-access-key
+      S3_SECRET_KEY: ci-secret-key
+      S3_BUCKET: ci-bucket
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run guard/compat tests (backend/tests/test_*.py)
+        run: |
+          python -m pytest backend/tests/ \
+            --ignore=backend/tests/unit \
+            --ignore=backend/tests/integration \
+            -q
+
   backend-integration:
     name: Backend Integration/API Contract Tests
     runs-on: ubuntu-latest
@@ -144,3 +182,52 @@ jobs:
 
       - name: Build frontend
         run: npm --prefix web run build
+
+  dependency-cve-scan:
+    name: Dependency CVE scan (HIGH/CRITICAL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Official Aqua scanner image, pinned by tag+digest (supply-chain practice:
+      # a mutable tag can be repointed, a digest cannot). Trivy binary downloads and
+      # the setup-trivy installer are deliberately avoided - the installer is broken
+      # upstream (aquasecurity/setup-trivy issue #30), which failed this job before.
+      # Fails the build when a fixable HIGH/CRITICAL dependency shows up in pip/npm
+      # lock files, so the dependency pin stays enforced rather than applied once.
+      # Docs: https://trivy.dev/latest/docs/references/configuration/cli/trivy_filesystem/
+      - name: Trivy fs scan (fail on HIGH/CRITICAL)
+        run: |
+          docker run --rm -v "$PWD:/w" \
+            aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+            fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 /w
+
+  file-guard:
+    name: file_guard pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libmagic (python-magic)
+        run: sudo apt-get update && sudo apt-get install -y libmagic1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: file_guard/requirements.txt
+
+      - name: Install file_guard deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r file_guard/requirements.txt
+          pip install pytest httpx
+
+      - name: pytest file_guard
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest file_guard/tests -q
