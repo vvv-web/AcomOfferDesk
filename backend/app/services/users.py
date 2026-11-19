@@ -930,7 +930,7 @@ class ManualContractorService:
         self._units = units
         self._user_contact_channels = user_contact_channels
         self._after_commit_hook_registrar = after_commit_hook_registrar
-        self._iam_client = iam_client or IamClient()
+        self._iam_client = iam_client
 
     def _contractor_unit_service(self) -> ContractorUnitService:
         if self._units is None:
