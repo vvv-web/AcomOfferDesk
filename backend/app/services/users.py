@@ -495,6 +495,11 @@ class UserQueryService:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Профиль подчиненного доступен только для разрешенных ролей")
 
+        # Superadmin/admin manage allowed profiles globally; lead/economist
+        # remain restricted to their unit subtree.
+        if current_user.role_id in {settings.superadmin_role_id, settings.admin_role_id}:
+            return
+
         if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
