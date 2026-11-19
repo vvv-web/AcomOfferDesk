@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import EditOutlined from '@mui/icons-material/EditOutlined';
+import { UserPasswordResetButton } from '@shared/components/UserPasswordResetButton';
 import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import {
   Alert,
@@ -42,12 +43,17 @@ import {
   type ContractorRootUnitsResult,
 } from '@shared/api/contractors/getContractorRootUnits';
 import { updateContractorStatus } from '@shared/api/contractors/updateContractorStatus';
+import { updateUserRole } from '@shared/api/users/updateUserRole';
+import { ROLE } from '@shared/constants/roles';
+import { roleLabelsById } from '@features/admin/model/constants';
 import { updateContractorRootUnits } from '@shared/api/contractors/updateContractorRootUnits';
 import { TableTemplate, type TableTemplateColumn } from '@shared/components/TableTemplate';
 import { useAuth } from '@app/providers/AuthProvider';
 import { hasPermission } from '@shared/auth/permissions';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { ContractorMobileCard } from './ContractorMobileCard';
+import { ContractorLoginAccessBadge } from './ContractorLoginAccessBadge';
+import { useContractorLoginAccess } from '../hooks/useContractorLoginAccess';
 import { ContractorUnitsCell } from './ContractorUnitsCell';
 import { ContractorEditableFieldFrame, ContractorReadOnlyFieldFrame } from './contractorFieldValidation';
 import {
@@ -147,6 +153,8 @@ const formatDateTime = (value: string | null) => {
 
 export type ContractorsListViewProps = {
   contractors: ContractorListItem[];
+  showSearch?: boolean;
+  toolbarBetweenSearchAndActions?: ReactNode;
   isLoading?: boolean;
   emptyMessage: string;
   onStatusUpdated: () => Promise<void>;
@@ -155,6 +163,8 @@ export type ContractorsListViewProps = {
 
 export const ContractorsListView = ({
   contractors,
+  showSearch = true,
+  toolbarBetweenSearchAndActions,
   isLoading = false,
   emptyMessage,
   onStatusUpdated,
@@ -162,6 +172,9 @@ export const ContractorsListView = ({
 }: ContractorsListViewProps) => {
   const theme = useTheme();
   const { session } = useAuth();
+  const { states: loginAccess, loading: isCheckingLoginAccess, refresh: refreshLoginAccess } = useContractorLoginAccess(contractors);
+  const [targetRole, setTargetRole] = useState('');
+  const [changingRole, setChangingRole] = useState(false);
   const canViewEmailVerification = hasPermission(session, 'users.registration.approve');
   const { showSystemToast, showErrorToast } = useSystemToasts();
   const [isEditMode, setIsEditMode] = useState(false);
@@ -405,16 +418,20 @@ export const ContractorsListView = ({
       {
         id: 'status',
         header: 'Статус',
-        minWidth: 150,
+        minWidth: 200,
         filterKind: 'select',
         filterOptions: contractorStatusFilterOptions,
         getFilterValue: (row) => statusLabelForFilter(row.status),
-        getSearchValue: (row) => statusLabelForFilter(row.status),
+        getSearchValue: (row) => `${statusLabelForFilter(row.status)} ${loginAccess.get(row.userId)?.label ?? ''}`,
         getSortValue: (row) => statusLabelForFilter(row.status),
         renderCell: (row) => {
+          const withLoginAccess = (status: ReactNode) => <Stack direction="row" alignItems="center" gap={1}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>{status}</Box>
+            <ContractorLoginAccessBadge access={loginAccess.get(row.userId)} loading={isCheckingLoginAccess} iconOnly />
+          </Stack>;
           if (!isEditMode && row.actions.update_status) {
             const statusColor = getStatusPillColor(theme, row.status);
-            return (
+            return withLoginAccess(
               <Select
                 value={normalizeUserStatus(row.status)}
                 onChange={(event) => {
@@ -464,11 +481,11 @@ export const ContractorsListView = ({
             );
           }
           if (!isEditMode) {
-            return <ContractorStatusPill value={row.status} />;
+            return withLoginAccess(<ContractorStatusPill value={row.status} />);
           }
-          return row.actions.update_status
+          return withLoginAccess(row.actions.update_status
             ? renderStatusField(row)
-            : renderLockedCell(<ContractorStatusPill value={row.status} />);
+            : renderLockedCell(<ContractorStatusPill value={row.status} />));
         },
       },
       {
@@ -585,7 +602,7 @@ export const ContractorsListView = ({
         renderCell: (row) => renderLockedCell(<ContractorTableCell value={formatDateTime(row.updatedAt)} />),
       },
     ],
-    [contractorStatusFilterOptions, handleInlineStatusChange, inlineStatusSavingUserId, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField, canViewEmailVerification],
+    [contractorStatusFilterOptions, handleInlineStatusChange, inlineStatusSavingUserId, isEditMode, onStatusUpdated, renderEditableField, renderLockedCell, renderStatusField, canViewEmailVerification, loginAccess, isCheckingLoginAccess],
   );
 
   const openContractorDetails = (row: ContractorListItem) => {
@@ -663,6 +680,8 @@ export const ContractorsListView = ({
         isLoading={isLoading || isSaving}
         noRowsLabel={emptyMessage}
         searchPlaceholder="Найти контрагента"
+        showSearch={showSearch}
+        toolbarBetweenSearchAndActions={toolbarBetweenSearchAndActions}
         addButtonLabel="Добавить контрагента"
         onAddClick={onAddClick}
         showAddAction={Boolean(onAddClick)}
@@ -749,6 +768,7 @@ export const ContractorsListView = ({
           return (
             <ContractorMobileCard
               row={userRow}
+              loginAccess={<ContractorLoginAccessBadge access={loginAccess.get(row.userId)} loading={isCheckingLoginAccess} iconOnly />}
               canViewEmailVerification={canViewEmailVerification}
               isContactExpanded={Boolean(expandedContractorCardsById[row.userId]?.contact)}
               isCompanyExpanded={Boolean(expandedContractorCardsById[row.userId]?.company)}
@@ -791,6 +811,34 @@ export const ContractorsListView = ({
               <Typography id="contractor-card-dialog-title" variant="h5" fontWeight={600} lineHeight={1}>
                 Карточка контрагента
               </Typography>
+              <UserPasswordResetButton userId={selectedUser.user_id} canResetPassword={selectedUser.actions.reset_password} />
+              <SourceSection title="Вход в личный кабинет">
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }}>
+                  <ContractorLoginAccessBadge access={loginAccess.get(selectedUser.user_id)} loading={isCheckingLoginAccess} />
+                  <Button variant="outlined" onClick={refreshLoginAccess} disabled={isCheckingLoginAccess}>
+                    Проверить доступ
+                  </Button>
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  {isCheckingLoginAccess ? 'Проверяем возможность входа…' : loginAccess.get(selectedUser.user_id)?.description
+                    ?? 'Не удалось подтвердить возможность входа. Повторите проверку.'}
+                </Typography>
+              </SourceSection>
+              {session?.roleId === ROLE.SUPERADMIN && selectedUser.actions.update_role ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField select label="Роль сотрудника" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} sx={{ minWidth: 220 }}>
+                  {[ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].map((id) => <MenuItem key={id} value={id}>{roleLabelsById[id]}</MenuItem>)}
+                </TextField>
+                <Button disabled={!targetRole || changingRole} onClick={async () => {
+                  setChangingRole(true);
+                  try {
+                    await updateUserRole(selectedUser.user_id, { role_id: Number(targetRole) });
+                    setSelectedUser(null);
+                    setTargetRole('');
+                    await onStatusUpdated();
+                  } catch (e) { showErrorToast(e instanceof Error ? e.message : 'Не удалось изменить роль'); }
+                  finally { setChangingRole(false); }
+                }}>Преобразовать в сотрудника</Button>
+              </Stack> : null}
 
               <Box
                 sx={{
@@ -802,7 +850,7 @@ export const ContractorsListView = ({
                 }}
               >
                 <Stack spacing={1.2}>
-                  <SourceSection title="Пользователь" source="users">
+                  <SourceSection title="Пользователь">
                     <Box
                       sx={{
                         display: 'grid',
@@ -817,14 +865,14 @@ export const ContractorsListView = ({
                           color="text.secondary"
                           sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}
                         >
-                          Статус users
+                          Статус
                         </Typography>
                         <UserStatusPill value={selectedUser.status} />
                       </Stack>
                     </Box>
                   </SourceSection>
 
-                  <SourceSection title="Профиль пользователя" source="profiles">
+                  <SourceSection title="Профиль пользователя">
                     <Stack spacing={1.2}>
                       <InfoRow label="ФИО" value={selectedUser.full_name} />
                       <Box
@@ -849,7 +897,7 @@ export const ContractorsListView = ({
                     </Stack>
                   </SourceSection>
 
-                  <SourceSection title="Контакты компании" source="company_contacts">
+                  <SourceSection title="Контакты компании">
                     <Stack spacing={1.2}>
                       <Box
                         sx={{
@@ -877,7 +925,7 @@ export const ContractorsListView = ({
                     </Stack>
                   </SourceSection>
 
-                  <SourceSection title="Подразделения" source="units">
+                  <SourceSection title="Подразделения">
                     <Stack spacing={1.2}>
                       {isLoadingRootUnits ? (
                         <Typography color="text.secondary">Загрузка привязок...</Typography>

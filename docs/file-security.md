@@ -60,6 +60,47 @@ frontend -> backend -> file_guard -> verdict -> backend persistence
 * DOCX/XLSX: обязательные OpenXML entry, защита от zip-slip, макросов, zip-bomb и resource abuse, скриптов и активного содержимого
 * PNG/JPEG: декодируемое изображение с безопасными размерами
 
+Пути ZIP проверяются по исходному имени entry до нормализации разделителей ОС.
+XML relationships разбираются через `defusedxml`: порядок атрибутов, кавычки,
+namespace и символьные ссылки не должны обходить запрет опасных внешних целей.
+Некорректный XML и запрещённые entity-декларации отклоняются fail-closed.
+
+## Служебные метаданные PDF
+
+Встроенные Content Credentials (C2PA) разрешены как пассивные данные о происхождении
+документа. Само наличие такого вложения больше не приводит к `invalid_pdf`.
+Основание формата: [спецификация C2PA](https://spec.c2pa.org/specifications/specifications/2.2/specs/C2PA_Specification.html),
+разделы «Manifest Store» и «Embedding manifests into PDFs».
+
+Исключение применяется только после структурной проверки:
+
+* file specification имеет `AFRelationship=C2PA_Manifest`;
+* MIME встроенного потока — `application/c2pa` либо прежний
+  `application/x-c2pa-manifest-store`; MIME в file specification, если указан,
+  также должен относиться к C2PA;
+* содержимое является целым контейнером JUMBF с UUID и меткой хранилища C2PA,
+  содержит manifest superbox и не имеет обрезанных либо некорректных границ блоков;
+* проверяются все PDF-объекты, включая associated files, вложения аннотаций,
+  object streams и объекты вне дерева `Names/EmbeddedFiles`;
+* разрешены несжатые потоки и Flate без дополнительных параметров декодирования;
+  суммарный размер распакованных метаданных ограничен
+  `FILE_GUARD_MAX_FILE_SIZE_BYTES`;
+* обход ограничен 100 000 PDF-объектов, контейнер C2PA — 4096 блоками JUMBF
+  и глубиной вложенности 32.
+
+Имя «Content Credentials», MIME или корректный контейнер не подтверждают
+подлинность подписи C2PA и не освобождают файл от антивирусной проверки.
+При включённом антивирусе ClamAV проверяет распакованные метаданные и исходный PDF.
+Недоступность обязательной проверки по-прежнему приводит к fail-closed.
+
+Произвольные вложения, подмена C2PA другим содержимым, JavaScript, Launch,
+OpenAction, AA, RichMedia и XFA остаются запрещёнными, в том числе рядом
+с корректным C2PA. Если PDF-парсер недоступен, исключение для вложений не применяется.
+Обычные сведения об авторе, приложении и XMP не требуют такого исключения.
+
+Проверки сервиса: `python -m pytest file_guard/tests -q` из окружения
+с установленными зависимостями `file_guard/requirements.txt`, `pytest` и `httpx`.
+
 ## Проверка Office-документов на скрипты и активное содержимое
 
 Файлы DOCX и XLSX — это ZIP-контейнеры. `file_guard` блокирует их, если внутри архива найдено:
@@ -227,10 +268,90 @@ docker compose exec file_guard curl -fsS -F "file=@/tmp/valid.png" http://localh
 }
 ```
 
-Проверка полного пути через backend (upload к заявке/КП) — отдельный сценарий в [release-checklist.md](./release/release-checklist.md).
+Проверка полного пути через backend (upload к заявке/КП) — отдельный сценарий в [release-checklist.md](release/release-checklist.md).
 
 ## Примечания
 
 Текущая реализация держит ClamAV внутри `file_guard`. Если нагрузка вырастет, антивирусный движок можно вынести в отдельный сервис без изменения контракта загрузки backend.
 
 Любой ручной smoke, который сохраняет файл через backend, должен после успешной проверки удалить созданную связь в БД и объект в хранилище. Прямые вызовы `/scan` не оставляют артефактов в persistence, но проверки загрузки через backend не должны оставлять тестовые файлы в MinIO или в таблицах связей файлов.
+
+## Scenario: Normative document business deduplication and replacement
+
+### 1. Scope / Trigger
+- Trigger: create or replace through the normative-files API.
+- `StorageObject` deduplication and normative business deduplication are separate
+  concerns: one blob may legitimately have multiple `File` references in other
+  business domains.
+
+### 2. Signatures
+- `POST /api/v1/normative-files` creates a normative document.
+- `POST /api/v1/normative-files/{normative_id}` replaces the current file of
+  that normative document.
+- `PATCH /api/v1/normative-files/{normative_id}/status` changes only status.
+
+### 3. Contracts
+- Create rejects an existing `NormativeFile` with the same `File.original_name`
+  before a new `File` is created, regardless of content.
+- The duplicate query is restricted to `NormativeFile` joins; a matching blob
+  attached only to Request, Offer, or Message does not block the first normative
+  upload.
+- The duplicate query is scoped only to `NormativeFile`; other file domains may
+  repeat names and contents freely.
+- `FileRepository.acquire_normative_file_name_lock(original_name=...)` acquires
+  a transaction-scoped advisory lock under the `normative-name:` namespace
+  before the duplicate query. It is independent from
+  `acquire_storage_object_lock(content_sha256=...)`, which remains exclusive to
+  `StorageObject` deduplication.
+- `FileRepository.acquire_normative_file_id_allocation_lock()` serializes the
+  legacy `MAX(id)+1` allocation for distinct concurrent normative creates; it
+  prevents an ID collision without broadening duplicate rules to other domains.
+- Replace preserves `normative_id` and document status while updating `file_id`.
+  Replacing with the current identical name/content is a no-op and reuses the
+  current `File`.
+
+### 4. Validation & Error Matrix
+- same normative name on create -> `409 Conflict`, no new File.
+- unknown normative ID on replace -> `404 NotFound`.
+- same name with different content -> `409 Conflict`; replace the existing
+  normative document instead.
+- different name with same content -> permitted.
+- non-actual normative selected for Request -> existing Request create conflict;
+  this NORM-002 rule remains unchanged.
+
+### 5. Good/Base/Bad Cases
+- Good: a Request snapshot keeps its File when the source normative is replaced;
+  a later Request copies the replacement File.
+- Base: shared storage objects continue to serve several File rows across domains.
+- Bad: reject a normative upload merely because any File has the same hash, or
+  create a second normative record for an equal re-upload.
+
+### 6. Tests Required
+- Backend integration: create with a duplicate name returns `409` and leaves no
+  new normative/File record; replace keeps the ID and updates the File reference.
+- PostgreSQL concurrency integration (when a live test database is explicitly
+  provisioned): simultaneous equal names with equal or different content yield
+  exactly one create and one `409`; different names with equal content yield two
+  normatives and may reuse one StorageObject.
+- Backend regression: identical replace reuses the existing File; Request create
+  still allows only `actual` normative documents.
+- Frontend build/E2E: duplicate has no success toast, and replace refetches the
+  one existing list row.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Change global `FileService` semantics so an equal blob can have only one File.
+
+#### Correct
+- Keep storage dedupe global and enforce the product duplicate key only in the
+  normative domain before File persistence.
+
+## Контракт интеграции backend
+
+- HTTP-файл читается и проверяется один раз через `FileService.prepare_upload()`; сервисы получают `PreparedUpload`.
+- Не-HTTP источники используют `prepare_bytes()` с тем же guard до записи в MinIO и БД.
+- `storage_objects` хранит blob metadata; `files` — исходное имя и ссылку на blob; доменные таблицы связывают файл с заявкой, КП или сообщением.
+- `file_guard` не получает DB/IAM/MinIO secrets из общего backend env. Доступны только необходимые scanner/antivirus параметры.
+- Заблокированный файл возвращает `422` со стабильным `reason_code`; timeout, неготовый антивирус или некорректный ответ дают fail-closed `503 file_scan_unavailable`, без blob и DB links.
+- ClamAV работает внутри `file_guard`; отдельный контейнер не добавляется без изменения архитектуры.
+- Русское сообщение backend определяется по `reason_code`, а не по техническому сообщению scanner.

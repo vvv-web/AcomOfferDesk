@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.api.action_flags import OfferActionBuilder, RequestActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
+from app.core.email_mode import ensure_email_enabled
 from app.core.uow import UnitOfWork
 from app.domain.authorization import has_permission
 from app.domain.exceptions import Forbidden, NotFound
@@ -174,6 +175,7 @@ def _request_item_schema(
         closed_at=item.closed_at,
         owner_user_id=item.owner_user_id,
         owner_full_name=item.owner_full_name,
+        owner_warning=item.owner_warning if current_user.role_id != settings.contractor_role_id else None,
         chosen_offer_id=item.chosen_offer_id,
         id_plan=item.id_plan,
         stats=_request_stats_schema(item),
@@ -672,6 +674,7 @@ async def get_request_details(
             OfferItemSchema(
                 offer_id=offer.offer_id,
                 contractor_user_id=offer.contractor_user_id,
+                contractor_status=offer.contractor_status,
                 status=offer.status,
                 status_label=offer.status_label,
                 offer_amount=offer.offer_amount,
@@ -696,6 +699,7 @@ async def get_request_details(
                     offer_owner_user_id=offer.contractor_user_id,
                     request_owner_user_id=item.owner_user_id,
                     contractor_user_id=offer.contractor_user_id,
+                    contractor_status=offer.contractor_status,
                     offer_status=offer.status,
                     request_status=item.status,
                     can_manage_in_scope=can_manage_offer,
@@ -727,6 +731,7 @@ async def get_request_details(
                 owner_full_name=item.owner_full_name,
                 owner_phone=item.owner_phone,
                 owner_mail=item.owner_mail,
+                owner_warning=item.owner_warning if current_user.role_id != settings.contractor_role_id else None,
                 chosen_offer_id=item.chosen_offer_id,
                 id_plan=item.id_plan,
                 plan_name=item.plan_name,
@@ -834,6 +839,7 @@ async def send_request_email_notifications(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> RequestEmailNotificationResponse:
+    ensure_email_enabled()
     async with uow:
         email_notifications = EmailNotificationService(
             uow.profiles,
@@ -947,7 +953,8 @@ async def download_file(
     current_user: CurrentUser = Depends(get_current_user),
     uow: UnitOfWork = Depends(get_uow),
 ) -> StreamingResponse:
-    if not has_permission(current_user, PermissionCodes.FILES_DOWNLOAD):
+    can_download_business_files = has_permission(current_user, PermissionCodes.FILES_DOWNLOAD)
+    if not can_download_business_files and not has_permission(current_user, PermissionCodes.NORMATIVE_FILES_READ):
         raise Forbidden("Insufficient permissions for file download")
 
     async with uow:
@@ -956,6 +963,8 @@ async def download_file(
             raise NotFound("File not found")
 
         is_normative_file = await uow.files.is_normative_file(file_id=file_id)
+        if not is_normative_file and not can_download_business_files:
+            raise Forbidden("Insufficient permissions for file download")
         if is_normative_file:
             UserPolicy.ensure_can_view_normative_files(current_user)
         elif current_user.role_id == settings.contractor_role_id:

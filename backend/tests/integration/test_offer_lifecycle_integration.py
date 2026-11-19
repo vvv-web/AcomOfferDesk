@@ -19,6 +19,44 @@ def _dt() -> datetime:
     return datetime.now(timezone.utc) + timedelta(days=14)
 
 
+@pytest.mark.parametrize("operation", ["create", "eligible", "duplicates"])
+def test_manual_offer_permission_does_not_bypass_request_scope(
+    test_client, set_uow, set_current_user, make_current_user, operation,
+):
+    uow = _OfferLifecycleUow()
+    set_uow(uow)
+    set_current_user(make_current_user(
+        user_id="lead-2", role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.OFFERS_MANUAL_CREATE},
+    ))
+    base = "/api/v1/requests/10/offers/manual"
+    if operation == "create":
+        response = test_client.post(base, data={
+            "contractor_mode": "existing", "contractor_user_id": "contractor-1",
+        })
+    elif operation == "eligible":
+        response = test_client.get(base + "/eligible-contractors")
+    else:
+        response = test_client.get(base + "/contractor-duplicates?company_name=Company")
+    assert response.status_code == 403
+    assert not uow.offers._offers
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1000000000000"])
+def test_offer_api_rejects_non_finite_or_oversized_amounts(
+    test_client, set_uow, set_current_user, make_current_user, value,
+):
+    uow = _OfferLifecycleUow()
+    set_uow(uow)
+    set_current_user(make_current_user(
+        user_id="contractor-1", role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.OFFERS_CREATE},
+    ))
+    response = test_client.post("/api/v1/requests/10/offers", json={"offer_amount": value})
+    assert response.status_code == 409
+    assert not uow.offers._offers
+
+
 class _OfferRequestsRepo:
     def __init__(
         self,
@@ -136,6 +174,12 @@ class _OfferRepo:
 
 
 class _NoopUsersRepo:
+    async def lock_status_change(self, *, user_id: str):
+        pass
+
+    async def map_statuses(self, *, user_ids: list[str]):
+        return {user_id: getattr(self._users[user_id], "status", "active") for user_id in user_ids if user_id in self._users}
+
     def __init__(self) -> None:
         self._units = [
             (1, None),
@@ -373,6 +417,23 @@ def test_operator_owned_request_denies_contractor_view_and_offer_until_assignmen
     assert visible_view.status_code == 200
     assert visible_view.json()["data"]["owner_user_id"] == "econ-1"
     assert test_client.post("/api/v1/requests/10/offers", json={"offer_amount": 90.0}).status_code == 200
+
+
+@pytest.mark.parametrize("owner_status", ["inactive", "blacklist"])
+def test_contractor_request_view_does_not_disclose_owner_warning(
+    test_client, set_uow, set_current_user, make_current_user, owner_status,
+):
+    uow = _OfferLifecycleUow()
+    uow.users._users["owner-1"].status = owner_status
+    set_uow(uow)
+    set_current_user(make_current_user(user_id="contractor-1", role_id=settings.contractor_role_id,
+        permissions={PermissionCodes.REQUESTS_CONTRACTOR_VIEW_READ}))
+    response = test_client.get("/api/v1/requests/10/contractor-view")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert "owner_warning" not in data
+    assert "owner_status" not in data
+    assert owner_status not in response.text
 
 
 def test_closed_request_is_not_discoverable_or_offerable_to_contractor(
@@ -975,6 +1036,21 @@ def test_cannot_accept_second_offer_for_same_request(
     assert uow.requests.lifecycle_lock_calls == ["10"]
 
 
+@pytest.mark.parametrize("contractor_status, expected_code", [("active", 200), ("inactive", 409), ("blacklist", 409)])
+def test_accept_offer_enforces_contractor_status(test_client, set_uow, set_current_user, make_current_user,
+                                                contractor_status, expected_code):
+    uow = _OfferLifecycleUow()
+    uow.users._users["contractor-1"].status = contractor_status
+    uow.offers._offers[232] = SimpleNamespace(id=232, id_request="10", id_user="contractor-1",
+        status="submitted", offer_amount=90.0, created_at=_dt(), updated_at=_dt())
+    set_uow(uow)
+    set_current_user(make_current_user(user_id="owner-1", role_id=settings.lead_economist_role_id,
+        permissions={PermissionCodes.OFFERS_STATUS_UPDATE, PermissionCodes.REQUESTS_UPDATE}))
+    response = test_client.patch("/api/v1/offers/232/status", json={"status": "accepted"})
+    assert response.status_code == expected_code
+    assert uow.offers._offers[232].status == ("accepted" if contractor_status == "active" else "submitted")
+
+
 def test_cannot_accept_offer_for_closed_or_cancelled_request(
     test_client,
     set_uow,
@@ -1089,6 +1165,7 @@ def test_workspace_access_is_restricted_to_allowed_users(
                 ),
                 offers=[],
                 contractor=SimpleNamespace(
+                    status="active",
                     user_id="contractor-1",
                     full_name="Contractor One",
                     phone=None,

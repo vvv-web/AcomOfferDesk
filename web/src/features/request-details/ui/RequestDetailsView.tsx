@@ -42,6 +42,7 @@ import {
 import { CreateManualOfferDialog } from './CreateManualOfferDialog';
 import { RequestDetailsMainCard } from './RequestDetailsMainCard';
 import { useSystemToasts } from '@shared/ui/toasts';
+import { useOfferContractorLoginAccess } from '@features/requests/model/useOfferContractorLoginAccess';
 
 const offerStatusOptions: OfferStatusOption[] = [
     { value: 'accepted', label: 'Принято' },
@@ -99,6 +100,7 @@ export const RequestDetailsView = () => {
     const suppressPendingChangesToastRef = useRef(false);
 
     const [offers, setOffers] = useState<RequestDetailsOffer[]>([]);
+    const contractorLoginAccess = useOfferContractorLoginAccess(offers);
     const [offersStatusMap, setOffersStatusMap] = useState<Record<number, OfferDecisionStatus>>({});
     const [offersLoading, setOffersLoading] = useState(false);
     const [offersError, setOffersError] = useState<string | null>(null);
@@ -802,6 +804,7 @@ export const RequestDetailsView = () => {
                 isDescriptionExpanded={isDescriptionExpanded}
                 onToggleDescription={() => setIsDescriptionExpanded((prev) => !prev)}
                 ownerField={ownerField}
+                ownerWarning={requestDetails.owner_warning}
                 responsibleContact={{
                     fullName: requestDetails.owner_full_name ?? requestDetails.id_user ?? null,
                     phone: requestDetails.owner_phone ?? null,
@@ -809,7 +812,7 @@ export const RequestDetailsView = () => {
                 }}
                 existingFiles={existingFiles}
                 canDeleteRequestFiles={canDeleteRequestFiles}
-                onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
+                onDownloadFile={(downloadUrl, fileName) => handleDownload(downloadUrl, fileName)}
                 onRemoveExistingFile={handleRemoveExistingFile}
                 newFiles={newFiles}
                 onRemoveNewFile={(file) =>
@@ -954,6 +957,8 @@ export const RequestDetailsView = () => {
             <Box sx={{ marginTop: 4 }}>
                 <OffersTable
                     offers={offers}
+                    contractorLoginAccess={contractorLoginAccess.states}
+                    isLoginAccessLoading={contractorLoginAccess.loading}
                     statusMap={offersStatusMap}
                     acceptedOfferId={acceptedOfferId}
                     isLoading={offersLoading}
@@ -961,7 +966,7 @@ export const RequestDetailsView = () => {
                     statusOptions={offerStatusOptions}
                     onStatusChange={(offerId, value) => void handleOfferStatusChange(offerId, value)}
                     onOpenWorkspace={(offerId) => navigate(`/offers/${offerId}/workspace?requestId=${requestDetails.id}`)}
-                    onDownloadFile={(downloadUrl, fileName) => void handleDownload(downloadUrl, fileName)}
+                    onDownloadFile={(downloadUrl, fileName) => handleDownload(downloadUrl, fileName)}
                     canChangeStatus={canChangeOfferStatus}
                     onAddClick={canCreateManualOffer ? () => setIsManualOfferDialogOpen(true) : undefined}
                 />

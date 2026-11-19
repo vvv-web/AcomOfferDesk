@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 class TokenExchangeRequest(BaseModel):
@@ -81,8 +82,32 @@ class AccountCredentialStateResponse(BaseModel):
     required_actions: list[str] = Field(default_factory=list)
 
 
+class AccountLoginStateResponse(AccountCredentialStateResponse):
+    role_active: bool | None = None
+    password_locked_until: datetime | None = None
+
+
 class RegistrationCredentialsResponse(AccountCredentialStateResponse):
     created: bool = False
+
+
+class DirectCredentialsPutRequest(BaseModel):
+    login: str = Field(min_length=3, max_length=128)
+    role: str = Field(min_length=2, max_length=128)
+    password: SecretStr = Field(min_length=12, max_length=128)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: SecretStr = Field(min_length=1, max_length=128)
+    new_password: SecretStr = Field(min_length=12, max_length=128)
+    session_id: uuid.UUID
+
+
+class AdminPasswordResetRequest(BaseModel):
+    new_password: SecretStr = Field(min_length=12, max_length=128)
+    actor_account_id: uuid.UUID
+    actor_session_id: uuid.UUID
+    department_scope_verified: bool = False
 
 
 class AccountPermissionGrantsPutRequest(BaseModel):

@@ -2,6 +2,7 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -15,9 +16,10 @@ import {
 import { alpha } from '@mui/material/styles';
 import { useState, type MutableRefObject, type ReactNode } from 'react';
 import type { RequestDetailsFile } from '@shared/api/requests/getRequestDetails';
-import { StatusPill, type StatusPillTone } from '@shared/components/StatusPill';
+import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
 import { formatDate } from '@shared/lib/formatters';
 import { getFileKey } from '@shared/lib/files';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import { RequestDetailsInfoPanel } from '@shared/components/RequestDetailsInfoPanel';
 import { useIsMobileViewport } from '@shared/lib/responsive';
 import type { RequestStatus } from '../model/requestDetailsUtils';
@@ -55,6 +57,7 @@ type RequestDetailsMainCardProps = {
   isDescriptionExpanded: boolean;
   onToggleDescription: () => void;
   ownerField: ReactNode;
+  ownerWarning?: string | null;
   responsibleContact?: ResponsibleContact | null;
   existingFiles: RequestDetailsFile[];
   canDeleteRequestFiles: boolean;
@@ -104,6 +107,7 @@ export const RequestDetailsMainCard = ({
   isDescriptionExpanded,
   onToggleDescription,
   ownerField,
+  ownerWarning,
   responsibleContact,
   existingFiles,
   canDeleteRequestFiles,
@@ -290,6 +294,7 @@ export const RequestDetailsMainCard = ({
             ) : null}
           </Stack>
           {ownerField}
+          {ownerWarning ? <Alert severity="warning" sx={{ overflowWrap: 'anywhere' }}>{ownerWarning}</Alert> : null}
         </Stack>
       </Box>
 
@@ -300,27 +305,34 @@ export const RequestDetailsMainCard = ({
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
           {existingFiles.length > 0 ? (
             existingFiles.map((file) => (
-              <Chip
-                key={file.id}
-                label={file.name}
-                variant="outlined"
-                onClick={() => onDownloadFile(file.download_url, file.name)}
-                onDelete={isEditMode && canDeleteRequestFiles ? () => onRemoveExistingFile(file.id) : undefined}
-                sx={{ borderRadius: 999 }}
-              />
+              <FilePreviewTrigger key={file.id} source={{ name: file.name, downloadUrl: file.download_url }} onDownload={() => onDownloadFile(file.download_url, file.name)}>
+                {(openPreview) => (
+                  <Chip
+                    label={file.name}
+                    variant="outlined"
+                    onClick={openPreview}
+                    onDelete={isEditMode && canDeleteRequestFiles ? () => onRemoveExistingFile(file.id) : undefined}
+                    sx={{ borderRadius: 999 }}
+                  />
+                )}
+              </FilePreviewTrigger>
             ))
           ) : (
             <Typography variant="body2">Файлы не прикреплены</Typography>
           )}
           {newFiles.map((file) => (
-            <Chip
-              key={getFileKey(file)}
-              label={file.name}
-              variant="outlined"
-              color="primary"
-              onDelete={() => onRemoveNewFile(file)}
-              sx={{ borderRadius: 999 }}
-            />
+            <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
+              {(openPreview) => (
+                <Chip
+                  label={file.name}
+                  onClick={openPreview}
+                  variant="outlined"
+                  color="primary"
+                  onDelete={() => onRemoveNewFile(file)}
+                  sx={{ borderRadius: 999 }}
+                />
+              )}
+            </FilePreviewTrigger>
           ))}
           {isEditMode && canUploadRequestFiles ? (
             <IconButton

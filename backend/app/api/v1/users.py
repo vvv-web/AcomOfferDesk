@@ -2,19 +2,18 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from app.api.action_flags import UserActionBuilder, serialize_permissions
 from app.api.dependencies import get_current_user, get_uow
 from app.core.config import settings
+from app.services.iam_bindings import recover_existing_iam_binding
 from app.core.uow import UnitOfWork
 from app.domain.exceptions import Conflict, Forbidden
-from app.domain.iam_identity import stable_iam_account_id
 from app.domain.iam_roles import technical_role_name
 from app.domain.policies import CurrentUser
 from app.domain.iam_status import iam_auth_status_for_user_status
 from app.infrastructure.iam_client import IamClient
-from app.models.auth_models import UserAuthAccount
 from app.schemas.users import (
     DepartmentDelegationAccessSchema,
     EconomistListData,
@@ -82,6 +81,9 @@ from app.services.users import (
     UserStatusService,
 )
 from app.services.account_recovery import AccountRecoveryService
+from app.schemas.users import UserPasswordResetRequest, UserProfileViewData, UserProfileViewResponse
+from app.services.user_profile_view import get_user_profile_view
+from app.services.user_password_reset import reset_user_password, resolve_password_reset_scope
 from app.services.unit_hierarchy import UnitHierarchyService, UserHierarchyProfileState
 from app.services.units import UnitService
 from app.services.user_contractor_delegations import UserContractorDelegationsService
@@ -89,6 +91,21 @@ from app.services.user_department_delegations import UserDepartmentDelegationsSe
 from app.services.user_notification_preferences import UserNotificationPreferencesService
 
 router = APIRouter()
+
+
+@router.post("/users/{user_id}/password/reset", status_code=204)
+async def reset_password(
+    user_id: str,
+    payload: UserPasswordResetRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> Response:
+    async with uow:
+        await reset_user_password(
+            uow, current_user=current_user, user_id=user_id,
+            new_password=payload.new_password.get_secret_value(),
+        )
+    return Response(status_code=204)
 
 
 USER_STATUS_RU = {
@@ -106,6 +123,7 @@ def _user_list_schema(
     current_user: CurrentUser,
     item,
     subordinate_ids: set[str] | None = None,
+    password_reset_scope: set[str] | None = None,
 ) -> UserListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
@@ -119,6 +137,7 @@ def _user_list_schema(
         target_role_id=item.role_id,
         is_manual=is_manual,
         is_hierarchy_subordinate=is_hierarchy_subordinate,
+        is_in_password_reset_scope=item.user_id in (password_reset_scope or set()),
     )
     return UserListItemSchema(**data)
 
@@ -268,10 +287,11 @@ async def list_users(
         service = UserQueryService(uow.users, uow.user_status_periods)
         users = await service.list_users(current_user=current_user, role_id=role_id)
         subordinate_ids = await service.resolve_hierarchy_subordinate_user_ids(current_user=current_user)
+        password_reset_scope = await resolve_password_reset_scope(uow.users, current_user=current_user)
 
     return UserListResponse(
         data=UserListData(
-            items=[_user_list_schema(current_user, item, subordinate_ids) for item in users],
+            items=[_user_list_schema(current_user, item, subordinate_ids, password_reset_scope) for item in users],
         ),
     )
 
@@ -615,6 +635,19 @@ async def set_my_unavailability_period(
     )
 
 
+@router.get("/users/{user_id}/details", response_model=UserProfileViewResponse)
+async def get_user_details(
+    response: Response,
+    user_id: str = Path(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> UserProfileViewResponse:
+    async with uow:
+        profile = await get_user_profile_view(users=uow.users, current_user=current_user, user_id=user_id)
+    response.headers["Cache-Control"] = "no-store"
+    return UserProfileViewResponse(data=UserProfileViewData(**asdict(profile)))
+
+
 @router.get("/users/{user_id}/profile", response_model=SubordinateProfileResponse)
 async def get_subordinate_profile(
     user_id: str = Path(...),
@@ -835,9 +868,11 @@ async def create_manual_contractor(
             uow.units,
             user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
+            iam_client=IamClient(),
         )
         result = await service.create_manual_contractor(
             current_user=current_user,
+            initial_password=payload.password.get_secret_value() if payload.password is not None else None,
             data=ManualContractorCreateInput(
                 company_name=payload.company_name,
                 inn=payload.inn,
@@ -845,35 +880,12 @@ async def create_manual_contractor(
                 company_mail=payload.company_mail,
                 address=payload.address,
                 note=payload.note,
+                login=payload.login,
+                existing_user_id=payload.existing_user_id,
             ),
         )
-        if result.created:
-            binding = await uow.user_auth_accounts.get_by_user_provider(
-                user_id=result.user_id,
-                provider="iam",
-                include_inactive=True,
-            )
-            account_id = stable_iam_account_id(result.user_id) if binding is None else binding.external_subject_id
-            account = await IamClient().put_account(
-                account_id=account_id,
-                login=result.user_id,
-                role="contractor",
-                auth_status="active",
-            )
-            if binding is None:
-                binding = UserAuthAccount(
-                    id_user=result.user_id,
-                    provider="iam",
-                    external_subject_id=account.id,
-                    external_username=result.user_id,
-                    external_email=payload.company_mail,
-                    is_active=True,
-                )
-                await uow.user_auth_accounts.add(binding)
-            else:
-                binding.is_active = True
-            if payload.company_mail:
-                await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
+        if result.created and payload.company_mail and settings.email_enabled:
+            await AccountRecoveryService(uow).request_recovery(identifier=result.user_id)
     return ManualContractorCreateResponse(
         data={
             "user_id": result.user_id,
@@ -962,6 +974,9 @@ async def update_user_status(
             uow.users,
             uow.profiles,
             uow.user_auth_accounts,
+            units=uow.units,
+            requests=uow.requests,
+            offers=uow.offers,
             user_contact_channels=uow.user_contact_channels,
             notification_preferences=UserNotificationPreferencesService(
                 uow.user_contact_channels,
@@ -980,7 +995,7 @@ async def update_user_status(
             provider="iam",
         )
         if binding is None:
-            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+            binding = await recover_existing_iam_binding(uow, user_id=user_id)
         iam_status = iam_auth_status_for_user_status(payload.user_status)
         await IamClient().update_status(
             account_id=binding.external_subject_id,
@@ -1017,7 +1032,7 @@ async def update_user_role(
         )
         role_name = technical_role_name(payload.role_id)
         if binding is None:
-            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+            binding = await recover_existing_iam_binding(uow, user_id=user_id)
         if role_name is None:
             raise Conflict("Выбранная роль не поддерживается IAM")
         await IamClient().update_role(

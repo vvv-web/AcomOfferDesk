@@ -195,11 +195,13 @@ export const useUnitHierarchyPage = () => {
   const [isSavingUnitNameId, setIsSavingUnitNameId] = useState<number | null>(null);
   const [unassignedUsers, setUnassignedUsers] = useState<AvailableUnitUser[]>([]);
   const [isLoadingUnassignedUsers, setIsLoadingUnassignedUsers] = useState(false);
+  const [unassignedUsersError, setUnassignedUsersError] = useState<string | null>(null);
   const [assignMemberState, setAssignMemberState] = useState<AssignMemberState>(null);
   const [isAssigningMember, setIsAssigningMember] = useState(false);
   const deferredMemberSearch = useDeferredValue(memberDialogState.search);
 
-  const canCreateRootUnit = hasPermission(session, 'units.create') && session?.roleId === ROLE.SUPERADMIN;
+  const isSuperadmin = session?.roleId === ROLE.SUPERADMIN;
+  const canCreateRootUnit = hasPermission(session, 'units.create') && isSuperadmin;
   const canManageUnitMembers = hasPermission(session, 'units.members.manage');
 
   const departments = useMemo(
@@ -284,18 +286,22 @@ export const useUnitHierarchyPage = () => {
     }
 
     setIsLoadingUnassignedUsers(true);
+    setUnassignedUsersError(null);
     try {
       const items = await getUnassignedUsers();
       setUnassignedUsers(items);
-    } catch {
-      setUnassignedUsers([]);
+    } catch (e) {
+      setUnassignedUsersError(e instanceof Error ? e.message : 'Не удалось загрузить нераспределённых сотрудников');
     } finally {
       setIsLoadingUnassignedUsers(false);
     }
   }, [canManageUnitMembers]);
 
   const loadTree = useCallback(async (preserveSelection = true) => {
-    setIsLoading(true);
+    // Keep the current chart mounted during updates to preserve its zoom and scroll.
+    if (!preserveSelection) {
+      setIsLoading(true);
+    }
     setError(null);
     void loadUnassignedUsers();
     try {
@@ -395,15 +401,12 @@ export const useUnitHierarchyPage = () => {
         });
         showSuccessToast('Объединение обновлено');
       } else {
-        const createdUnit = await createUnit({
+        await createUnit({
           name: normalizedName,
           id_parent: unitDialogState.mode === 'create-child' && unitDialogState.unit
             ? unitDialogState.unit.unit_id
             : undefined,
         });
-        if (createdUnit.id_parent === selectedDepartment?.unit_id) {
-          setSelectedEditorUnitId(createdUnit.unit_id);
-        }
         showSuccessToast(unitDialogState.mode === 'create-root' ? 'Подразделение создано' : 'Объединение создано');
       }
 
@@ -602,6 +605,7 @@ export const useUnitHierarchyPage = () => {
     departmentStaff,
     departmentContractors,
     selectedDepartmentUnitOptions,
+    isSuperadmin,
     canCreateRootUnit,
     canManageUnitMembers,
     activeUnitDetails,
@@ -645,6 +649,8 @@ export const useUnitHierarchyPage = () => {
     confirmDeleteUnit,
     loadTree,
     unassignedUsers,
+    unassignedUsersError,
+    loadUnassignedUsers,
     isLoadingUnassignedUsers,
     assignMemberState,
     setAssignMemberState,

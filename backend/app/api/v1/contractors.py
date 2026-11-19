@@ -7,11 +7,15 @@ from fastapi import APIRouter, Body, Depends, Path, Query
 from app.api.action_flags import ContractorActionBuilder
 from app.api.dependencies import get_current_user, get_uow
 from app.core.uow import UnitOfWork
+from app.services.iam_bindings import recover_existing_iam_binding
 from app.domain.exceptions import Conflict
 from app.domain.iam_status import iam_auth_status_for_user_status
 from app.domain.policies import CurrentUser, UserPolicy
 from app.infrastructure.iam_client import IamClient
 from app.schemas.contractors import (
+    ContractorLoginAccessItem,
+    ContractorLoginAccessData,
+    ContractorLoginAccessResponse,
     ContractorInviteData,
     ContractorInviteRequest,
     ContractorInviteResponse,
@@ -33,6 +37,7 @@ from app.services.contractors import ContractorService
 from app.services.normative_email_attachment import NormativeEmailAttachmentService
 from app.services.registration_invitations import RegistrationInvitationService
 from app.services.users import UserStatusService
+from app.services.user_password_reset import resolve_password_reset_scope
 
 router = APIRouter()
 
@@ -48,13 +53,15 @@ def _ru_user_status(status: str) -> str:
     return USER_STATUS_RU.get(status, status)
 
 
-def _contractor_list_item(current_user: CurrentUser, item) -> ContractorListItemSchema:
+def _contractor_list_item(current_user: CurrentUser, item, password_reset_scope: set[str] | None = None) -> ContractorListItemSchema:
     data = asdict(item)
     data["status"] = _ru_user_status(data["status"])
     is_manual = data.pop("is_manual")
     data["actions"] = ContractorActionBuilder.build_contractor_actions(
         current_user,
         is_manual=is_manual,
+        target_user_id=item.user_id,
+        is_in_password_reset_scope=item.user_id in (password_reset_scope or set()),
     )
     return ContractorListItemSchema(**data)
 
@@ -109,15 +116,30 @@ async def list_contractors(
             limit=limit,
             offset=offset,
         )
+        password_reset_scope = await resolve_password_reset_scope(uow.users, current_user=current_user)
 
     return ContractorListResponse(
         data=ContractorListData(
-            items=[_contractor_list_item(current_user, item) for item in result.items],
+            items=[_contractor_list_item(current_user, item, password_reset_scope) for item in result.items],
             total=result.total,
             limit=result.limit,
             offset=result.offset,
         ),
     )
+
+
+@router.get("/contractors/login-access", response_model=ContractorLoginAccessResponse)
+async def check_contractor_login_access(
+    contractor_id: list[str] = Query(min_length=1, max_length=100),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ContractorLoginAccessResponse:
+    async with uow:
+        service = ContractorService(uow.users, uow.profiles, uow.units, user_auth_accounts=uow.user_auth_accounts)
+        items = await service.check_login_access(current_user=current_user, contractor_ids=contractor_id)
+    return ContractorLoginAccessResponse(data=ContractorLoginAccessData(
+        items=[ContractorLoginAccessItem(**asdict(item)) for item in items],
+    ))
 
 
 @router.get("/contractors/{contractor_id}", response_model=ContractorProfileResponse)
@@ -151,6 +173,8 @@ async def update_contractor_status(
             uow.users,
             uow.profiles,
             uow.user_auth_accounts,
+            requests=uow.requests,
+            offers=uow.offers,
             user_contact_channels=uow.user_contact_channels,
             after_commit_hook_registrar=getattr(uow, "add_after_commit_hook", None),
         )
@@ -165,7 +189,7 @@ async def update_contractor_status(
             provider="iam",
         )
         if binding is None:
-            raise Conflict("Для пользователя отсутствует активная привязка IAM")
+            binding = await recover_existing_iam_binding(uow, user_id=contractor_id)
         await IamClient().update_status(
             account_id=binding.external_subject_id,
             auth_status=iam_auth_status_for_user_status(payload.user_status),

@@ -10,6 +10,7 @@ import asyncio
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -59,7 +60,7 @@ class _DashboardRequestsRepo:
         _ = owner_ids
         return []
 
-    async def list_unassigned_requests(self, *, operator_role_id, owner_ids):
+    async def list_unassigned_requests(self, *, operator_role_id, owner_ids, unavailable_owner_ids=None):
         _ = (operator_role_id, owner_ids)
         return []
 
@@ -105,12 +106,15 @@ class _FeedbackRepo:
         self.created: list[str] = []
         self.items = [SimpleNamespace(id=7, text="existing feedback")]
 
-    async def create(self, *, text: str):
+    async def create(self, *, text: str, author_user_id: str):
         self.created.append(text)
-        return SimpleNamespace(id=42, text=text)
+        return SimpleNamespace(id=42, text=text, author_user_id=author_user_id)
 
     async def list_items(self):
         return self.items
+
+    async def list_page(self, **kwargs):
+        return self.items, len(self.items)
 
 
 class _FeedbackUow:
@@ -427,6 +431,9 @@ class _OfferFilesOffersRepo:
 
 
 class _OfferFilesRequestsRepo:
+    async def lock_offer_lifecycle(self, *, request_id: str) -> None:
+        pass
+
     async def get_by_id(self, *, request_id: str):
         return SimpleNamespace(id=request_id, id_user="owner-1", status="open")
 
@@ -705,6 +712,31 @@ def _fake_iam_consume(monkeypatch, *, email: str, fail_after: int = 1):
 
 def _clear_current_user_override(api_app) -> None:
     api_app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.parametrize("owner_status", ["inactive", "blacklist"])
+@pytest.mark.parametrize("viewer_role", [settings.superadmin_role_id, settings.contractor_role_id])
+def test_dashboard_owner_warning_is_only_disclosed_to_staff(
+    test_client, set_current_user, set_uow, make_current_user, owner_status, viewer_role,
+):
+    uow = _DashboardUow()
+    uow.requests.list_unassigned_requests = AsyncMock(return_value=[SimpleNamespace(
+        id="234", id_user="blocked-owner", description="Заявка", status="open",
+        deadline_at=_dt(), created_at=_dt(), updated_at=_dt(),
+    )])
+    uow.users.map_statuses = AsyncMock(return_value={"blocked-owner": owner_status})
+    set_uow(uow)
+    set_current_user(make_current_user(role_id=viewer_role,
+        permissions={PermissionCodes.DASHBOARD_PROCESS_READ, PermissionCodes.DASHBOARD_SAVINGS_READ}))
+    response = test_client.get("/api/v1/dashboard/responsibility")
+    assert response.status_code == 200
+    warning = response.json()["data"]["unassigned_requests"][0]["owner_warning"]
+    if viewer_role == settings.contractor_role_id:
+        assert warning is None
+        uow.users.map_statuses.assert_not_awaited()
+    else:
+        assert "Заявка не распределена" in warning
+        assert ("неактивен" if owner_status == "inactive" else "в чёрном списке") in warning
 
 
 def test_dashboard_responsibility_allows_empty_data_for_allowed_role(
@@ -1119,7 +1151,7 @@ def test_feedback_list_allows_superadmin_and_denies_non_superadmin(
     response = test_client.get("/api/v1/feedback")
 
     assert response.status_code == 200
-    assert response.json()["data"]["items"] == [{"id": 7, "text": "existing feedback"}]
+    assert response.json()["data"]["items"] == [{"id": 7, "text": "existing feedback", "author_user_id": None, "author_name": None, "created_at": None}]
 
     set_current_user(make_current_user(role_id=settings.economist_role_id, permissions={PermissionCodes.FEEDBACK_CREATE}))
     denied_response = test_client.get("/api/v1/feedback")
@@ -1594,6 +1626,38 @@ def test_offer_file_upload_denies_anonymous_user(api_app, test_client, monkeypat
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("permissions", "is_normative", "expected"),
+    [
+        ({PermissionCodes.NORMATIVE_FILES_READ}, True, 200),
+        ({PermissionCodes.NORMATIVE_FILES_READ}, False, 403),
+        ({PermissionCodes.FILES_DOWNLOAD}, True, 403),
+        (set(), True, 403),
+    ],
+)
+def test_normative_read_permission_allows_only_normative_content(
+    test_client, monkeypatch, set_current_user, set_uow, make_current_user,
+    permissions, is_normative, expected,
+):
+    from unittest.mock import AsyncMock
+
+    files = _DownloadFilesRepo()
+    files.is_normative_file = AsyncMock(return_value=is_normative)
+    read_bytes = AsyncMock(return_value=b"normative-content")
+    monkeypatch.setattr(requests_api.FileService, "read_bytes", read_bytes)
+    set_uow(_DownloadUow(files_repo=files))
+    set_current_user(make_current_user(role_id=settings.admin_role_id, permissions=permissions))
+
+    response = test_client.get("/api/v1/files/77/download")
+
+    assert response.status_code == expected
+    if expected == 200:
+        assert response.content == b"normative-content"
+        read_bytes.assert_awaited_once()
+    else:
+        read_bytes.assert_not_awaited()
 
 
 def test_file_download_allows_contractor_for_linked_open_request(

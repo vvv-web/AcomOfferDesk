@@ -3,6 +3,7 @@ import type { ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@app/providers/AuthProvider';
 import { useChatRealtime } from '@app/providers/ChatRealtimeProvider';
+import { useSetPageBreadcrumbItems } from '@app/layouts/PageBreadcrumbActions';
 import { getOfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import type { OfferWorkspace } from '@shared/api/offers/getOfferWorkspace';
 import { getOfferContractorInfo } from '@shared/api/offers/getOfferContractorInfo';
@@ -14,6 +15,7 @@ import { ROLE } from '@shared/constants/roles';
 import { getErrorMessage, formatSettledTaskErrors, joinUserFacingErrors } from '@shared/lib/errors';
 import { mergeUniqueFiles } from '@shared/lib/files';
 import { useOfferMessages } from './useOfferMessages';
+import { useContractorLoginAccess } from '@features/contractors/hooks/useContractorLoginAccess';
 
 const workspacePollIntervalMs = 7000;
 
@@ -23,6 +25,7 @@ const buildWorkspaceSignature = (workspace: OfferWorkspace | null) => {
   }
 
   return JSON.stringify({
+    contractor_status: workspace.profile?.status,
     request: {
       id: workspace.request.request_id,
       updated_at: workspace.request.updated_at,
@@ -54,6 +57,7 @@ const buildContractorSignature = (contractor: OfferContractorInfo | null) => {
 
   return JSON.stringify({
     user_id: contractor.user_id,
+    status: contractor.status,
     full_name: contractor.full_name,
     phone: contractor.phone,
     mail: contractor.mail,
@@ -124,10 +128,19 @@ export const useOfferWorkspace = () => {
     () => (selectedOffer?.files ?? []).map((file) => `${file.id}:${file.name}:${file.download_url}`).join('|'),
     [selectedOffer?.files]
   );
+  const contractorAccess = useContractorLoginAccess(
+    selectedOffer?.actions.view_contractor_info && selectedOffer.contractor_user_id
+      ? [{ userId: selectedOffer.contractor_user_id }] : [],
+  );
+  const refreshContractorAccess = contractorAccess.refresh;
+  useEffect(() => {
+    if (isChatOpen) refreshContractorAccess();
+  }, [isChatOpen, refreshContractorAccess]);
 
   const {
     messages,
     chatActions,
+    setChatActions,
     isSending,
     chatErrorMessage,
     typingUserIds,
@@ -194,6 +207,7 @@ export const useOfferWorkspace = () => {
       const workspaceResponse = await getOfferWorkspace(offerId);
       workspaceRef.current = workspaceResponse;
       setWorkspace(workspaceResponse);
+      setChatActions(workspaceResponse.chatActions);
       const initialOfferId = workspaceResponse.offers.find((item) => item.offer_id === offerId)?.offer_id ?? workspaceResponse.offers[0]?.offer_id ?? offerId;
       setSelectedOfferId(initialOfferId);
       await loadMessages(initialOfferId, workspaceResponse.offers);
@@ -213,7 +227,7 @@ export const useOfferWorkspace = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [loadMessages, offerId]);
+  }, [loadMessages, offerId, setChatActions]);
 
   useEffect(() => {
     contractorInfoRef.current = contractorInfo;
@@ -276,6 +290,23 @@ export const useOfferWorkspace = () => {
   }, [connectionState, loadMessages, refreshWorkspace, selectedOfferId]);
 
   const isContractor = session?.roleId === ROLE.CONTRACTOR;
+  const breadcrumbItems = useMemo(() => {
+    if (!workspace || isContractor || !workspace.offers.some((offer) => offer.offer_id === offerId)) {
+      return [];
+    }
+    const requestId = workspace.request.request_id;
+    return [
+      { key: 'requests', label: 'Заявки', onClick: () => navigate('/requests') },
+      {
+        key: `request-${requestId}`,
+        label: `Заявка №${requestId}`,
+        onClick: workspace.request.actions.view_details ? () => navigate(`/requests/${requestId}`) : undefined,
+      },
+      { key: `offer-${offerId}`, label: `КП №${offerId}` },
+    ];
+  }, [isContractor, navigate, offerId, workspace]);
+  useSetPageBreadcrumbItems(breadcrumbItems);
+
   const isEconomist = session?.roleId === ROLE.SUPERADMIN || session?.roleId === ROLE.LEAD_ECONOMIST || session?.roleId === ROLE.PROJECT_MANAGER || session?.roleId === ROLE.ECONOMIST;
   const isSelectedOfferSubmitted = selectedOffer?.status === 'submitted';
   const canUpload = Boolean(selectedOffer?.actions.upload_file) && (!isContractor || isSelectedOfferSubmitted);
@@ -287,7 +318,10 @@ export const useOfferWorkspace = () => {
   const canSetReceivedMessages = chatActions.mark_messages_received;
   const canEditOfferStatus = !isContractor && Boolean(selectedOffer && (selectedOffer.actions.accept || selectedOffer.actions.reject));
   const canEditOfferAmount = Boolean(selectedOffer?.actions.edit_amount);
-  const canDeleteOwnOffer = isContractor && Boolean(selectedOffer?.actions.delete);
+  const canDeleteOffer = Boolean(selectedOffer?.actions.delete)
+    && selectedOffer?.status !== 'deleted'
+    && workspace?.request.status !== 'closed'
+    && workspace?.request.status !== 'cancelled';
 
   const acceptedOfferId = sortedOffers.find((item) => item.status === 'accepted')?.offer_id ?? null;
 
@@ -335,14 +369,16 @@ export const useOfferWorkspace = () => {
   };
 
   const handleDeleteOffer = async () => {
-    if (!selectedOffer || selectedOffer.status === 'deleted') return;
-    if (!window.confirm('Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя.')) return;
+    if (!selectedOffer || !canDeleteOffer || isUpdatingOfferStatus) return;
+    if (!window.confirm(isContractor
+      ? 'Вы уверены, что хотите удалить отклик? После удаления отменить действие нельзя.'
+      : 'Вы уверены, что хотите удалить КП? После удаления отменить действие нельзя.')) return;
     setIsUpdatingOfferStatus(true);
     try {
       await updateOfferStatus({ offer_id: selectedOffer.offer_id, status: 'deleted' });
       await refreshWorkspace(selectedOffer.offer_id);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'Не удалось удалить отклик'));
+      setErrorMessage(getErrorMessage(error, 'Не удалось удалить КП'));
     } finally {
       setIsUpdatingOfferStatus(false);
     }
@@ -445,6 +481,8 @@ export const useOfferWorkspace = () => {
     navigate,
     workspace,
     contractorInfo,
+    contractorLoginAccess: contractorAccess.states.get(selectedOffer?.contractor_user_id ?? ''),
+    isContractorAccessLoading: contractorAccess.loading,
     selectedOffer,
     sortedOffers,
     selectedOfferId,
@@ -467,12 +505,17 @@ export const useOfferWorkspace = () => {
     canDeleteFile,
     canSendMessage,
     canViewMessages,
+    retryChat: async () => {
+      if (!selectedOffer || !workspace) return;
+      try { await loadMessages(selectedOffer.offer_id, workspace.offers); setErrorMessage(null); }
+      catch (e) { setErrorMessage(getErrorMessage(e, 'Не удалось загрузить чат')); }
+    },
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,
     canEditOfferStatus,
     canEditOfferAmount,
-    canDeleteOwnOffer,
+    canDeleteOffer,
     isEconomist,
     isContractor,
     acceptedOfferId,

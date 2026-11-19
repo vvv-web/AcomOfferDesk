@@ -37,6 +37,11 @@ from app.schemas.offers import (
     OfferWorkspaceResponse,
 )
 from app.schemas.requests import RequestFileSchema
+from app.schemas.users import (
+    ManualContractorDuplicateItemSchema,
+    ManualContractorDuplicateListData,
+    ManualContractorDuplicateListResponse,
+)
 from app.services.chat_realtime import ChatRealtimeService, build_offer_service
 from app.services.files import FileService, PreparedUpload
 from app.services.offers import ManualContractorCreateInput
@@ -82,6 +87,7 @@ async def get_contractor_info(
     return ContractorInfoResponse(
         data={
             "user_id": contractor.user_id,
+            "status": contractor.status,
             "full_name": contractor.full_name,
             "phone": contractor.phone,
             "mail": contractor.mail,
@@ -274,6 +280,30 @@ async def list_eligible_manual_offer_contractors(
     )
 
 
+@router.get(
+    "/requests/{request_id}/offers/manual/contractor-duplicates",
+    response_model=ManualContractorDuplicateListResponse,
+)
+async def list_manual_offer_contractor_duplicates(
+    request_id: str = PathParam(..., min_length=1),
+    company_name: str | None = Query(default=None, max_length=256),
+    inn: str | None = Query(default=None, max_length=32),
+    company_mail: str | None = Query(default=None, max_length=256),
+    current_user: CurrentUser = Depends(get_current_user),
+    uow: UnitOfWork = Depends(get_uow),
+) -> ManualContractorDuplicateListResponse:
+    async with uow:
+        items = await build_offer_service(uow).list_manual_offer_contractor_duplicates(
+            current_user=current_user, request_id=request_id,
+            company_name=company_name, inn=inn, company_mail=company_mail,
+        )
+    return ManualContractorDuplicateListResponse(
+        data=ManualContractorDuplicateListData(
+            items=[ManualContractorDuplicateItemSchema(**item.__dict__) for item in items],
+        ),
+    )
+
+
 @router.get("/offers/{offer_id}/workspace", response_model=OfferWorkspaceResponse)
 async def get_offer_workspace(
     offer_id: int = PathParam(..., ge=1),
@@ -340,6 +370,7 @@ async def get_offer_workspace(
                         offer_owner_user_id=request_offer.owner_user_id,
                         request_owner_user_id=item.request.owner_user_id,
                         contractor_user_id=request_offer.owner_user_id,
+                        contractor_status=item.contractor.status,
                         offer_status=request_offer.status,
                         request_status=item.request.status,
                         can_manage_in_scope=getattr(resolved, "can_manage_offer_in_scope", False),
@@ -361,6 +392,7 @@ async def get_offer_workspace(
             ],
             "contractor": {
                 "user_id": item.contractor.user_id,
+                "status": item.contractor.status,
                 "full_name": item.contractor.full_name,
                 "phone": item.contractor.phone,
                 "mail": item.contractor.mail,

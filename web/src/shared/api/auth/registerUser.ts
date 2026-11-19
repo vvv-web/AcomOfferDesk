@@ -8,6 +8,8 @@ export type RegisterUserPayload = {
   phone?: string;
   mail?: string;
   unit_id?: number;
+  password?: string;
+  password_confirmation?: string;
 };
 
 export type RegisterUserResponse = {
@@ -15,6 +17,7 @@ export type RegisterUserResponse = {
     user_id: string;
     role_id: number;
     status: string;
+    visible_to_creator?: boolean;
   };
 };
 

@@ -35,6 +35,7 @@ type BackendChatActionFlags = {
 };
 
 type BackendUserActionFlags = {
+  can_reset_password?: boolean;
   can_view_profile?: boolean;
   can_update_status?: boolean;
   can_manage_contractor_unit_bindings?: boolean;
@@ -82,6 +83,7 @@ export type ChatActions = {
 };
 
 export type UserActions = {
+  reset_password: boolean;
   view_profile: boolean;
   update_status: boolean;
   manage_contractor_unit_bindings: boolean;
@@ -129,6 +131,7 @@ export const normalizeChatActions = (actions?: BackendChatActionFlags): ChatActi
 });
 
 export const normalizeUserActions = (actions?: BackendUserActionFlags): UserActions => ({
+  reset_password: Boolean(actions?.can_reset_password),
   view_profile: Boolean(actions?.can_view_profile),
   update_status: Boolean(actions?.can_update_status),
   manage_contractor_unit_bindings: Boolean(actions?.can_manage_contractor_unit_bindings),
@@ -157,6 +160,7 @@ export const mapRequestEntityToSummary = (
   id: item.request_id,
   id_user: item.owner_user_id,
   owner_full_name: item.owner_full_name ?? null,
+  owner_warning: item.owner_warning ?? null,
   status: item.status,
   status_label: item.status_label,
   deadline_at: item.deadline_at,

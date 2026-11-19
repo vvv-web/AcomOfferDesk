@@ -14,6 +14,7 @@ from app.schemas.requests import RequestFileSchema
 
 
 class ContractorInfoSchema(BaseModel):
+    status: str | None = None
     user_id: str
     full_name: str | None
     phone: str | None
@@ -271,6 +272,8 @@ class ManualOfferEligibleContractorItem(BaseModel):
     company_name: str | None = None
     mail: str | None = None
     company_mail: str | None = None
+    can_select: bool
+    disabled_reason: str | None = None
 
 
 class ManualOfferEligibleContractorListData(BaseModel):

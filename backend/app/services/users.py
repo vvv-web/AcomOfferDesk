@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 import unicodedata
@@ -11,14 +11,13 @@ from app.domain.contractor_validation import validate_inn, validate_optional_ema
 from app.domain.authorization import has_permission
 from app.domain.department_delegations import get_department_permission_codes
 from app.domain.exceptions import Conflict, Forbidden, NotFound
-from app.domain.iam_identity import stable_iam_account_id
-from app.domain.iam_roles import technical_role_name
 from app.domain.permissions import PermissionCodes
 from app.domain.policies import CurrentUser, UserPolicy
-from app.models.auth_models import UserAuthAccount
 from app.models.orm_models import CompanyContact, Profile, Role, User, UserStatusPeriod
 from app.repositories.company_contacts import CompanyContactRepository
 from app.repositories.profiles import ProfileRepository
+from app.repositories.requests import RequestRepository
+from app.repositories.offers import OfferRepository
 from app.repositories.user_auth_accounts import UserAuthAccountRepository
 from app.repositories.user_status_periods import UserStatusPeriodRepository
 from app.repositories.units import UnitRepository
@@ -27,6 +26,7 @@ from app.services.contractor_email_notifications import (
     notify_contractor_status_changed_email,
 )
 from app.infrastructure.iam_client import IamClient
+from app.services.iam_bindings import ensure_user_iam_account
 from app.infrastructure.notification_publisher import publish_process_notification_event
 from app.services.registration_admin_notify import schedule_registration_review_required_notification
 from app.services.department_scope import DepartmentScopeService
@@ -121,19 +121,17 @@ def _role_update_options_for_user(current_user: CurrentUser) -> set[int]:
     if current_user.role_id == settings.admin_role_id and has_permission(
         current_user, PermissionCodes.USERS_ROLE_UPDATE_ANY
     ):
-        # Contractor onboarding is a separate flow; Admin may only assign the
-        # two staff roles explicitly approved for this role.
-        return {settings.economist_role_id, settings.operator_role_id}
+        # Contractor onboarding is a separate flow; Admin may only assign Economist.
+        return {settings.economist_role_id}
     if not has_permission(current_user, PermissionCodes.USERS_ROLE_UPDATE_ECONOMY):
         return set()
     if current_user.role_id == settings.project_manager_role_id:
         return {
             settings.lead_economist_role_id,
             settings.economist_role_id,
-            settings.operator_role_id,
         }
     if current_user.role_id == settings.lead_economist_role_id:
-        return {settings.economist_role_id, settings.operator_role_id}
+        return {settings.economist_role_id}
     return set()
 
 
@@ -230,18 +228,9 @@ class UserRegistrationService:
         self._profiles = profiles
         self._user_auth_accounts = user_auth_accounts
 
-    async def register_user(
-        self,
-        current_user: CurrentUser,
-        *,
-        user_id: str,
-        role_id: int,
-        id_parent: str | None,
-        full_name: str | None,
-        phone: str | None,
-        mail: str | None,
-    ) -> User:
+    async def ensure_registration_role(self, current_user: CurrentUser, role_id: int) -> None:
         UserPolicy.ensure_can_register_user(current_user)
+        UserPolicy.ensure_operator_assignment_allowed(current_user, role_id=role_id)
         target_role = await self._users.get_role_by_id(role_id)
         if target_role is None:
             raise Conflict("Роль недоступна для создания")
@@ -267,12 +256,24 @@ class UserRegistrationService:
 
         if current_role.role == ROLE_NAME_ADMIN and target_role.role not in {
             ROLE_NAME_ECONOMIST,
-            ROLE_NAME_OPERATOR,
         }:
-            raise Forbidden("Администратор может создавать только экономистов и операторов")
+            raise Forbidden("Администратор может создавать только экономистов")
 
         if current_role.role == ROLE_NAME_LEAD_ECONOMIST and target_role.role != ROLE_NAME_ECONOMIST:
             raise Forbidden("Ведущий экономист может создавать только экономистов")
+
+    async def register_user(
+        self,
+        current_user: CurrentUser,
+        *,
+        user_id: str,
+        role_id: int,
+        id_parent: str | None,
+        full_name: str | None,
+        phone: str | None,
+        mail: str | None,
+    ) -> User:
+        await self.ensure_registration_role(current_user, role_id)
         role_rule = _hierarchy_rule_for_role(role_id=role_id)
         if not role_rule.parent_allowed:
             id_parent = None
@@ -297,10 +298,10 @@ class UserRegistrationService:
         normalized_full_name = (full_name or "").strip() or PLACEHOLDER_TEXT
         normalized_phone = (phone or "").strip() or PLACEHOLDER_TEXT
         normalized_mail = (mail or "").strip()
-        if not normalized_mail:
+        if not normalized_mail and settings.email_enabled:
             raise Conflict("Для создания пользователя требуется email")
         try:
-            normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) or normalized_mail
+            normalized_mail = validate_optional_email(normalized_mail, allow_placeholder=False) if normalized_mail else PLACEHOLDER_TEXT
         except ValueError as exc:
             raise Conflict(str(exc)) from exc
         
@@ -875,6 +876,8 @@ class ManualContractorCreateInput:
     company_mail: str | None = None
     address: str | None = None
     note: str | None = None
+    login: str | None = None
+    existing_user_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -901,6 +904,8 @@ class ManualContractorDuplicateItem:
     status: str
     created_at: str | None
     updated_at: str | None
+    can_select: bool | None = None
+    disabled_reason: str | None = None
 
 
 class ManualContractorService:
@@ -922,7 +927,7 @@ class ManualContractorService:
         self._units = units
         self._user_contact_channels = user_contact_channels
         self._after_commit_hook_registrar = after_commit_hook_registrar
-        self._iam_client = iam_client or IamClient()
+        self._iam_client = iam_client
 
     def _contractor_unit_service(self) -> ContractorUnitService:
         if self._units is None:
@@ -986,6 +991,8 @@ class ManualContractorService:
             company_mail=company_mail,
             address=address,
             note=note,
+            login=(data.login or "").strip() or None,
+            existing_user_id=data.existing_user_id,
         )
 
     def _build_login_slug(self, company_name: str) -> str:
@@ -1069,7 +1076,11 @@ class ManualContractorService:
         )
 
     async def _create_manual_contractor(self, *, data: ManualContractorCreateInput) -> str:
-        login = await self._build_manual_login(company_name=data.company_name)
+        login = data.login or await self._build_manual_login(company_name=data.company_name)
+        if not 3 <= len(login) <= 128:
+            raise Conflict("Логин должен содержать от 3 до 128 символов")
+        if await self._users.exists(login):
+            raise Conflict("Логин уже занят")
         await self._users.add(
             User(
                 id=login,
@@ -1104,26 +1115,6 @@ class ManualContractorService:
                 is_verified=False,
                 is_primary=True,
             )
-
-        role_name = technical_role_name(settings.contractor_role_id)
-        if role_name is None:
-            raise Conflict("Роль контрагента недоступна")
-        account = await self._iam_client.put_account(
-            account_id=stable_iam_account_id(login),
-            login=login,
-            role=role_name,
-            auth_status="active",
-        )
-        await self._user_auth_accounts.add(
-            UserAuthAccount(
-                id_user=login,
-                provider="iam",
-                external_subject_id=account.id,
-                external_username=login,
-                external_email=(data.company_mail or "").strip().lower() or None,
-                is_active=True,
-            )
-        )
         return login
 
     async def create_manual_contractor(
@@ -1131,18 +1122,43 @@ class ManualContractorService:
         *,
         current_user: CurrentUser,
         data: ManualContractorCreateInput,
+        initial_password: str | None = None,
     ) -> ManualContractorCreateResult:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
+        if initial_password is not None and settings.email_enabled:
+            raise Conflict("Начальный пароль задаётся при создании в режиме без почты")
 
         normalized_data = self._validate_manual_contractor_create_data(data=data)
-        existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(
-            data=normalized_data,
+        return await self._create_or_reuse_validated(
+            current_user=current_user, data=normalized_data, initial_password=initial_password,
         )
+
+    async def _create_or_reuse_validated(self, *, current_user: CurrentUser, data: ManualContractorCreateInput, initial_password: str | None = None) -> ManualContractorCreateResult:
+        # Authorization belongs to the calling use case (directory or request offer).
+        normalized_data = data
+        lock = getattr(self._users, "lock_contractor_identity", None)
+        if callable(lock):
+            await lock(inn=normalized_data.inn)
+        existing_contractor_user_id = None
+        if not data.existing_user_id:
+            existing_contractor_user_id = await self._find_existing_manual_contractor_user_id(data=normalized_data)
+        if data.existing_user_id:
+            existing_user = await self._users.get_by_id(data.existing_user_id)
+            if existing_user is None or existing_user.id_role != settings.contractor_role_id:
+                raise NotFound("Контрагент не найден")
+            await self._contractor_unit_service().ensure_can_access_contractor(current_user=current_user, contractor_user_id=existing_user.id)
+            company = await self._company_contacts.get_by_id(existing_user.id)
+            if company is None or company.inn != normalized_data.inn:
+                raise Conflict("Реквизиты не соответствуют выбранному контрагенту. Выберите запись повторно")
+            existing_contractor_user_id = existing_user.id
         if existing_contractor_user_id is not None:
+            if data.login and data.login != existing_contractor_user_id:
+                raise Conflict("Компания уже существует. Используйте её существующую учётную запись")
             await self._bind_to_creator_root_units_if_needed(
                 current_user=current_user,
                 contractor_user_id=existing_contractor_user_id,
             )
+            await self._synchronize_iam_account(user_id=existing_contractor_user_id, initial_password=initial_password, is_new_user=False)
             return ManualContractorCreateResult(
                 user_id=existing_contractor_user_id,
                 created=False,
@@ -1158,12 +1174,31 @@ class ManualContractorService:
             current_user=current_user,
             contractor_user_id=login,
         )
+        await self._synchronize_iam_account(user_id=login, initial_password=initial_password, is_new_user=True)
         return ManualContractorCreateResult(
             user_id=login,
             created=True,
             company_name=normalized_data.company_name,
             inn=normalized_data.inn,
             company_mail=normalized_data.company_mail,
+        )
+
+    async def _synchronize_iam_account(self, *, user_id: str, initial_password: str | None, is_new_user: bool) -> None:
+        if self._user_auth_accounts is None:
+            raise RuntimeError("Manual contractor creation requires IAM binding repository")
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFound("Контрагент не найден")
+        company = await self._company_contacts.get_by_id(user_id)
+        try:
+            email = validate_optional_email(company.mail, allow_placeholder=False) if company else None
+        except ValueError:
+            # Identity synchronization does not depend on legacy contact data.
+            email = None
+        await ensure_user_iam_account(
+            user_auth_accounts=self._user_auth_accounts, user_id=user.id,
+            role_id=user.id_role, user_status=user.status, email=email,
+            initial_password=initial_password, is_new_user=is_new_user, iam_client=self._iam_client,
         )
 
     async def list_possible_duplicates(
@@ -1175,6 +1210,24 @@ class ManualContractorService:
         company_mail: str | None = None,
     ) -> list[ManualContractorDuplicateItem]:
         UserPolicy.ensure_can_create_manual_contractors(current_user)
+
+        return await self._find_possible_duplicates(
+            current_user=current_user, company_name=company_name,
+            inn=inn, company_mail=company_mail,
+        )
+
+    async def _find_possible_duplicates(
+        self,
+        *,
+        current_user: CurrentUser,
+        company_name: str | None = None,
+        inn: str | None = None,
+        company_mail: str | None = None,
+        allowed_contractor_user_ids: set[str] | None = None,
+    ) -> list[ManualContractorDuplicateItem]:
+        """Search within the calling use case's authorized contractor scope."""
+        if allowed_contractor_user_ids == set():
+            return []
 
         search_values = [
             value.strip()
@@ -1199,6 +1252,8 @@ class ManualContractorService:
                 offset=0,
             )
             for user, profile, company, _legacy_user, _legacy_account_id in rows:
+                if allowed_contractor_user_ids is not None and user.id not in allowed_contractor_user_ids:
+                    continue
                 company_name_value = (company.company_name if company else None) or ''
                 inn_value = (company.inn if company else None) or ''
                 company_mail_value = (company.mail if company else None) or ''
@@ -1211,7 +1266,7 @@ class ManualContractorService:
                     )
                 ):
                     continue
-                if self._units is not None and not await self._contractor_unit_service().can_access_contractor(
+                if allowed_contractor_user_ids is None and self._units is not None and not await self._contractor_unit_service().can_access_contractor(
                     current_user=current_user,
                     contractor_user_id=user.id,
                 ):
@@ -1348,6 +1403,7 @@ class UserRoleService:
         role_id: int,
     ) -> UserRoleUpdateResult:
         UserPolicy.ensure_can_update_user_role(current_user)
+        UserPolicy.ensure_operator_assignment_allowed(current_user, role_id=role_id)
 
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -1359,6 +1415,21 @@ class UserRoleService:
         allowed_role_ids = _role_update_options_for_user(current_user)
         if role_id not in allowed_role_ids:
             raise Forbidden("Выбранная роль недоступна для назначения")
+
+        changing_kind = (user.id_role == settings.contractor_role_id) != (role_id == settings.contractor_role_id)
+        if changing_kind and current_user.role_id != settings.superadmin_role_id:
+            raise Forbidden("Преобразование сотрудника и контрагента доступно только суперадминистратору")
+        if changing_kind and role_id == settings.contractor_role_id:
+            has_requests = getattr(self._users, "has_owned_requests", None)
+            if callable(has_requests) and await has_requests(user_id=user.id):
+                raise Conflict("Перед преобразованием назначьте другого ответственного за заявки сотрудника")
+            parents = dict(await self._users.list_active_units())
+            if any(member_user == user.id and parents.get(unit_id) is not None for member_user, unit_id in await self._users.list_active_unit_memberships()):
+                raise Conflict("Перед преобразованием в контрагента оставьте только привязки к корневым подразделениям")
+        if changing_kind and user.id_role == settings.contractor_role_id:
+            has_offers = getattr(self._users, "has_contractor_offers", None)
+            if callable(has_offers) and await has_offers(user_id=user.id):
+                raise Conflict("У контрагента есть коммерческие предложения. Преобразование нарушит их связи")
 
         await self._ensure_target_root_scope(
             current_user=current_user,
@@ -1482,6 +1553,9 @@ class UserStatusService:
         notification_preferences: UserNotificationPreferencesService | None = None,
         after_commit_hook_registrar: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
         process_event_publisher: Callable[[ProcessNotificationEvent], Awaitable[bool]] | None = None,
+        units: UnitRepository | None = None,
+        requests: RequestRepository | None = None,
+        offers: OfferRepository | None = None,
     ):
         self._users = users
         self._profiles = profiles
@@ -1490,6 +1564,58 @@ class UserStatusService:
         self._notification_preferences = notification_preferences
         self._after_commit_hook_registrar = after_commit_hook_registrar
         self._process_event_publisher = process_event_publisher or publish_process_notification_event
+        self._units = units
+        self._requests = requests
+        self._offers = offers
+
+    async def _handle_blocked_profile(self, *, current_user: CurrentUser, user: User) -> None:
+        if self._requests is None:
+            return
+        if user.id_role == settings.contractor_role_id:
+            if self._offers is None:
+                raise RuntimeError("Contractor status changes require offer repository")
+            offers = await self._offers.list_accepted_for_contractor(user_id=user.id)
+            for offer in offers:
+                await self._requests.lock_offer_lifecycle(request_id=offer.id_request)
+                request = await self._requests.get_by_id(request_id=offer.id_request)
+                if request is None or request.status not in {"open", "review"}:
+                    continue
+                offer = await self._offers.get_by_id(offer_id=offer.id)
+                if offer is None or offer.status != "accepted":
+                    continue
+                await self._offers.update_status(offer=offer, status="rejected")
+                self._schedule_process_notification_event(build_process_notification_event(
+                    event_type="offer.status_changed",
+                    actor_user_id=current_user.user_id,
+                    entity_type="offer", entity_id=offer.id,
+                    request_id=request.id, offer_id=offer.id,
+                    payload={
+                        "recipient_user_ids": [request.id_user],
+                        "old_status": "accepted", "new_status": "rejected",
+                        "reason": "contractor_unavailable", "contractor_status": user.status,
+                    },
+                ))
+            return
+
+        requests = await self._requests.list_in_progress_requests_by_owner_ids(owner_ids=[user.id])
+        if not requests:
+            return
+        managers = await UnitHierarchyService(self._users).get_user_managers(user_id=user.id)
+        recipients = sorted({manager.user_id for manager in managers if manager.status == "active"})
+        for request in requests:
+            self._schedule_process_notification_event(build_process_notification_event(
+                event_type="system.warning", actor_user_id=current_user.user_id,
+                entity_type="request", entity_id=request.id, request_id=request.id,
+                payload={
+                    "recipient_user_ids": recipients,
+                    "title": "Заявка требует распределения",
+                    "body": f"Заявка №{request.id} стала нераспределённой: ответственный сотрудник "
+                            + ("в чёрном списке." if user.status == "blacklist" else "неактивен."),
+                    "link_url": f"/requests/{request.id}",
+                    "request_id": request.id, "previous_owner_user_id": user.id,
+                    "reason": "owner_unavailable", "owner_status": user.status,
+                },
+            ))
 
     def _schedule_process_notification_event(self, event: ProcessNotificationEvent) -> bool:
         if self._after_commit_hook_registrar is None:
@@ -1515,10 +1641,14 @@ class UserStatusService:
         if user_status not in self.VALID_USER_STATUSES:
             raise Conflict("Неподдерживаемое значение users.status")
 
+        if self._requests is not None:
+            await self._users.lock_status_change(user_id=user_id)
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise NotFound("Пользователь не найден")
 
+        if not contractor_only and self._units is not None and not await UnitHierarchyService(self._users).can_view_user(current_user=current_user, target_user_id=user.id):
+            raise Forbidden("Пользователь находится вне разрешённой области")
         if contractor_only:
             if user.id_role != settings.contractor_role_id:
                 raise Forbidden("Изменение статуса доступно только для контрагентов")
@@ -1555,6 +1685,8 @@ class UserStatusService:
                 raise Conflict("Нельзя подтвердить регистрацию до подтверждения email")
         status_changed = old_status != user_status
         await self._users.update_status(user, user_status)
+        if status_changed and user_status in {"inactive", "blacklist"}:
+            await self._handle_blocked_profile(current_user=current_user, user=user)
 
         result = UserStatusUpdateResult(
             user_id=user.id,
@@ -1582,25 +1714,12 @@ class UserStatusService:
                 if not email_system_enabled:
                     contractor_email_notification_reason = "disabled_by_user"
                 else:
-                    async def _send_contractor_status_email() -> None:
-                        await notify_contractor_status_changed_email(
-                            to_email=notify_email,
-                            user_status=user.status,
-                            recipient_user_id=user.id,
-                            initiator_user_id=current_user.user_id,
-                        )
-
-                    if self._after_commit_hook_registrar is not None:
-                        # Never queue mail for a status change that may still roll back.
-                        self._after_commit_hook_registrar(_send_contractor_status_email)
-                        contractor_email_notification_queued = True
-                    else:
-                        contractor_email_notification_queued = await notify_contractor_status_changed_email(
-                            to_email=notify_email,
-                            user_status=user.status,
-                            recipient_user_id=user.id,
-                            initiator_user_id=current_user.user_id,
-                        )
+                    contractor_email_notification_queued = await notify_contractor_status_changed_email(
+                        to_email=notify_email,
+                        user_status=user.status,
+                        recipient_user_id=user.id,
+                        initiator_user_id=current_user.user_id,
+                    )
                     if not contractor_email_notification_queued:
                         contractor_email_notification_reason = "status_not_supported_for_email"
 
@@ -1660,8 +1779,6 @@ class UserSelfService:
     ) -> None:
         if subordinate.id_role not in SUBORDINATE_PROFILE_ROLE_IDS:
             raise Conflict("Данными подчиненного можно управлять только для разрешенных ролей подчиненных")
-        if current_user.role_id in {settings.superadmin_role_id, settings.admin_role_id}:
-            return
         if not UserPolicy.can_manage_subordinate_role(
             current_role_id=current_user.role_id,
             target_role_id=subordinate.id_role,
@@ -1789,7 +1906,7 @@ class UserSelfService:
             await IamClient().complete_required_action(account_id=current_user.iam_account_id)
             normalized_mail = (mail or "").strip().lower()
             if (
-                normalized_mail
+                settings.email_enabled and normalized_mail
                 and normalized_mail not in {"не указано", "none", "null"}
                 and normalized_mail != previous_email
             ):

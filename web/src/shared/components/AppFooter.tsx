@@ -2,9 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import bitrixLogo from '@shared/assets/bitrix24-logo.png';
 import maxLogo from '@shared/assets/max-logo-2025.png';
+import { MAX_CONTACT_LINK } from '@shared/constants/supportContacts';
 
 const BITRIX_LINK = 'https://team.alabuga.ru/company/structure.php?set_filter_structure=Y&structure_UF_DEPARTMENT=8304&filter=Y&set_filter=Y';
-const MAX_CONTACT_LINK = 'https://max.ru/u/f9LHodD0cOIA4s2RhH3dW5NoCLRn88NF67UYfQe_rOnnM6Y1a7VW_vOUt5I';
 const NARROW_FOOTER_QUERY = '(max-width: 640px)';
 
 const iconLinkSx = {
@@ -49,7 +49,7 @@ const sectionSx = {
 
 const captionSx = {
   color: '#4a5875',
-  fontFamily: 'Inter, "Segoe UI", sans-serif',
+  fontFamily: 'inherit',
   fontSize: '12px',
   fontWeight: 500,
   lineHeight: 1.55,
@@ -58,7 +58,7 @@ const captionSx = {
 const brandSx = {
   justifySelf: 'center',
   color: '#1f2a44',
-  fontFamily: 'Inter, "Segoe UI", sans-serif',
+  fontFamily: 'inherit',
   fontSize: '14px',
   fontWeight: 550,
   letterSpacing: '0.1px',
@@ -109,6 +109,12 @@ export const AppFooter = () => {
       });
     };
 
+    let active = true;
+    const updateAfterFonts = () => {
+      if (active) updateLayout();
+    };
+    void document.fonts?.ready.then(updateAfterFonts);
+    document.fonts?.addEventListener('loadingdone', updateAfterFonts);
     updateLayout();
     media.addEventListener('change', updateLayout);
 
@@ -118,6 +124,8 @@ export const AppFooter = () => {
       });
       observer.observe(element);
       return () => {
+        active = false;
+        document.fonts?.removeEventListener('loadingdone', updateAfterFonts);
         observer.disconnect();
         media.removeEventListener('change', updateLayout);
       };
@@ -125,6 +133,8 @@ export const AppFooter = () => {
 
     window.addEventListener('resize', updateLayout);
     return () => {
+      active = false;
+      document.fonts?.removeEventListener('loadingdone', updateAfterFonts);
       window.removeEventListener('resize', updateLayout);
       media.removeEventListener('change', updateLayout);
     };

@@ -42,7 +42,7 @@ from iam_app.core.security import (
 from iam_app.db import get_session
 from iam_app.errors import Forbidden, IamError, RateLimited
 from iam_app.schemas import (
-    AccountCredentialStateResponse,
+    AccountLoginStateResponse,
     AccountPermissionGrantsPutRequest,
     AccountPermissionsResponse,
     AccountPutRequest,
@@ -60,6 +60,9 @@ from iam_app.schemas import (
     ReconciliationResponse,
     RefreshRequest,
     RegistrationCredentialsPutRequest,
+    DirectCredentialsPutRequest,
+    PasswordChangeRequest,
+    AdminPasswordResetRequest,
     RegistrationCredentialsResponse,
     RevokeAllRequest,
     TokenBundleResponse,
@@ -476,6 +479,58 @@ async def put_account(
 
 
 @router.put(
+    "/internal/accounts/{account_id}/direct-credentials",
+    response_model=RegistrationCredentialsResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def put_direct_credentials(
+    account_id: uuid.UUID, payload: DirectCredentialsPutRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RegistrationCredentialsResponse:
+    result = await IamService(session).provision_direct_credentials(
+        account_id=account_id, login=payload.login, role_name=payload.role,
+        initial_password=payload.password.get_secret_value(),
+    )
+    return RegistrationCredentialsResponse(
+        id=result.account.id, login=result.account.login, role=result.role_name,
+        auth_status=result.account.auth_status, created=result.created, password_set=result.password_set,
+        required_actions=result.account.required_actions or [],
+    )
+
+
+@router.post(
+    "/internal/accounts/{account_id}/password/change",
+    status_code=204, dependencies=[Depends(require_internal_service)],
+)
+async def change_own_password(
+    account_id: uuid.UUID, payload: PasswordChangeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await IamService(session).change_own_password(
+        account_id=account_id, session_id=payload.session_id,
+        current_password=payload.current_password.get_secret_value(),
+        new_password=payload.new_password.get_secret_value(),
+    )
+    return Response(status_code=204)
+
+
+@router.post(
+    "/internal/accounts/{account_id}/password/reset",
+    status_code=204, dependencies=[Depends(require_internal_service)],
+)
+async def reset_user_password(
+    account_id: uuid.UUID, payload: AdminPasswordResetRequest,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await IamService(session).reset_user_password(
+        account_id=account_id, new_password=payload.new_password.get_secret_value(),
+        actor_account_id=payload.actor_account_id, actor_session_id=payload.actor_session_id,
+        department_scope_verified=payload.department_scope_verified,
+    )
+    return Response(status_code=204)
+
+
+@router.put(
     "/internal/accounts/{account_id}/registration-credentials",
     response_model=RegistrationCredentialsResponse,
     dependencies=[Depends(require_internal_service)],
@@ -505,21 +560,23 @@ async def put_registration_credentials(
 
 @router.get(
     "/internal/accounts/{account_id}/credential-state",
-    response_model=AccountCredentialStateResponse,
+    response_model=AccountLoginStateResponse,
     dependencies=[Depends(require_internal_service)],
 )
 async def get_account_credential_state(
     account_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-) -> AccountCredentialStateResponse:
+) -> AccountLoginStateResponse:
     result = await IamService(session).get_credential_state(account_id=account_id)
-    return AccountCredentialStateResponse(
+    return AccountLoginStateResponse(
         id=result.account.id,
         login=result.account.login,
         role=result.role_name,
         auth_status=result.account.auth_status,
         password_set=result.password_set,
         required_actions=list(result.required_actions),
+        role_active=result.role_active,
+        password_locked_until=result.password_locked_until,
     )
 
 

@@ -11,14 +11,18 @@ const contractors: RequestContractorItem[] = [
     full_name: 'Иван Петров',
     company_name: 'ООО Ромашка',
     mail: 'ivan@example.com',
-    company_mail: 'office@example.com'
+    company_mail: 'office@example.com',
+    can_select: true,
+    disabled_reason: null
   },
   {
     user_id: 'manual_contractor',
     full_name: 'Не указано',
     company_name: 'ООО Лютик',
     mail: 'Не указано',
-    company_mail: 'az0msocc@nhml.com'
+    company_mail: 'az0msocc@nhml.com',
+    can_select: true,
+    disabled_reason: null
   }
 ];
 

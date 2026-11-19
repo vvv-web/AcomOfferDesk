@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import HighlightOffOutlinedIcon from '@mui/icons-material/HighlightOffOutlined';
-import RemoveOutlinedIcon from '@mui/icons-material/RemoveOutlined';
-import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import {
   Box,
   Button,
@@ -16,7 +12,6 @@ import {
   Select,
   Stack,
   TextField,
-  Tooltip,
   Typography
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -25,12 +20,17 @@ import { useIsMobileViewport } from '@shared/lib/responsive';
 import { formatDate, formatAmount } from '@shared/lib/formatters';
 import { getFileKey } from '@shared/lib/files';
 import { downloadFile } from '@shared/api/fileDownload';
+import { FilePreviewTrigger } from '@shared/components/file-preview/FilePreviewTrigger';
 import { useSystemToasts } from '@shared/ui/toasts';
 import { OfferWorkspaceChatPanel } from './OfferWorkspaceChatPanel';
 import { OFFER_WORKSPACE_CHAT_WIDTH_PX, OfferWorkspaceChatDock } from './OfferWorkspaceChatDock';
 import { useOfferWorkspace } from '../model/useOfferWorkspace';
 import { RequestDetailsMainCard } from '@features/request-details/ui/RequestDetailsMainCard';
 import { statusOptions, type RequestStatus } from '@features/request-details/model/requestDetailsUtils';
+import { ContractorLoginAccessBadge } from '@features/contractors/components/ContractorLoginAccessBadge';
+import { ContractorStatusPill } from '@features/contractors/components/contractorUi';
+import { StatusPill, type StatusPillTone } from '@shared/ui/StatusPill';
+import { themeTokens } from '@shared/theme/tokens';
 
 const offerDecisionOptions = [
   { value: 'accepted', label: 'Принято' },
@@ -38,39 +38,15 @@ const offerDecisionOptions = [
 ] as const;
 
 
-const getOfferStatusBadgeStyle = (status: string | null) => {
-  if (status === 'accepted') {
-    return {
-      borderColor: '#1976d2',
-      icon: <CheckCircleOutlineIcon fontSize="small" sx={{ color: '#1976d2' }} />
-    };
-  }
+const workspaceControlSx = {
+  height: themeTokens.button.minHeight,
+  minHeight: themeTokens.button.minHeight,
+  borderRadius: `${themeTokens.shape.buttonRadius}px`,
+  fontSize: themeTokens.typography.body2FontSize,
+} as const;
 
-  if (status === 'submitted') {
-    return {
-      borderColor: '#2e7d32',
-      icon: <AccessTimeOutlinedIcon sx={{ color: '#2e7d32', fontSize: 24 }} />
-    };
-  }
-
-  if (status === 'deleted') {
-    return {
-      borderColor: '#c62828',
-      icon: <ReportProblemOutlinedIcon fontSize="small" sx={{ color: '#c62828' }} />
-    };
-  }
-
-  if (status === 'rejected') {
-    return {
-      borderColor: '#787878',
-      icon: <HighlightOffOutlinedIcon fontSize="small" sx={{ color: '#787878' }} />
-    };
-  }
-
-  return {
-    borderColor: '#d3dbe7',
-    icon: <RemoveOutlinedIcon fontSize="small" sx={{ color: '#1f2a44' }} />
-  };
+const offerStatusTone: Record<string, StatusPillTone> = {
+  submitted: 'warning', accepted: 'success', rejected: 'neutral', deleted: 'error',
 };
 
 const getOfferStatusLabel = (status: string | null) => {
@@ -106,6 +82,8 @@ export const OfferWorkspaceView = () => {
     session,
     workspace,
     contractorInfo,
+    contractorLoginAccess,
+    isContractorAccessLoading,
     selectedOffer,
     sortedOffers,
     setSelectedOfferId,
@@ -126,12 +104,13 @@ export const OfferWorkspaceView = () => {
     canDeleteFile,
     canSendMessage,
     canViewMessages,
+    retryChat,
     canSendMessageWithAttachments,
     canSetReadMessages,
     canSetReceivedMessages,
     canEditOfferStatus,
     canEditOfferAmount,
-    canDeleteOwnOffer,
+    canDeleteOffer,
     isContractor,
     acceptedOfferId,
     offerAmountInput,
@@ -155,18 +134,20 @@ export const OfferWorkspaceView = () => {
 
   const canViewRequestAmounts = Boolean(workspace?.request.actions.view_amounts);
   const canViewContractorInfo = Boolean(selectedOffer?.actions.view_contractor_info);
+  const contractorStatus = contractorInfo?.status ?? workspace?.profile?.status;
+  const accessState = contractorLoginAccess?.state;
+  const hasEquivalentAccessStatus = (contractorStatus === 'active' && accessState === 'available')
+    || (['inactive', 'blacklist'].includes(contractorStatus ?? '') && accessState === 'blocked')
+    || (contractorStatus === 'review' && accessState === 'pending');
+  const showLoginAccess = isContractorAccessLoading || !hasEquivalentAccessStatus;
   const hasOfferUpdatePermission = Boolean(session?.permissions.includes('offers.update'));
   const hasDepartmentOfferUpdateDelegation = Boolean(session?.permissions.includes('department.offers.update'));
   const requestStatus = (workspace?.request.status ?? 'open') as RequestStatus;
   const canModifyOffer = requestStatus !== 'closed' && requestStatus !== 'cancelled';
   const canEnterOfferEditMode = canModifyOffer && (
-    hasDepartmentOfferUpdateDelegation
-    || hasOfferUpdatePermission
-  ) && (
-    canEditOfferAmount
-    || canUpload
-    || canDeleteFile
-    || canDeleteOwnOffer
+    canDeleteOffer
+    || ((hasDepartmentOfferUpdateDelegation || hasOfferUpdatePermission)
+      && (canEditOfferAmount || canUpload || canDeleteFile))
   );
   const canEditOfferDecision = canModifyOffer && canEditOfferStatus;
   const normalizedErrorMessage = (errorMessage ?? '').toLowerCase();
@@ -304,7 +285,7 @@ export const OfferWorkspaceView = () => {
           existingFiles={workspace.request.files}
           canDeleteRequestFiles={false}
           onDownloadFile={(downloadUrl, fileName) => {
-            void downloadFile(downloadUrl, fileName);
+            return downloadFile(downloadUrl, fileName);
           }}
           onRemoveExistingFile={() => undefined}
           newFiles={[]}
@@ -348,18 +329,17 @@ export const OfferWorkspaceView = () => {
           <Typography variant="h6" sx={{ mb: 1 }}>
             Информация о контрагенте
           </Typography>
-          <Stack
-            direction="row"
-            spacing={2}
-            useFlexGap
-            flexWrap="wrap"
-            alignItems="stretch"
-          >
+          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ mb: 1.5 }}>
+            {contractorStatus ? <ContractorStatusPill value={contractorStatus} /> : null}
+            {showLoginAccess ? <ContractorLoginAccessBadge access={contractorLoginAccess}
+              loading={isContractorAccessLoading} iconOnly={Boolean(contractorStatus)} /> : null}
+          </Stack>
+          <Box sx={{ display: 'grid', gap: 1.5, alignItems: 'stretch',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))' }}>
             <Paper
               variant="outlined"
               sx={{
                 p: 1.5,
-                flex: '1 1 320px',
                 minWidth: 0
               }}
             >
@@ -392,8 +372,7 @@ export const OfferWorkspaceView = () => {
               variant="outlined"
               sx={{
                 p: 1.5,
-                flex: '1 1 240px',
-                minWidth: { xs: '100%', sm: 220 }
+                minWidth: 0
               }}
             >
               <Stack spacing={0.5}>
@@ -407,8 +386,7 @@ export const OfferWorkspaceView = () => {
               variant="outlined"
               sx={{
                 p: 1.5,
-                flex: '1 1 220px',
-                minWidth: { xs: '100%', sm: 220 }
+                minWidth: 0
               }}
             >
               <Stack spacing={0.75}>
@@ -432,7 +410,7 @@ export const OfferWorkspaceView = () => {
                 </Stack>
               </Stack>
             </Paper>
-          </Stack>
+          </Box>
         </Paper>
         ) : null}
 
@@ -455,7 +433,6 @@ export const OfferWorkspaceView = () => {
           const hasOfferAmountChanges = offerAmountInput !== baselineOfferAmount && offerAmountInput.trim().length > 0;
           const hasOfferFileChanges = deletedOfferFileIds.length > 0 || newOfferFiles.length > 0;
           const canSaveOfferChanges = hasOfferAmountChanges || hasOfferFileChanges;
-          const itemBadgeStyle = getOfferStatusBadgeStyle(offerItem.status ?? null);
           const offerStatusLabel = getOfferStatusLabel(offerItem.status ?? null);
           const filesToRender = isCurrent ? existingOfferFiles : offerItem.files;
           return (
@@ -483,45 +460,18 @@ export const OfferWorkspaceView = () => {
                   <Typography variant="h5" sx={{ fontWeight: 700 }}>
                     КП №{offerItem.offer_id}
                   </Typography>
-                  <Tooltip
-                    title={offerStatusLabel}
-                    enterTouchDelay={0}
-                    slotProps={{
-                      popper: {
-                        modifiers: [{ name: 'offset', options: { offset: [0, 1] } }]
-                      }
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 8,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: 'transparent'
-                      }}
-                      aria-label={`status-${offerItem.status ?? 'unknown'}`}
-                    >
-                      {itemBadgeStyle.icon}
-                    </Box>
-                  </Tooltip>
-                  <Chip
-                    label={isCurrent ? 'Активный отклик' : 'Неактивный отклик'}
-                    size="small"
-                    color={isCurrent ? 'primary' : 'default'}
-                    sx={{ borderRadius: 3, '& .MuiChip-label': { fontWeight: 600 } }}
-                  />
+                  <StatusPill label={offerStatusLabel} tone={offerStatusTone[offerItem.status] ?? 'neutral'} />
                 </Stack>
 
                 <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                  {isCurrentInEditMode && isContractor && canDeleteOwnOffer ? (
+                  {isCurrentInEditMode && canDeleteOffer ? (
                     <Button
                       variant="contained"
+                      startIcon={<DeleteOutlineIcon />}
                       onClick={() => void handleDeleteOffer()}
                       disabled={isUpdatingOfferStatus || offerItem.status === 'deleted'}
                       sx={(theme) => ({
+                        ...workspaceControlSx,
                         backgroundColor: theme.palette.error.main,
                         color: theme.palette.error.contrastText,
                         boxShadow: 'none',
@@ -535,7 +485,7 @@ export const OfferWorkspaceView = () => {
                         }
                       })}
                     >
-                      {offerItem.status === 'deleted' ? 'Отклик удален' : 'Удалить отклик'}
+                      {isContractor ? 'Удалить отклик' : 'Удалить КП'}
                     </Button>
                   ) : null}
                   {canEditOfferDecision && isCurrent ? (
@@ -546,9 +496,9 @@ export const OfferWorkspaceView = () => {
                       disabled={isUpdatingOfferStatus || offerItem.status === 'deleted'}
                       onChange={(event) => void handleStatusChange(event.target.value as 'accepted' | 'rejected' | '')}
                       sx={{
+                        ...workspaceControlSx,
                         width: { xs: '100%', sm: 'auto' },
                         minWidth: { xs: '100%', sm: 230 },
-                        borderRadius: 3,
                         '& .MuiOutlinedInput-input': { py: 1 }
                       }}
                     >
@@ -614,8 +564,8 @@ export const OfferWorkspaceView = () => {
                         value={offerAmountInput}
                         onChange={(event) => setOfferAmountInput(event.target.value)}
                         disabled={isUpdatingOfferAmount}
-                        inputProps={{ min: 0, step: '0.01', inputMode: 'decimal' }}
-                        sx={{ width: 140, '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                        inputProps={{ min: 0, step: '0.01', inputMode: 'decimal', 'aria-label': 'Сумма КП, руб.' }}
+                        sx={{ width: { xs: '100%', sm: 160 }, '& .MuiOutlinedInput-root': workspaceControlSx }}
                       />
                     ) : (
                       <Typography sx={{ fontWeight: 500, textAlign: { xs: 'left', sm: 'right' } }}>
@@ -633,26 +583,33 @@ export const OfferWorkspaceView = () => {
                   <Typography color="text.secondary">Файлы КП не прикреплены.</Typography>
                 ) : (
                   filesToRender.map((file) => (
-                    <Chip
-                      key={file.id}
-                      label={file.name}
-                      variant="outlined"
-                      sx={{ borderRadius: 999, '& .MuiChip-label': { px: 1.2 } }}
-                      onClick={() => void downloadFile(file.download_url, file.name)}
-                      onDelete={canDeleteFile && isCurrentInEditMode ? () => void handleDeleteFile(file.id) : undefined}
-                    />
+                    <FilePreviewTrigger key={file.id} source={{ name: file.name, downloadUrl: file.download_url }}>
+                      {(openPreview) => (
+                        <Chip
+                          label={file.name}
+                          variant="outlined"
+                          sx={{ borderRadius: 999, '& .MuiChip-label': { px: 1.2 } }}
+                          onClick={openPreview}
+                          onDelete={canDeleteFile && isCurrentInEditMode ? () => void handleDeleteFile(file.id) : undefined}
+                        />
+                      )}
+                    </FilePreviewTrigger>
                   ))
                 )}
                 {isCurrentInEditMode
                   ? newOfferFiles.map((file) => (
-                    <Chip
-                      key={getFileKey(file)}
-                      label={file.name}
-                      color="primary"
-                      variant="outlined"
-                      onDelete={() =>
-                        setNewOfferFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
-                    />
+                    <FilePreviewTrigger key={getFileKey(file)} source={{ name: file.name, file }}>
+                      {(openPreview) => (
+                        <Chip
+                          label={file.name}
+                          onClick={openPreview}
+                          color="primary"
+                          variant="outlined"
+                          onDelete={() =>
+                            setNewOfferFiles((prev) => prev.filter((item) => getFileKey(item) !== getFileKey(file)))}
+                        />
+                      )}
+                    </FilePreviewTrigger>
                   ))
                   : null}
                 {canUpload && isCurrentInEditMode ? (
@@ -676,19 +633,19 @@ export const OfferWorkspaceView = () => {
                 ) : null}
               </Stack>
               <Stack
-                direction="row"
-                alignItems="center"
+                direction={{ xs: 'column', sm: 'row' }}
+                alignItems={{ xs: 'stretch', sm: 'center' }}
                 justifyContent="space-between"
                 spacing={1}
                 flexWrap="nowrap"
                 sx={{ mt: 1.2 }}
               >
-                <Typography variant="body1">Обновлено {formatDate(offerItem.updated_at, true)}</Typography>
+                <Typography variant="body2" color="text.secondary">Обновлено {formatDate(offerItem.updated_at, true)}</Typography>
                 <Stack
                   direction="row"
                   spacing={1}
                   alignItems="center"
-                  sx={{ width: 'auto', flexWrap: 'nowrap', '& > *': { width: 'auto' } }}
+                  sx={{ justifyContent: 'flex-end', flexShrink: 0, '& > .MuiButton-root': workspaceControlSx }}
                 >
                   {isCurrentInEditMode ? (
                     <Button
@@ -711,9 +668,9 @@ export const OfferWorkspaceView = () => {
                           disabled={isUpdatingOfferAmount}
                           aria-label="Изменить"
                           sx={{
-                            minWidth: isMobileViewport ? 40 : undefined,
-                            width: isMobileViewport ? 40 : 'auto',
-                            height: 36,
+                            ...workspaceControlSx,
+                            minWidth: isMobileViewport ? themeTokens.button.minHeight : undefined,
+                            width: isMobileViewport ? themeTokens.button.minHeight : 'auto',
                             px: isMobileViewport ? 0 : undefined
                           }}
                         >
@@ -761,6 +718,7 @@ export const OfferWorkspaceView = () => {
 
       {canViewMessages ? (
         <OfferWorkspaceChatDock isOpen={isChatOpen} onOpen={() => setIsChatOpen(true)}>
+          {visibleErrorMessage ? <Button onClick={() => void retryChat()}>Повторить загрузку чата</Button> : null}
           <OfferWorkspaceChatPanel
             offerId={selectedOffer.offer_id}
             readOnlyNotice={!canSendMessage && !canSendMessageWithAttachments && !canSetReadMessages && !canSetReceivedMessages ? '\u0414\u043b\u044f \u0432\u0430\u0441 \u0447\u0430\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u043b\u044f \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430.' : null}
@@ -776,9 +734,11 @@ export const OfferWorkspaceView = () => {
             onMessageInputClick={onMessageInputClick}
             onMessageDraftChange={onMessageDraftChange}
             onDownloadAttachment={(downloadUrl, name) => {
-              void downloadFile(downloadUrl, name);
+              return downloadFile(downloadUrl, name);
             }}
             contractorUserId={selectedOffer.contractor_user_id}
+            contractorLoginAccess={canViewContractorInfo && !isContractor ? contractorLoginAccess : undefined}
+            isContractorAccessLoading={isContractorAccessLoading}
           />
         </OfferWorkspaceChatDock>
       ) : null}

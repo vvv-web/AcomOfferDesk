@@ -77,3 +77,26 @@ Email-сбой не отменяет основную бизнес-операц�
 | WebSocket runtime | `backend/app/services/unified_realtime.py`, `backend/app/services/chat_realtime.py` |
 | UI центра уведомлений | `web/src/features/notifications/` |
 | UI настроек | `web/src/shared/components/ProfileButton.tsx` |
+
+## Notification event map
+
+| Event | Получатели | Link |
+|---|---|---|
+| `request.created` | ответственный и видимые активные контрагенты | `/requests/{request_id}` |
+| `request.status_changed` | участники заявки по unit/domain scope | `/requests/{request_id}` |
+| `request.files_changed` | ответственный и релевантные авторы предложений | `/requests/{request_id}` |
+| `offer.created` / `offer.updated` | участники заявки по policy | request/offer route |
+| `message.created` | участники чата | chat route |
+| `user.review_required` | admin/superadmin/security officer по target role/source | `/admin/users` или `/contractors` |
+
+Получатели вычисляются из текущего Acom business state, units, visibility и notification preferences. Доступ по ссылке требует действующую IAM session и повторно проверяется backend policy.
+
+## Возврат заявок при блокировке профиля
+
+При переводе сотрудника в `inactive` или `blacklist` активные руководители по unit hierarchy
+получают `system.warning` с заголовком «Заявка требует распределения», причиной и ссылкой
+на каждую действующую заявку. Руководитель-инициатор также получает уведомление.
+Публикация происходит после commit, повторная запись того же статуса не создаёт события.
+Снятие принятия КП заблокированного контрагента использует `offer.status_changed` для
+ответственного по заявке. Границы и DTO описаны в
+[жизненном цикле заявок и КП](../development/request-offer-lifecycle.md#неактивные-профили-и-чёрный-список).

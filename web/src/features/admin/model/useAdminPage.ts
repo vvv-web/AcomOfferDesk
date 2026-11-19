@@ -17,16 +17,18 @@ import { ROLE } from '@shared/constants/roles';
 import { isValidRuPhone } from '@shared/lib/phone';
 import { buildUnitOptions, type UnitOption } from '@shared/lib/hierarchy/buildUnitOptions';
 import { addUserButtonSx, employeePersonLabels, roleByTab, roleLabelsById, tabOptions, type UserTab } from './constants';
-import { getScopedCreateRoleIds, resolveUserTabFromParam } from './helpers';
+import { getScopedCreateRoleIds, matchesUserSearch, resolveUserTabFromParam } from './helpers';
 import { useSystemToasts } from '@shared/ui/toasts';
 
 const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const innRegex = /^\d{10}$|^\d{12}$/;
 
-const schema = z
+const buildSchema = (emailEnabled: boolean) => z
   .object({
-    role_id: z.number({ required_error: 'Выберите роль' }),
+    role_id: z.number({ error: 'Выберите роль' }),
     login: z.string().optional(),
+    password: z.string().optional(),
+    password_confirmation: z.string().optional(),
     mail: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
@@ -131,13 +133,21 @@ const schema = z
       });
     }
 
-    if (!mail) {
+    if (!emailEnabled) {
+      if ((data.password?.length ?? 0) < 12 || (data.password?.length ?? 0) > 128) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Пароль должен содержать от 12 до 128 символов', path: ['password'] });
+      }
+      if (data.password !== data.password_confirmation) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Пароли не совпадают', path: ['password_confirmation'] });
+      }
+    }
+    if (emailEnabled && !mail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'E-mail обязателен для будущей привязки учётной записи',
         path: ['mail']
       });
-    } else if (!emailRegex.test(mail)) {
+    } else if (mail && !emailRegex.test(mail)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Некорректный формат e-mail',
@@ -169,10 +179,12 @@ const schema = z
 
   });
 
-export type AdminUserFormValues = z.infer<typeof schema>;
+export type AdminUserFormValues = z.infer<ReturnType<typeof buildSchema>>;
 
 export const useAdminPage = () => {
   const { session } = useAuth();
+  const emailEnabled = session?.emailEnabled ?? true;
+  const schema = useMemo(() => buildSchema(emailEnabled), [emailEnabled]);
   const [searchParams, setSearchParams] = useSearchParams();
   const isLeadEconomist = session?.roleId === ROLE.LEAD_ECONOMIST;
   const isProjectManager = session?.roleId === ROLE.PROJECT_MANAGER;
@@ -195,6 +207,8 @@ export const useAdminPage = () => {
   );
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [contractors, setContractors] = useState<ContractorListItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const isGlobalSearch = Boolean(searchQuery.trim());
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
@@ -213,7 +227,7 @@ export const useAdminPage = () => {
       if (session?.roleId === ROLE.SUPERADMIN) {
         [ROLE.ADMIN, ROLE.SECURITY_OFFICER, ROLE.PROJECT_MANAGER, ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
       } else if (session?.roleId === ROLE.ADMIN) {
-        [ROLE.ECONOMIST, ROLE.OPERATOR].forEach(addRole);
+        [ROLE.ECONOMIST].forEach(addRole);
       } else if (session?.roleId === ROLE.LEAD_ECONOMIST) {
         [ROLE.ECONOMIST].forEach(addRole);
       }
@@ -240,10 +254,7 @@ export const useAdminPage = () => {
   const preferredCreateRoleId = roleOptions[0]?.id ?? roleByTab[activeTab];
 
   const roleUpdateOptions = useMemo(() => {
-    if (canUpdateRoleAny) {
-      if (session?.roleId === ROLE.ADMIN) {
-        return [ROLE.ECONOMIST, ROLE.OPERATOR];
-      }
+    if (canUpdateRoleAny && session?.roleId === ROLE.SUPERADMIN) {
       return [
         ROLE.ADMIN,
         ROLE.CONTRACTOR,
@@ -254,14 +265,17 @@ export const useAdminPage = () => {
         ROLE.OPERATOR
       ];
     }
+    if (canUpdateRoleAny && session?.roleId === ROLE.ADMIN) {
+      return [ROLE.ECONOMIST];
+    }
     if (!canUpdateRoleEconomy) {
       return [];
     }
     if (session?.roleId === ROLE.PROJECT_MANAGER) {
-      return [ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST, ROLE.OPERATOR];
+      return [ROLE.LEAD_ECONOMIST, ROLE.ECONOMIST];
     }
     if (session?.roleId === ROLE.LEAD_ECONOMIST) {
-      return [ROLE.ECONOMIST, ROLE.OPERATOR];
+      return [ROLE.ECONOMIST];
     }
     return [];
   }, [canUpdateRoleAny, canUpdateRoleEconomy, session?.roleId]);
@@ -272,13 +286,15 @@ export const useAdminPage = () => {
   }, [isLeadLike]);
 
   const getRoleLabel = useCallback((roleId: number) => roleLabelsById[roleId] ?? `Роль ${roleId}`, []);
-  const { showErrorToast, showSuccessToast } = useSystemToasts();
+  const { showErrorToast, showSuccessToast, showSystemToast } = useSystemToasts();
 
   const form = useLiveValidatedForm<AdminUserFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       role_id: preferredCreateRoleId,
       login: '',
+      password: '',
+      password_confirmation: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -296,14 +312,14 @@ export const useAdminPage = () => {
   const selectedRoleId = watch('role_id');
   const isContractorRole = selectedRoleId === ROLE.CONTRACTOR;
 
-  const handleTabChange = (value: UserTab) => {
+  const handleTabChange = useCallback((value: UserTab) => {
     setActiveTab(value);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('users_tab', value);
       return next;
     }, { replace: true });
-  };
+  }, [setSearchParams]);
 
   useEffect(() => {
     if (!isDialogOpen || !canShowUnitOnCreate || selectedRoleId === ROLE.CONTRACTOR) {
@@ -375,7 +391,21 @@ export const useAdminPage = () => {
     setIsLoadingUsers(true);
     setUsersError(null);
     try {
-      if (!isLeadLike && activeTab === 'contractors') {
+      if (isGlobalSearch) {
+        const [response, contractorItems] = await Promise.all([
+          getUsers(),
+          hasPermission(session, 'contractors.read')
+            ? listContractors()
+            : !isLeadLike
+              ? getUsers(roleByTab.contractors).then((result) => result.items.map(mapUserListItemToContractorListItem))
+              : Promise.resolve([]),
+        ]);
+        if (loadUsersRequestIdRef.current !== requestId) {
+          return;
+        }
+        setUsers(response.items.filter((user) => user.role_id !== ROLE.CONTRACTOR));
+        setContractors(contractorItems);
+      } else if (!isLeadLike && activeTab === 'contractors') {
         const items = hasPermission(session, 'contractors.read')
           ? await listContractors()
           : (await getUsers(roleByTab.contractors)).items.map(mapUserListItemToContractorListItem);
@@ -397,6 +427,8 @@ export const useAdminPage = () => {
       if (loadUsersRequestIdRef.current !== requestId) {
         return;
       }
+      setUsers([]);
+      setContractors([]);
       setUsersError(
         error instanceof Error
           ? error.message
@@ -409,16 +441,31 @@ export const useAdminPage = () => {
         setIsLoadingUsers(false);
       }
     }
-  }, [activeTab, isLeadLike, session]);
+  }, [activeTab, isGlobalSearch, isLeadLike, session]);
 
   useEffect(() => {
     void loadUsers();
+    return () => {
+      loadUsersRequestIdRef.current += 1;
+    };
   }, [loadUsers]);
+
+  const visibleUsers = useMemo(() => isGlobalSearch ? users.filter((user) => matchesUserSearch(searchQuery, [
+    user.user_id, user.full_name, user.phone, user.mail, getRoleLabel(user.role_id),
+  ])) : users, [getRoleLabel, isGlobalSearch, searchQuery, users]);
+
+  const visibleContractors = useMemo(() => isGlobalSearch ? contractors.filter((contractor) => matchesUserSearch(searchQuery, [
+    contractor.userId, contractor.fullName, contractor.phone, contractor.mail,
+    contractor.companyName, contractor.inn, contractor.companyPhone, contractor.companyMail,
+    contractor.address, contractor.note, getRoleLabel(contractor.roleId),
+  ])) : contractors, [contractors, getRoleLabel, isGlobalSearch, searchQuery]);
 
   const resetForm = useCallback(() => {
     reset({
       role_id: preferredCreateRoleId,
       login: '',
+      password: '',
+      password_confirmation: '',
       mail: '',
       full_name: '',
       phone: '',
@@ -469,15 +516,15 @@ export const useAdminPage = () => {
           company_phone: values.company_phone?.trim() ?? '',
           company_mail: values.company_mail?.trim() || undefined,
           address: values.address?.trim() || undefined,
-          note: values.note?.trim() || undefined
+          note: values.note?.trim() || undefined,
+          ...(!emailEnabled && (values.login || values.password || values.password_confirmation) ? { login: values.login?.trim(), password: values.password, password_confirmation: values.password_confirmation } : {}),
         });
 
         if (response.outcome === 'duplicate_found' && response.duplicate) {
           const email = response.duplicate.companyMail ? `, e-mail: ${response.duplicate.companyMail}` : '';
-          showErrorToast(`Найден существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
-          return;
+          showSuccessToast(`Использован существующий контрагент: ИНН ${response.duplicate.inn}, ${response.duplicate.companyName}${email}.`);
         }
-        showSuccessToast(`Контрагент ${response.userId} создан.`);
+        if (response.outcome === 'created') showSuccessToast(`Контрагент ${response.userId} создан.`);
       } else {
         const response = await registerUser({
           login: values.login?.trim() ?? '',
@@ -486,12 +533,32 @@ export const useAdminPage = () => {
           full_name: values.full_name?.trim() || undefined,
           phone: values.phone?.trim() || undefined,
           unit_id: values.unit_id ?? undefined,
+          password: emailEnabled ? undefined : values.password,
+          password_confirmation: emailEnabled ? undefined : values.password_confirmation,
         });
 
-        showSuccessToast(`Сотрудник ${response.data.user_id} создан.`);
+        const roleLabel = getRoleLabel(response.data.role_id);
+        const visibleToCreator = response.data.visible_to_creator !== false;
+        const message = `Сотрудник ${response.data.user_id} создан. Роль: ${roleLabel}.`;
+        if (visibleToCreator) {
+          showSuccessToast(message);
+        } else {
+          showSystemToast({
+            severity: 'warning',
+            message: `${message} Он не входит в вашу область видимости. Обратитесь к суперадминистратору для назначения сотрудника в доступное вам подразделение.`,
+          });
+        }
+        const createdTab = (Object.keys(roleByTab) as UserTab[]).find((tab) => roleByTab[tab] === response.data.role_id);
+        handleClose();
+        if (!isLeadLike && createdTab && createdTab !== activeTab) {
+          handleTabChange(createdTab);
+          return;
+        }
+        await loadUsers();
+        return;
       }
 
-      resetForm();
+      handleClose();
       await loadUsers();
     } catch (error) {
       showErrorToast(
@@ -506,14 +573,18 @@ export const useAdminPage = () => {
 
   return {
     isLeadLike,
+    emailEnabled,
     isAdmin,
     canViewRoleIds,
     isDialogOpen,
     openCreateDialog,
     activeTab,
     handleTabChange,
-    users,
-    contractors,
+    users: visibleUsers,
+    contractors: visibleContractors,
+    searchQuery,
+    setSearchQuery,
+    isGlobalSearch,
     isLoadingUsers,
     usersError,
     canUpdateStatus,

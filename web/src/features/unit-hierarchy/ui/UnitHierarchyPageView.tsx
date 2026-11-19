@@ -35,12 +35,14 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSetPageBreadcrumbActions, useSetPageBreadcrumbItems } from '@app/layouts/PageBreadcrumbActions';
 import type { UnitMember, UnitNode } from '@shared/api/units';
 import { ROLE } from '@shared/constants/roles';
+import { RequiredFieldLabel } from '@shared/components/forms/RequiredFieldLabel';
 import { useToastMessageEffect } from '@shared/ui/toasts';
 import { useUnitHierarchyPage } from '../model/useUnitHierarchyPage';
 import { ContractorBindingsDialog } from './ContractorBindingsDialog';
 import { PeopleFlatList, PeopleTree } from './PeopleTree';
 import { UnitOrgReadonlyList } from './UnitOrgReadonlyList';
 import { UnitOrgChart } from './UnitOrgChart';
+import { HierarchyProfileProvider } from './HierarchyProfileProvider';
 import {
   hierarchyCanvasBackground,
   hierarchyPageColors,
@@ -122,7 +124,8 @@ const UnitFormDialog = ({
           <TextField
             autoFocus
             fullWidth
-            label="Название"
+            label={<RequiredFieldLabel label="Название" isValid={Boolean(name.trim())} />}
+            inputProps={{ 'aria-required': true }}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -192,7 +195,7 @@ const collectOverviewStaffCount = (
 ) => {
   const cardStaffCount = overviewCards.reduce((sum, card) => sum + card.totalStaff, 0);
   const rootOnlyStaffCount = departments.reduce(
-    (sum, department) => sum + collectDepartmentRootOnlyStaff(department).length,
+    (sum, department) => sum + (overviewCards.some((card) => card.unit.unit_id === department.unit_id) ? 0 : collectDepartmentRootOnlyStaff(department).length),
     0,
   );
 
@@ -246,11 +249,13 @@ const buildOverviewUnitCards = (department: UnitNode, normalizedQuery: string): 
     ? department.name.toLocaleLowerCase('ru').includes(normalizedQuery)
     : true;
 
-  return department.children
+  const showRoot = department.children.length === 0 || Boolean(normalizedQuery && department.members.some((member) => matchesMemberQuery(member, normalizedQuery)));
+  return (showRoot ? [department, ...department.children] : department.children)
     .map((unit) => {
+      const displayedUnit = unit === department && department.children.length > 0 ? { ...unit, children: [] } : unit;
       const filteredUnit = !normalizedQuery || departmentMatches
-        ? unit
-        : filterUnitTree(unit, normalizedQuery);
+        ? displayedUnit
+        : filterUnitTree(displayedUnit, normalizedQuery);
 
       if (!filteredUnit) {
         return null;
@@ -259,9 +264,9 @@ const buildOverviewUnitCards = (department: UnitNode, normalizedQuery: string): 
       return {
         department,
         filteredUnit,
-        totalContractors: collectUniqueMembers(unit, true).length,
-        totalStaff: collectUniqueMembers(unit, false).length,
-        totalUnits: countUnits(unit),
+        totalContractors: collectUniqueMembers(displayedUnit, true).length,
+        totalStaff: collectUniqueMembers(displayedUnit, false).length,
+        totalUnits: countUnits(displayedUnit),
         visibleContractors: collectUniqueMembers(filteredUnit, true),
         visibleStaff: collectUniqueMembers(filteredUnit, false),
         visibleUnits: countUnits(filteredUnit),
@@ -778,6 +783,7 @@ export const UnitHierarchyPageView = () => {
     setSelectedDepartmentId,
     setSelectedEditorUnitId,
     editorRootUnit,
+    isSuperadmin,
     canCreateRootUnit,
     canManageUnitMembers,
     activeUnitDetails,
@@ -819,6 +825,8 @@ export const UnitHierarchyPageView = () => {
     findRootUnitForUnit,
     loadTree,
     unassignedUsers,
+    unassignedUsersError,
+    loadUnassignedUsers,
     isLoadingUnassignedUsers,
     assignMemberState,
     isAssigningMember,
@@ -1189,12 +1197,17 @@ export const UnitHierarchyPageView = () => {
   }
 
   return (
+    <HierarchyProfileProvider>
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pb: 1 }}>
       {departments.length === 0 ? (
         <Card variant="outlined" sx={sectionCardSx}>
           <CardContent>
             <Typography variant="body2" color="text.secondary">
-              Пока нет подразделений. Создайте первое корневое подразделение.
+              {isSuperadmin
+                ? canCreateRootUnit
+                  ? 'Пока нет подразделений. Создайте первое корневое подразделение.'
+                  : 'Пока нет подразделений.'
+                : 'Вас пока не назначили ни в одно действующее подразделение. Обратитесь к администратору для назначения — после этого станет доступна схема иерархии.'}
             </Typography>
           </CardContent>
         </Card>
@@ -1205,8 +1218,8 @@ export const UnitHierarchyPageView = () => {
               <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Ничего не найдено</Typography>
               <Typography variant="body2" color="text.secondary">
                 {departmentScope === 'all'
-                  ? 'По выбранному фильтру не найдено объединений второго уровня. Попробуйте изменить поиск или выбрать конкретное подразделение.'
-                  : `В подразделении «${scopedDepartment?.name ?? 'Без названия'}» не найдено объединений второго уровня. Попробуйте изменить поиск.`}
+                  ? 'По выбранному фильтру не найдены подразделения или сотрудники. Измените поиск или выберите подразделение.'
+                  : `В подразделении «${scopedDepartment?.name ?? 'Без названия'}» нет подходящих подразделений или сотрудников. Измените поиск.`}
               </Typography>
               <Button variant="outlined" onClick={() => setSearchQuery('')}>
                 Сбросить фильтр
@@ -1573,7 +1586,8 @@ export const UnitHierarchyPageView = () => {
 
               <Divider />
 
-              {isLoadingUnassignedUsers && unassignedMembers.length === 0 ? (
+              {unassignedUsersError ? <Alert severity="error" action={<Button onClick={() => void loadUnassignedUsers()}>Повторить</Button>}>{unassignedUsersError}</Alert> : null}
+              {unassignedUsersError && unassignedMembers.length === 0 ? null : isLoadingUnassignedUsers && unassignedMembers.length === 0 ? (
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 0.5 }}>
                   <CircularProgress size={16} />
                   <Typography variant="body2" color="text.secondary">
@@ -1799,7 +1813,8 @@ export const UnitHierarchyPageView = () => {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Сотрудник"
+                label={<RequiredFieldLabel label="Сотрудник" isValid={Boolean(memberDialogState.selectedUserId)} />}
+                inputProps={{ ...params.inputProps, 'aria-required': true }}
                 placeholder="Начните вводить имя или логин"
               />
             )}
@@ -1905,6 +1920,7 @@ export const UnitHierarchyPageView = () => {
         </DialogActions>
       </Dialog>
     </Box>
+    </HierarchyProfileProvider>
   );
 };
 
